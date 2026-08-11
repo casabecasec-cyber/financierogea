@@ -226,6 +226,22 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: editar los datos importados en Dividendos** — en "Trabajar con Resúmenes", tanto el
+  "Historial de capital social" como el "Historial de dividendos" ahora son completamente
+  editables: cada celda (por accionista y por año, incluyendo TOTAL, IMP. RENTA y A PAGAR) es
+  un campo editable que se guarda solo al salir de él. Útil para corregir algo del Excel
+  importado sin tener que volver a subir el archivo completo. La fila "SUMAN" se recalcula
+  automáticamente cuando editas cualquier valor de ese año.
+
+- **Corregido: el tab activo en Dividendos se quedaba marcado en "Importar"** — al cambiar de
+  pestaña (Auditoría, Escenarios, etc.), el contenido sí cambiaba, pero el resaltado visual del
+  botón activo se quedaba pegado en la última pestaña que se pintó desde cero (normalmente
+  "Importar", al entrar al módulo), porque la barra de pestañas solo se dibujaba una vez y
+  nunca se volvía a actualizar. Ahora, al cambiar de pestaña, se actualiza directamente cuál
+  botón tiene la clase "activo", así que el resaltado siempre coincide con la pestaña que
+  estás viendo. Se revisaron los demás módulos con pestañas similares (Elaboración, Revisión de
+  Documentos, Documentos Legales, Equipos de Trabajo, Área Bancaria) y no tenían este problema.
+
 - **Nuevo: pestaña "📊 Comparativo SRI/Súper Cías/Contable"** en Dividendos — una tabla año por
   año desde **1992** hasta el año actual, por empresa, con estas columnas:
   - **SRI**, **Súper Cías**, **Contable** — tres valores manuales de utilidad, uno por fuente.

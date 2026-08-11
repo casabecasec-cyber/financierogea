@@ -5844,14 +5844,14 @@ async function renderDividendos(){
   const main = document.getElementById("main");
   main.innerHTML = `
     <div class="pageTitle"><div><h2>Dividendos</h2><p>Auditoría, edición y recomendaciones de distribución conforme la normativa vigente en Ecuador</p></div></div>
-    <div class="tabs">
-      <button class="tabBtn ${dividendoVistaActual==='importar'?'active':''}" onclick="cambiarVistaDividendos('importar')">Importar</button>
-      <button class="tabBtn ${dividendoVistaActual==='auditoria'?'active':''}" onclick="cambiarVistaDividendos('auditoria')">🔍 Auditoría</button>
-      <button class="tabBtn ${dividendoVistaActual==='trabajar'?'active':''}" onclick="cambiarVistaDividendos('trabajar')">📊 Trabajar con Resúmenes</button>
-      <button class="tabBtn ${dividendoVistaActual==='escenarios'?'active':''}" onclick="cambiarVistaDividendos('escenarios')">🧭 Escenarios</button>
-      <button class="tabBtn ${dividendoVistaActual==='distribucionActual'?'active':''}" onclick="cambiarVistaDividendos('distribucionActual')">🧮 Distribución Accionistas Actuales</button>
-      <button class="tabBtn ${dividendoVistaActual==='resumenCapitalSocios'?'active':''}" onclick="cambiarVistaDividendos('resumenCapitalSocios')">🧾 Resumen de Capital</button>
-      <button class="tabBtn ${dividendoVistaActual==='comparativoSri'?'active':''}" onclick="cambiarVistaDividendos('comparativoSri')">📊 Comparativo SRI/Súper Cías/Contable</button>
+    <div class="tabs" id="tabsDividendos">
+      <button class="tabBtn ${dividendoVistaActual==='importar'?'active':''}" data-vista="importar" onclick="cambiarVistaDividendos('importar')">Importar</button>
+      <button class="tabBtn ${dividendoVistaActual==='auditoria'?'active':''}" data-vista="auditoria" onclick="cambiarVistaDividendos('auditoria')">🔍 Auditoría</button>
+      <button class="tabBtn ${dividendoVistaActual==='trabajar'?'active':''}" data-vista="trabajar" onclick="cambiarVistaDividendos('trabajar')">📊 Trabajar con Resúmenes</button>
+      <button class="tabBtn ${dividendoVistaActual==='escenarios'?'active':''}" data-vista="escenarios" onclick="cambiarVistaDividendos('escenarios')">🧭 Escenarios</button>
+      <button class="tabBtn ${dividendoVistaActual==='distribucionActual'?'active':''}" data-vista="distribucionActual" onclick="cambiarVistaDividendos('distribucionActual')">🧮 Distribución Accionistas Actuales</button>
+      <button class="tabBtn ${dividendoVistaActual==='resumenCapitalSocios'?'active':''}" data-vista="resumenCapitalSocios" onclick="cambiarVistaDividendos('resumenCapitalSocios')">🧾 Resumen de Capital</button>
+      <button class="tabBtn ${dividendoVistaActual==='comparativoSri'?'active':''}" data-vista="comparativoSri" onclick="cambiarVistaDividendos('comparativoSri')">📊 Comparativo SRI/Súper Cías/Contable</button>
     </div>
     <div id="dividendosContenido"></div>
   `;
@@ -5864,6 +5864,10 @@ async function renderDividendos(){
 
 function cambiarVistaDividendos(vista){
   dividendoVistaActual = vista;
+  const barra = document.getElementById("tabsDividendos");
+  if(barra){
+    barra.querySelectorAll(".tabBtn").forEach(b => b.classList.toggle("active", b.dataset.vista===vista));
+  }
   pintarVistaDividendos();
 }
 
@@ -6049,6 +6053,43 @@ function cambiarAccionistaDividendo(nombre){
   pintarDetalleEmpresaDividendo();
 }
 
+// Escapa un texto para insertarlo dentro de un string JS de comillas simples
+// en un atributo onclick/onchange (ej. nombres de accionistas con apóstrofes).
+function escJs(s){
+  return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+}
+
+// Edición de los datos históricos importados: cualquier valor de capital o
+// dividendos se puede corregir a mano en cualquier momento, y se guarda solo.
+async function actualizarCapitalHistorico(clave, accionista, anio, valor){
+  const datosCapital = datosDividendosCache.resumenCapital.empresas[clave];
+  const fila = datosCapital.filas.find(f=>f.accionista===accionista);
+  if(!fila) return;
+  fila.valores[anio] = valor===""? 0 : parseFloat(valor);
+  datosCapital.suman[anio] = datosCapital.filas.reduce((s,f)=>s+(f.valores[anio]||0),0);
+  await guardarDatosDividendos(datosDividendosCache);
+  pintarDetalleEmpresaDividendo();
+}
+
+async function actualizarDividendoHistoricoValor(clave, accionista, anio, valor){
+  const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
+  const fila = datosResumen.filas.find(f=>f.accionista===accionista);
+  if(!fila) return;
+  fila.valores[anio] = valor===""? 0 : parseFloat(valor);
+  datosResumen.suman[anio] = datosResumen.filas.reduce((s,f)=>s+(f.valores[anio]||0),0);
+  await guardarDatosDividendos(datosDividendosCache);
+  pintarDetalleEmpresaDividendo();
+}
+
+async function actualizarDividendoHistoricoCampo(clave, accionista, campo, valor){
+  const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
+  const fila = datosResumen.filas.find(f=>f.accionista===accionista);
+  if(!fila) return;
+  fila[campo] = valor===""? 0 : parseFloat(valor);
+  await guardarDatosDividendos(datosDividendosCache);
+  pintarDetalleEmpresaDividendo();
+}
+
 function pintarDetalleEmpresaDividendo(){
   const cont = document.getElementById("detalleEmpresaDividendo");
   if(!empresaDividendoSeleccionada){ cont.innerHTML = `<div class="card emptyState">Selecciona una empresa.</div>`; return; }
@@ -6107,10 +6148,11 @@ function pintarDetalleEmpresaDividendo(){
     ${datosCapital && filasCapitalMostrar.length ? `
     <div class="card" style="overflow-x:auto;">
       <h3 style="margin-top:0;">Historial de capital social ${accionistaDividendoSeleccionado?`— ${escapeHtml(accionistaDividendoSeleccionado)}`:'por accionista'} — ${escapeHtml(nombreEmpresa)}</h3>
+      <p class="helpNote">Todos los valores son editables — cámbialos si hace falta corregir algo del archivo importado; se guardan solos al salir de la celda.</p>
       <table style="font-size:12px;"><thead><tr><th>Accionista</th>${aniosCapital.map(a=>`<th>${a}</th>`).join("")}</tr></thead><tbody>
         ${filasCapitalMostrar.map(f => `<tr>
           <td>${escapeHtml(f.accionista)}</td>
-          ${aniosCapital.map(a=>`<td>${(f.valores[a]||0).toLocaleString('es-EC',{maximumFractionDigits:0})}</td>`).join("")}
+          ${aniosCapital.map(a=>`<td><input type="number" style="width:90px;" value="${f.valores[a]||0}" onchange="actualizarCapitalHistorico('${empresaDividendoSeleccionada}','${escJs(f.accionista)}',${a},this.value)"></td>`).join("")}
         </tr>`).join("")}
         ${!accionistaDividendoSeleccionado ? `<tr style="font-weight:bold;background:var(--panel2);">
           <td>SUMAN</td>
@@ -6121,13 +6163,14 @@ function pintarDetalleEmpresaDividendo(){
 
     <div class="card" style="overflow-x:auto;">
       <h3 style="margin-top:0;">Historial de dividendos ${accionistaDividendoSeleccionado?`— ${escapeHtml(accionistaDividendoSeleccionado)}`:'por accionista'} — ${escapeHtml(nombreEmpresa)}</h3>
+      <p class="helpNote">Todos los valores son editables — cámbialos si hace falta corregir algo del archivo importado; se guardan solos al salir de la celda.</p>
       <table style="font-size:12px;"><thead><tr><th>Accionista</th>${anios.map(a=>`<th>${a}</th>`).join("")}<th>TOTAL</th><th>IMP. RENTA</th><th>A PAGAR</th></tr></thead><tbody>
         ${filasDividendoMostrar.map(f => `<tr>
           <td>${escapeHtml(f.accionista)}</td>
-          ${anios.map(a=>`<td>${(f.valores[a]||0).toFixed(2)}</td>`).join("")}
-          <td><b>${(f.total||0).toFixed(2)}</b></td>
-          <td>${(f.impuestoRenta||0).toFixed(2)}</td>
-          <td>${(f.dividendoPagar||0).toFixed(2)}</td>
+          ${anios.map(a=>`<td><input type="number" style="width:90px;" value="${(f.valores[a]||0).toFixed(2)}" onchange="actualizarDividendoHistoricoValor('${empresaDividendoSeleccionada}','${escJs(f.accionista)}',${a},this.value)"></td>`).join("")}
+          <td><input type="number" style="width:90px;font-weight:bold;" value="${(f.total||0).toFixed(2)}" onchange="actualizarDividendoHistoricoCampo('${empresaDividendoSeleccionada}','${escJs(f.accionista)}','total',this.value)"></td>
+          <td><input type="number" style="width:90px;" value="${(f.impuestoRenta||0).toFixed(2)}" onchange="actualizarDividendoHistoricoCampo('${empresaDividendoSeleccionada}','${escJs(f.accionista)}','impuestoRenta',this.value)"></td>
+          <td><input type="number" style="width:90px;" value="${(f.dividendoPagar||0).toFixed(2)}" onchange="actualizarDividendoHistoricoCampo('${empresaDividendoSeleccionada}','${escJs(f.accionista)}','dividendoPagar',this.value)"></td>
         </tr>`).join("")}
         ${!accionistaDividendoSeleccionado ? `<tr style="font-weight:bold;background:var(--panel2);">
           <td>SUMAN</td>
