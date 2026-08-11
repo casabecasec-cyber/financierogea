@@ -226,6 +226,30 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Movido: "Pago a cuenta sobre utilidades no distribuidas"** — pasó de "Trabajar con
+  Resúmenes" a **"Distribución Accionistas Actuales"**, donde tiene más sentido (ya se usaba
+  ahí para el plan multi-año y en Escenarios). Además, ahora es completamente **editable y
+  eliminable**: cada pago registrado (año, monto, observación) tiene campos editables que se
+  guardan solos al cambiar, y un botón "Eliminar" por fila — antes solo se podía registrar, no
+  corregir ni borrar.
+
+- **Nuevo: traer la Utilidad Acumulada del Comparativo SRI a "Distribución Accionistas
+  Actuales"** — arriba del campo "Utilidad acumulada total a repartir" hay un selector de año
+  y un botón "↺ Traer valor de ese año". Al presionarlo, trae la "Utilidad Acumulada" ya
+  calculada en el Comparativo SRI/Súper Cías/Contable para **la misma empresa** que tienes
+  seleccionada aquí, hasta el año elegido, y la usa como base a repartir — sin tener que
+  volver a sumarla a mano. Reutiliza exactamente la misma lógica de cálculo que la pestaña
+  Comparativo, así que el número siempre coincide con lo que ves ahí. Recuerda presionar
+  "💾 Guardar" después para conservarlo.
+
+- **Nuevo: alerta visual cuando "Participación Trabajadores" y "Participación Trabajadores
+  Repartida" difieren** (diferencia mayor a 1 centavo), en el Comparativo SRI:
+  - **En pantalla**: la celda de "Participación Trabajadores Repartida" de ese año se resalta
+    en rojo, con un aviso "⚠️ difiere de Particip. Trabajadores" debajo.
+  - **En el informe ejecutivo (Imprimir/PDF)**: la misma celda se resalta en rojo dentro de la
+    tabla de detalle, y además aparece una tarjeta roja en el resumen ejecutivo con el conteo de
+    años afectados, más un párrafo de alerta listando cuáles años tienen la diferencia.
+
 - **Nuevo: editar los datos importados en Dividendos** — en "Trabajar con Resúmenes", tanto el
   "Historial de capital social" como el "Historial de dividendos" ahora son completamente
   editables: cada celda (por accionista y por año, incluyendo TOTAL, IMP. RENTA y A PAGAR) es
