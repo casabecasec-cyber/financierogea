@@ -226,6 +226,18 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Movido: "🧠 Recomendación de distribución con IA"** — pasó de "Trabajar con Resúmenes" a
+  **"Distribución Accionistas Actuales"**. Ya no tiene la opción de "solo para un accionista"
+  (ese filtro no existe en la nueva ubicación); ahora siempre calcula para todos los
+  accionistas actuales de la empresa seleccionada, según su % de participación.
+- **Corregido: las tarjetas de resumen en "Trabajar con Resúmenes" no se actualizaban con
+  los nuevos valores de utilidades por año** — esto fue una consecuencia de un cambio anterior
+  que las hacía depender del Comparativo SRI (una tabla de datos completamente separada), así
+  que editar el historial de dividendos en esta misma pestaña ya no se reflejaba ahí. Se
+  revirtió: las tarjetas "Utilidad/dividendo histórico", "Impuesto de renta histórico" y "Neto
+  histórico pagado" vuelven a calcularse a partir del historial de dividendos de esta misma
+  pestaña, así que se actualizan de inmediato al editar cualquier valor o agregar un año nuevo.
+
 - **Cambiado: las 3 tarjetas históricas de "Trabajar con Resúmenes" ahora vienen del
   Comparativo SRI/Súper Cías/Contable** (cuando estás viendo la empresa completa, sin filtrar
   por accionista):

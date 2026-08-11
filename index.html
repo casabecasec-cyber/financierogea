@@ -6120,18 +6120,9 @@ function pintarDetalleEmpresaDividendo(){
   const capitalActual = accionistaDividendoSeleccionado
     ? (filasCapitalMostrar[0]?.valores[ultimoAnioCap]||0)
     : (datosCapital ? (datosCapital.suman[ultimoAnioCap]||0) : 0);
-  const totalDividendosHistorico = accionistaDividendoSeleccionado
-    ? filasDividendoMostrar.reduce((s,f)=> s + anios.reduce((s2,a)=>s2+(f.valores[a]||0),0), 0)
-    : (() => {
-        const filasComp = calcularFilasComparativo(empresaDividendoSeleccionada).filter(f=>f.valorReal!==null&&f.valorReal!==undefined);
-        return filasComp.length ? (filasComp[filasComp.length-1].acumuladoMostrado||0) : 0;
-      })();
-  const totalImpuestoHistorico = accionistaDividendoSeleccionado
-    ? filasDividendoMostrar.reduce((s,f)=> s+(f.impuestoRenta||0), 0)
-    : calcularFilasComparativo(empresaDividendoSeleccionada).reduce((s,f)=> s+(f.raw.impuestoCausado||0), 0);
-  const totalPagadoHistorico = accionistaDividendoSeleccionado
-    ? filasDividendoMostrar.reduce((s,f)=> s+(f.dividendoPagar||0), 0)
-    : calcularFilasComparativo(empresaDividendoSeleccionada).reduce((s,f)=> s+(f.raw.participacionTrabajadoresRepartida||0), 0);
+  const totalDividendosHistorico = filasDividendoMostrar.reduce((s,f)=> s + anios.reduce((s2,a)=>s2+(f.valores[a]||0),0), 0);
+  const totalImpuestoHistorico = filasDividendoMostrar.reduce((s,f)=> s+(f.impuestoRenta||0), 0);
+  const totalPagadoHistorico = filasDividendoMostrar.reduce((s,f)=> s+(f.dividendoPagar||0), 0);
   const capitalTotalEmpresa = datosCapital ? (datosCapital.suman[ultimoAnioCap]||0) : 0;
   const porcentajeParticipacion = accionistaDividendoSeleccionado && capitalTotalEmpresa
     ? (capitalActual/capitalTotalEmpresa*100) : null;
@@ -6149,9 +6140,9 @@ function pintarDetalleEmpresaDividendo(){
     <div class="statRow">
       <div class="statCard"><div class="n">$${capitalActual.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?`Capital de ${escapeHtml(accionistaDividendoSeleccionado)}`:'Capital social actual'} (${ultimoAnioCap})</div></div>
       ${porcentajeParticipacion!==null?`<div class="statCard"><div class="n">${porcentajeParticipacion.toFixed(2)}%</div><div class="l">% de participación en ${escapeHtml(nombreEmpresa)}</div></div>`:''}
-      <div class="statCard"><div class="n">$${totalDividendosHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Utilidad/dividendo histórico de este accionista':'Utilidad acumulada a la fecha (Comparativo SRI...)'}</div></div>
-      <div class="statCard"><div class="n">$${totalImpuestoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Impuesto de renta histórico retenido':'Impuesto Causado histórico (suma Comparativo SRI...)'}</div></div>
-      <div class="statCard"><div class="n">$${totalPagadoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Neto histórico pagado':'Participación Trabajadores Repartida histórica (Comparativo SRI...)'}</div></div>
+      <div class="statCard"><div class="n">$${totalDividendosHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Utilidad/dividendo histórico ${accionistaDividendoSeleccionado?'de este accionista':'total'}</div></div>
+      <div class="statCard"><div class="n">$${totalImpuestoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Impuesto de renta histórico retenido</div></div>
+      <div class="statCard"><div class="n">$${totalPagadoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Neto histórico pagado</div></div>
     </div>
 
     ${datosCapital && filasCapitalMostrar.length ? `
@@ -6208,22 +6199,6 @@ function pintarDetalleEmpresaDividendo(){
       <button class="btn small" onclick="pintarFilasNuevoAnio()">Generar filas para los accionistas actuales</button>
       <button class="btn primary" style="margin-top:8px;" onclick="guardarNuevoAnioDividendo()">💾 Guardar año nuevo</button>
     </div>` : ''}
-
-    <div class="card">
-      <h3 style="margin-top:0;">🧠 Recomendación de distribución con IA ${accionistaDividendoSeleccionado?`— solo para ${escapeHtml(accionistaDividendoSeleccionado)}`:'— todos los accionistas'}</h3>
-      <p class="helpNote">La IA aplicará la Ley Orgánica de Transparencia Social y los Arts. 39.2/39.2.1 LRTI vigentes (franja exenta de 3 SBU, tarifa según residencia y beneficiario efectivo, pago a cuenta si no se distribuye antes del 31 de julio).</p>
-      <div class="grid2">
-        <div class="field"><label>Año de la distribución</label><input type="number" id="recAnio" placeholder="Ej. 2026"></div>
-        <div class="field"><label>${accionistaDividendoSeleccionado?'Monto a distribuir a este accionista (USD)':'Utilidad total a distribuir (USD)'}</label><input type="number" id="recUtilidad"></div>
-      </div>
-      <div class="field"><label>¿Ya se distribuyó (o se distribuirá) antes del 31 de julio de ese año?</label>
-        <select id="recAntesJulio"><option value="si">Sí</option><option value="no">No</option></select>
-      </div>
-      <div class="field"><label>Instrucciones adicionales (opcional)</label><textarea id="recInstrucciones" rows="2"></textarea></div>
-      <button class="btn primary" onclick="ejecutarRecomendacionDividendos()">✨ Generar recomendación</button>
-      <span id="estadoRecomendacionDiv" style="margin-left:10px;color:var(--muted);font-size:13px;"></span>
-      <div id="resultadoRecomendacionDiv"></div>
-    </div>
   `;
 }
 
@@ -6313,22 +6288,17 @@ async function ejecutarRecomendacionDividendos(){
   const antesJulio = document.getElementById("recAntesJulio").value;
   const instrucciones = document.getElementById("recInstrucciones").value.trim();
   if(!utilidad){ alert("Ingresa el monto a distribuir."); return; }
-  const datosCapital = datosDividendosCache.resumenCapital.empresas[empresaDividendoSeleccionada];
-  const nombreEmpresa = datosDividendosCache.porEmpresa[empresaDividendoSeleccionada]?.nombreHoja || empresaDividendoSeleccionada;
+  if(!empresaDistribActualSeleccionada){ alert("Selecciona una empresa primero."); return; }
+  const datosCapital = datosDividendosCache.resumenCapital.empresas[empresaDistribActualSeleccionada];
+  const nombreEmpresa = datosDividendosCache.porEmpresa[empresaDistribActualSeleccionada]?.nombreHoja || empresaDistribActualSeleccionada;
   const ultimoAnioCapital = Math.max(...datosDividendosCache.resumenCapital.anios);
   const totalCapitalEmpresa = (datosCapital?.suman[ultimoAnioCapital])||1;
-  const filasCapitalParaIA = accionistaDividendoSeleccionado
-    ? (datosCapital?.filas||[]).filter(f=>f.accionista===accionistaDividendoSeleccionado)
-    : (datosCapital?.filas||[]);
-  const accionistas = filasCapitalParaIA.map(f => {
+  const accionistas = (datosCapital?.filas||[]).map(f => {
     const capitalActual = f.valores[ultimoAnioCapital]||0;
     const porcentaje = totalCapitalEmpresa ? (capitalActual/totalCapitalEmpresa*100) : 0;
     return `${f.accionista}: ${porcentaje.toFixed(2)}% de participación`;
   }).join("\n");
-  const encabezadoMonto = accionistaDividendoSeleccionado
-    ? `Monto a distribuir SOLO al accionista ${accionistaDividendoSeleccionado}: USD $${utilidad.toFixed(2)} (no calcules para otros accionistas)`
-    : `Utilidad total de la empresa a distribuir entre todos los accionistas: USD $${utilidad.toFixed(2)}`;
-  const contenido = `Empresa: ${nombreEmpresa}\nAño de distribución: ${anio}\n${encabezadoMonto}\n¿Se distribuye antes del 31 de julio de ese año?: ${antesJulio}\nAccionista(s) y participación (según capital al año ${ultimoAnioCapital}):\n${accionistas}`;
+  const contenido = `Empresa: ${nombreEmpresa}\nAño de distribución: ${anio}\nUtilidad total de la empresa a distribuir entre todos los accionistas: USD $${utilidad.toFixed(2)}\n¿Se distribuye antes del 31 de julio de ese año?: ${antesJulio}\nAccionista(s) y participación (según capital al año ${ultimoAnioCapital}):\n${accionistas}`;
   const estadoEl = document.getElementById("estadoRecomendacionDiv");
   document.getElementById("resultadoRecomendacionDiv").innerHTML = "";
   estadoEl.innerHTML = `<span class="spinner"></span> Analizando con IA...`;
@@ -6336,7 +6306,7 @@ async function ejecutarRecomendacionDividendos(){
     const resultado = await llamarIA("recomendar_distribucion_dividendos", contenido, instrucciones);
     estadoEl.textContent = "Recomendación generada.";
     document.getElementById("resultadoRecomendacionDiv").innerHTML = renderRecomendacionDividendos(resultado);
-    await registrarCambio("Dividendos", "generar_ia", `Recomendación de distribución generada para ${nombreEmpresa}${accionistaDividendoSeleccionado?' / '+accionistaDividendoSeleccionado:''} (${anio})`);
+    await registrarCambio("Dividendos", "generar_ia", `Recomendación de distribución generada para ${nombreEmpresa} (${anio})`);
   }catch(e){
     estadoEl.textContent = "";
     alert("No se pudo generar la recomendación: " + e.message);
@@ -6858,6 +6828,22 @@ function pintarDetalleDistribActual(){
       <button class="btn small" style="margin-left:8px;" onclick="imprimirDistribucionActual()">🖨️ Imprimir / Descargar PDF</button>
       <span id="estadoDistribActual" style="margin-left:10px;color:var(--muted);font-size:13px;"></span>
       <div id="resultadoDistribActual">${datos.ultimoResultadoIA ? renderResultadoDistribActual(datos.ultimoResultadoIA) : ''}</div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">🧠 Recomendación de distribución con IA — todos los accionistas actuales</h3>
+      <p class="helpNote">La IA aplicará la Ley Orgánica de Transparencia Social y los Arts. 39.2/39.2.1 LRTI vigentes (franja exenta de 3 SBU, tarifa según residencia y beneficiario efectivo, pago a cuenta si no se distribuye antes del 31 de julio).</p>
+      <div class="grid2">
+        <div class="field"><label>Año de la distribución</label><input type="number" id="recAnio" placeholder="Ej. 2026"></div>
+        <div class="field"><label>Utilidad total a distribuir (USD)</label><input type="number" id="recUtilidad"></div>
+      </div>
+      <div class="field"><label>¿Ya se distribuyó (o se distribuirá) antes del 31 de julio de ese año?</label>
+        <select id="recAntesJulio"><option value="si">Sí</option><option value="no">No</option></select>
+      </div>
+      <div class="field"><label>Instrucciones adicionales (opcional)</label><textarea id="recInstrucciones" rows="2"></textarea></div>
+      <button class="btn primary" onclick="ejecutarRecomendacionDividendos()">✨ Generar recomendación</button>
+      <span id="estadoRecomendacionDiv" style="margin-left:10px;color:var(--muted);font-size:13px;"></span>
+      <div id="resultadoRecomendacionDiv"></div>
     </div>
   `;
   pintarListaPagosACuenta();
