@@ -6120,9 +6120,18 @@ function pintarDetalleEmpresaDividendo(){
   const capitalActual = accionistaDividendoSeleccionado
     ? (filasCapitalMostrar[0]?.valores[ultimoAnioCap]||0)
     : (datosCapital ? (datosCapital.suman[ultimoAnioCap]||0) : 0);
-  const totalDividendosHistorico = filasDividendoMostrar.reduce((s,f)=> s + anios.reduce((s2,a)=>s2+(f.valores[a]||0),0), 0);
-  const totalImpuestoHistorico = filasDividendoMostrar.reduce((s,f)=> s+(f.impuestoRenta||0), 0);
-  const totalPagadoHistorico = filasDividendoMostrar.reduce((s,f)=> s+(f.dividendoPagar||0), 0);
+  const totalDividendosHistorico = accionistaDividendoSeleccionado
+    ? filasDividendoMostrar.reduce((s,f)=> s + anios.reduce((s2,a)=>s2+(f.valores[a]||0),0), 0)
+    : (() => {
+        const filasComp = calcularFilasComparativo(empresaDividendoSeleccionada).filter(f=>f.valorReal!==null&&f.valorReal!==undefined);
+        return filasComp.length ? (filasComp[filasComp.length-1].acumuladoMostrado||0) : 0;
+      })();
+  const totalImpuestoHistorico = accionistaDividendoSeleccionado
+    ? filasDividendoMostrar.reduce((s,f)=> s+(f.impuestoRenta||0), 0)
+    : calcularFilasComparativo(empresaDividendoSeleccionada).reduce((s,f)=> s+(f.raw.impuestoCausado||0), 0);
+  const totalPagadoHistorico = accionistaDividendoSeleccionado
+    ? filasDividendoMostrar.reduce((s,f)=> s+(f.dividendoPagar||0), 0)
+    : calcularFilasComparativo(empresaDividendoSeleccionada).reduce((s,f)=> s+(f.raw.participacionTrabajadoresRepartida||0), 0);
   const capitalTotalEmpresa = datosCapital ? (datosCapital.suman[ultimoAnioCap]||0) : 0;
   const porcentajeParticipacion = accionistaDividendoSeleccionado && capitalTotalEmpresa
     ? (capitalActual/capitalTotalEmpresa*100) : null;
@@ -6140,9 +6149,9 @@ function pintarDetalleEmpresaDividendo(){
     <div class="statRow">
       <div class="statCard"><div class="n">$${capitalActual.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?`Capital de ${escapeHtml(accionistaDividendoSeleccionado)}`:'Capital social actual'} (${ultimoAnioCap})</div></div>
       ${porcentajeParticipacion!==null?`<div class="statCard"><div class="n">${porcentajeParticipacion.toFixed(2)}%</div><div class="l">% de participación en ${escapeHtml(nombreEmpresa)}</div></div>`:''}
-      <div class="statCard"><div class="n">$${totalDividendosHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Utilidad/dividendo histórico ${accionistaDividendoSeleccionado?'de este accionista':'total'}</div></div>
-      <div class="statCard"><div class="n">$${totalImpuestoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Impuesto de renta histórico retenido</div></div>
-      <div class="statCard"><div class="n">$${totalPagadoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Neto histórico pagado</div></div>
+      <div class="statCard"><div class="n">$${totalDividendosHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Utilidad/dividendo histórico de este accionista':'Utilidad acumulada a la fecha (Comparativo SRI...)'}</div></div>
+      <div class="statCard"><div class="n">$${totalImpuestoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Impuesto de renta histórico retenido':'Impuesto Causado histórico (suma Comparativo SRI...)'}</div></div>
+      <div class="statCard"><div class="n">$${totalPagadoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Neto histórico pagado':'Participación Trabajadores Repartida histórica (Comparativo SRI...)'}</div></div>
     </div>
 
     ${datosCapital && filasCapitalMostrar.length ? `

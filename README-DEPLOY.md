@@ -226,6 +226,21 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Cambiado: las 3 tarjetas históricas de "Trabajar con Resúmenes" ahora vienen del
+  Comparativo SRI/Súper Cías/Contable** (cuando estás viendo la empresa completa, sin filtrar
+  por accionista):
+  - **"Utilidad acumulada a la fecha"** — antes sumaba el historial de dividendos por
+    accionista; ahora toma la "Utilidad Acumulada" del último año con datos en el Comparativo
+    SRI... para esta empresa.
+  - **"Impuesto Causado histórico"** — ahora es la suma de la columna "Impuesto Causado" del
+    Comparativo SRI... de todos los años, en vez del impuesto de renta retenido por accionista.
+  - **"Participación Trabajadores Repartida histórica"** (antes "Neto histórico pagado") —
+    ahora es la suma de la columna "Participación Trabajadores Repartida" del Comparativo
+    SRI... de todos los años.
+  Cuando filtras por un accionista específico, estas 3 tarjetas vuelven a su cálculo anterior
+  (basado en el historial de dividendos de ese accionista), ya que el Comparativo SRI es a
+  nivel de empresa completa, no por accionista.
+
 - **Movido: "Pago a cuenta sobre utilidades no distribuidas"** — pasó de "Trabajar con
   Resúmenes" a **"Distribución Accionistas Actuales"**, donde tiene más sentido (ya se usaba
   ahí para el plan multi-año y en Escenarios). Además, ahora es completamente **editable y
