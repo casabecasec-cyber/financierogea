@@ -1,0 +1,23 @@
+[build]
+  functions = "netlify/functions"
+  publish = "."
+
+[build.environment]
+  # La apiKey de Firebase en index.html NO es un secreto: es una clave pública
+  # de identificación del proyecto; la seguridad real la dan las reglas de
+  # Firestore/Auth. Se excluye este archivo del escaneo de secretos de Netlify
+  # para evitar que el build falle por un falso positivo.
+  SECRETS_SCAN_OMIT_PATHS = "index.html"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/analizar"
+  to = "/.netlify/functions/analizar"
+  status = 200
+
+[[redirects]]
+  from = "/api/leer-enlace"
+  to = "/.netlify/functions/leer_enlace"
+  status = 200
