@@ -226,6 +226,25 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: cálculos legales determinísticos (no solo estimados por IA)** en Dividendos:
+  - **Valores oficiales agregados**: SBU por año (2021-2026, $400 a $482), franja exenta = 3 SBU
+    del año de la distribución, tarifas de retención (12% residente, 10% no residente general,
+    12% beneficiario efectivo residente, 14% paraíso fiscal), y la tabla progresiva oficial de
+    Impuesto a la Renta de Personas Naturales 2026 (Resolución NAC-DGERCGC25-00000043, tramos
+    de 0% a 35%), usada para estimar el pago a cuenta sobre utilidades no distribuidas (Art.
+    39.2.1 LRTI).
+  - **Escenarios**: la "Utilidad acumulada no distribuida" ahora se puede traer directamente del
+    Comparativo SRI/Súper Cías/Contable para el "Año de análisis" elegido (botón "↺ Traer del
+    Comparativo SRI"), y se agregó una tarjeta de referencia que muestra el **pago a cuenta
+    estimado** aplicando la tabla progresiva oficial sobre esa utilidad acumulada — este valor
+    también se envía a la IA como dato ya calculado.
+  - **Calculadora de retención por accionista(s) y periodo**: ahora tiene un selector de "Tipo
+    de beneficiario" (define la tarifa exacta), calcula en el propio navegador (no depende de
+    que la IA "adivine" el número) la franja exenta disponible por accionista, la base
+    imponible, la retención y el neto a pagar — todo visible en la tabla en pantalla, en tiempo
+    real. Estos valores exactos se le pasan a la IA como "cálculo ya hecho" para que redacte el
+    informe sobre ellos sin recalcularlos ni cambiarlos.
+
 - **Movido: "🧠 Recomendación de distribución con IA"** — pasó de "Trabajar con Resúmenes" a
   **"Distribución Accionistas Actuales"**. Ya no tiene la opción de "solo para un accionista"
   (ese filtro no existe en la nueva ubicación); ahora siempre calcula para todos los

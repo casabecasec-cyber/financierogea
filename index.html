@@ -194,6 +194,53 @@ const db = firebase.database();
 // Endpoint de la función serverless que llama a la IA (ver netlify/functions/analizar.js)
 const AI_ENDPOINT = "/api/analizar";
 
+/* --- Valores legales para cálculos de dividendos (Ecuador) ---
+   SBU por año (fuente: acuerdos ministeriales anuales). Si el año pedido no
+   está en la tabla, se usa el valor conocido más cercano (el más reciente).
+   Franja exenta de dividendos = 3 SBU del año de la distribución (Art. 39.2 LRTI). */
+const SBU_POR_ANIO = {2021:400, 2022:425, 2023:450, 2024:460, 2025:470, 2026:482};
+function sbuDelAnio(anio){
+  if(SBU_POR_ANIO[anio]) return SBU_POR_ANIO[anio];
+  const anios = Object.keys(SBU_POR_ANIO).map(Number).sort((a,b)=>a-b);
+  if(anio > anios[anios.length-1]) return SBU_POR_ANIO[anios[anios.length-1]];
+  if(anio < anios[0]) return SBU_POR_ANIO[anios[0]];
+  // año intermedio no listado: usa el más cercano hacia abajo
+  let masCercano = anios[0];
+  for(const a of anios){ if(a<=anio) masCercano = a; }
+  return SBU_POR_ANIO[masCercano];
+}
+function franjaExentaDelAnio(anio){ return sbuDelAnio(anio) * 3; }
+
+// Tabla progresiva de Impuesto a la Renta para Personas Naturales, año 2026
+// (Resolución NAC-DGERCGC25-00000043) — usada para estimar el "pago a cuenta
+// sobre utilidades no distribuidas" (Art. 39.2.1 LRTI), que se calcula con
+// esta misma tabla aplicada al saldo no distribuido. Se aplica tal cual para
+// 2026; para otros años es una aproximación de referencia.
+const TABLA_PROGRESIVA_IR_2026 = [
+  { desde: 0,       impuestoBase: 0,       tarifa: 0.00 },
+  { desde: 78527,   impuestoBase: 0,       tarifa: 0.05 },
+  { desde: 157053,  impuestoBase: 3926,    tarifa: 0.10 },
+  { desde: 314108,  impuestoBase: 19632,   tarifa: 0.15 },
+  { desde: 471193,  impuestoBase: 43195,   tarifa: 0.20 },
+  { desde: 628268,  impuestoBase: 74609,   tarifa: 0.25 },
+  { desde: 785321,  impuestoBase: 113873,  tarifa: 0.30 },
+  { desde: 942353,  impuestoBase: 160982,  tarifa: 0.35 },
+];
+function calcularImpuestoTablaProgresiva(monto){
+  monto = Number(monto)||0;
+  if(monto<=0) return 0;
+  let tramo = TABLA_PROGRESIVA_IR_2026[0];
+  for(const t of TABLA_PROGRESIVA_IR_2026){ if(monto >= t.desde) tramo = t; else break; }
+  return tramo.impuestoBase + (monto - tramo.desde) * tramo.tarifa;
+}
+const TARIFAS_RETENCION_DIVIDENDOS = {
+  residente: { label: "Persona natural residente en Ecuador", tarifa: 0.12 },
+  noResidenteGeneral: { label: "No residente (general)", tarifa: 0.10 },
+  beneficiarioEfectivoResidente: { label: "Beneficiario efectivo residente en Ecuador", tarifa: 0.12 },
+  paraisoFiscal: { label: "Paraíso fiscal + beneficiario efectivo residente en Ecuador", tarifa: 0.14 },
+};
+
+
 /* --- Tema claro/oscuro: se guarda la preferencia en este dispositivo/navegador --- */
 let temaActual = localStorage.getItem("tema_control_documental") || "oscuro";
 function aplicarTema(tema){
@@ -6422,17 +6469,25 @@ function pintarFormEscenario(){
   const hoyAnio = new Date().getFullYear();
   const pagosVigentes = pagos.filter(p => hoyAnio <= (p.anio+2));
 
-  // Auto-calcula la utilidad acumulada no distribuida (suma de todos los años en Resumen Dividendos)
-  const datosResumenDiv = datosDividendosCache.resumenDividendos.empresas[empresaEscenarioSeleccionada];
-  const utilidadAcumuladaAuto = datosDividendosCache.resumenDividendos.anios.reduce((s,a)=> s+(datosResumenDiv?.suman[a]||0), 0);
+  // Utilidad acumulada no distribuida: se trae del Comparativo SRI... para el
+  // "Año de análisis" elegido (mismo cálculo/datos que esa pestaña).
+  const filasComp = calcularFilasComparativo(empresaEscenarioSeleccionada);
+  const filaAnioAnalisis = filasComp.find(f=>f.anio===hoyAnio);
+  const utilidadAcumuladaAuto = filaAnioAnalisis ? (filaAnioAnalisis.acumuladoMostrado||0) : 0;
 
   cont.innerHTML = `
     <div class="card">
       <h3 style="margin-top:0;">${escapeHtml(nombreEmpresa)}</h3>
-      ${pagosVigentes.length ? `<p class="helpNote">Pago(s) a cuenta vigentes que se pueden compensar: ${pagosVigentes.map(p=>`$${Number(p.monto).toFixed(2)} (año ${p.anio}, plazo hasta ${p.anio+2})`).join("; ")}</p>` : `<p class="helpNote">No hay pagos a cuenta registrados como vigentes para esta empresa (regístralos abajo o en "Trabajar con Resúmenes").</p>`}
+      ${pagosVigentes.length ? `<p class="helpNote">Pago(s) a cuenta vigentes que se pueden compensar: ${pagosVigentes.map(p=>`$${Number(p.monto).toFixed(2)} (año ${p.anio}, plazo hasta ${p.anio+2})`).join("; ")}</p>` : `<p class="helpNote">No hay pagos a cuenta registrados como vigentes para esta empresa (regístralos en "Distribución Accionistas Actuales").</p>`}
       <div class="grid2">
         <div class="field"><label>Año de análisis</label><input type="number" id="escAnio" value="${hoyAnio}"></div>
-        <div class="field"><label>Utilidad acumulada no distribuida (USD) — auto-calculada, editable</label><input type="number" id="escUtilidad" value="${utilidadAcumuladaAuto.toFixed(2)}"></div>
+        <div class="field"><label>Utilidad acumulada no distribuida (USD)</label>
+          <div style="display:flex;gap:6px;">
+            <input type="number" id="escUtilidad" value="${utilidadAcumuladaAuto.toFixed(2)}" style="flex:1;">
+            <button class="btn small" onclick="actualizarUtilidadEscenarioDesdeComparativo()">↺ Traer del Comparativo SRI</button>
+          </div>
+          <p class="helpNote" style="margin-top:4px;">Toma la "Utilidad Acumulada" del Comparativo SRI/Súper Cías/Contable para esta empresa, en el año que pongas en "Año de análisis" — presiona el botón después de cambiar el año.</p>
+        </div>
       </div>
       <div class="grid2">
         <div class="field"><label>Monto de pago(s) a cuenta ya realizado (USD) — se auto-completa si hay registros, editable manualmente</label>
@@ -6444,6 +6499,10 @@ function pintarFormEscenario(){
       </div>
       <div class="field"><label>Retenciones ya realizadas por distribución de dividendos (USD) — disponibles para compensar el pago a cuenta dentro de los 2 ejercicios fiscales posteriores al pago (3 años en total)</label>
         <input type="number" id="escRetencionesRealizadas" value="0">
+      </div>
+      <div class="field" style="background:var(--panel2);border-radius:8px;padding:10px 12px;">
+        <b style="font-size:13px;">📐 Referencia: Pago a cuenta estimado según tabla progresiva (Art. 39.2.1 LRTI)</b>
+        <p class="helpNote" style="margin:6px 0 0;">Si al 31 de julio de <span id="refAnioTabla">${hoyAnio}</span> no se distribuye ni capitaliza, la utilidad acumulada de <b id="refMontoTabla">$${utilidadAcumuladaAuto.toFixed(2)}</b> generaría un anticipo estimado de <b id="refPagoTabla" style="color:var(--warn);">$${calcularImpuestoTablaProgresiva(utilidadAcumuladaAuto).toFixed(2)}</b>, aplicando la tabla progresiva de Impuesto a la Renta de Personas Naturales vigente (tramos de 0% a 35% según el monto). Este cálculo se actualiza al traer la utilidad acumulada.</p>
       </div>
       <div class="field"><label>Instrucciones adicionales (opcional)</label><textarea id="escInstrucciones" rows="2" placeholder="Ej. la empresa necesita mantener liquidez para un proyecto en 2027..."></textarea></div>
       <button class="btn primary" onclick="ejecutarGenerarEscenarios()">✨ Generar escenarios con IA</button>
@@ -6496,6 +6555,24 @@ function calcularCorrespondePorAccionista(modalidad, anio){
     });
 }
 
+let tipoBeneficiarioCalc = "residente";
+
+function calcularRetencionAccionista(a, anio){
+  const franja = franjaExentaDelAnio(anio);
+  const tarifa = TARIFAS_RETENCION_DIVIDENDOS[tipoBeneficiarioCalc].tarifa;
+  const franjaUsadaAnticipo = Math.min(franja, a.anticipoValor||0);
+  const franjaRestante = Math.max(0, franja - franjaUsadaAnticipo);
+  const baseImponible = Math.max(0, (a.valorPagar||0) - franjaRestante);
+  const retencion = baseImponible * tarifa;
+  const neto = (a.valorPagar||0) - retencion;
+  return { franja, franjaRestante, baseImponible, retencion, neto, tarifa };
+}
+
+function cambiarTipoBeneficiarioCalc(valor){
+  tipoBeneficiarioCalc = valor;
+  pintarListaAccionistasCalc();
+}
+
 function pintarListaAccionistasCalc(){
   const cont = document.getElementById("listaAccionistasCalc");
   if(!cont) return;
@@ -6515,6 +6592,7 @@ function pintarListaAccionistasCalc(){
     };
   });
   seleccionAccionistasCalc[empresaEscenarioSeleccionada] = lista;
+  const franjaDelAnio = franjaExentaDelAnio(anioRepartoCalc);
 
   const controlesHtml = `
     <div class="grid2" style="margin-bottom:10px;">
@@ -6530,22 +6608,34 @@ function pintarListaAccionistasCalc(){
         </select>
       </div>
     </div>
-    <p class="helpNote">"Le corresponde" se calcula automático según la modalidad elegida. "Valor a repartir" es editable — por defecto es igual a "le corresponde", pero puedes cambiarlo si vas a pagar solo una parte; la retención se calcula sobre este valor.</p>
+    <div class="field" style="margin-bottom:10px;"><label>Tipo de beneficiario (define la tarifa de retención)</label>
+      <select onchange="cambiarTipoBeneficiarioCalc(this.value)">
+        ${Object.keys(TARIFAS_RETENCION_DIVIDENDOS).map(k=>`<option value="${k}" ${tipoBeneficiarioCalc===k?'selected':''}>${TARIFAS_RETENCION_DIVIDENDOS[k].label} — ${(TARIFAS_RETENCION_DIVIDENDOS[k].tarifa*100).toFixed(0)}%</option>`).join("")}
+      </select>
+    </div>
+    <p class="helpNote">"Le corresponde" se calcula automático según la modalidad elegida. "Valor a repartir" es editable — por defecto es igual a "le corresponde", pero puedes cambiarlo si vas a pagar solo una parte; la retención se calcula sobre este valor, descontando primero la franja exenta disponible (3 SBU del año ${anioRepartoCalc} = <b>$${franjaDelAnio.toFixed(2)}</b>, menos lo ya consumido por anticipos) y aplicando la tarifa según el tipo de beneficiario elegido arriba.</p>
   `;
 
   if(!lista.length){ cont.innerHTML = controlesHtml + `<p style="color:var(--muted);">No hay accionistas para esta modalidad/año.</p>`; return; }
 
   cont.innerHTML = controlesHtml + `<table style="font-size:12px;"><thead><tr>
-      <th>Incluir</th><th>Accionista</th>${modalidadRepartoCalc==='actuales'?'<th>%</th>':''}<th>Le corresponde (auto)</th><th>Valor a repartir (editable)</th><th>Anticipo ya entregado</th>
+      <th>Incluir</th><th>Accionista</th>${modalidadRepartoCalc==='actuales'?'<th>%</th>':''}<th>Le corresponde (auto)</th><th>Valor a repartir (editable)</th><th>Anticipo ya entregado</th><th>Franja exenta disponible</th><th>Base imponible</th><th>Retención (${(TARIFAS_RETENCION_DIVIDENDOS[tipoBeneficiarioCalc].tarifa*100).toFixed(0)}%)</th><th>Neto a pagar</th>
     </tr></thead><tbody>
-    ${lista.map((a,idx) => `<tr>
+    ${lista.map((a,idx) => {
+      const calc = calcularRetencionAccionista(a, anioRepartoCalc);
+      return `<tr>
       <td><input type="checkbox" ${a.incluido?'checked':''} onchange="actualizarAccionistaCalc(${idx},'incluido',this.checked)"></td>
       <td>${escapeHtml(a.nombre)}</td>
       ${modalidadRepartoCalc==='actuales'?`<td>${a.porcentaje.toFixed(2)}%</td>`:''}
       <td>$${a.corresponde.toFixed(2)}</td>
       <td><input type="number" style="width:110px;" value="${a.valorPagar}" onchange="actualizarAccionistaCalc(${idx},'valorPagar',parseFloat(this.value)||0)"></td>
       <td><input type="number" style="width:110px;" value="${a.anticipoValor}" onchange="actualizarAccionistaCalc(${idx},'anticipoValor',parseFloat(this.value)||0)"></td>
-    </tr>`).join("")}
+      <td>$${calc.franjaRestante.toFixed(2)}</td>
+      <td>$${calc.baseImponible.toFixed(2)}</td>
+      <td style="font-weight:600;">$${calc.retencion.toFixed(2)}</td>
+      <td style="font-weight:600;color:var(--accent2);">$${calc.neto.toFixed(2)}</td>
+    </tr>`;
+    }).join("")}
   </tbody></table>`;
 }
 
@@ -6560,6 +6650,7 @@ function cambiarAnioRepartoCalc(valor){
 
 function actualizarAccionistaCalc(idx, campo, valor){
   seleccionAccionistasCalc[empresaEscenarioSeleccionada][idx][campo] = valor;
+  pintarListaAccionistasCalc();
 }
 
 async function ejecutarCalculoRetencionAccionistas(){
@@ -6568,10 +6659,13 @@ async function ejecutarCalculoRetencionAccionistas(){
   const seleccionados = (seleccionAccionistasCalc[empresaEscenarioSeleccionada]||[]).filter(a=>a.incluido && a.valorPagar>0);
   if(!seleccionados.length){ alert("Marca al menos un accionista (checklist 'Incluir') con un valor a repartir mayor a cero."); return; }
 
-  const textoAccionistas = seleccionados.map(a =>
-    `- ${a.nombre}: le corresponde $${a.corresponde.toFixed(2)} en total según ${modalidadRepartoCalc==='actuales'?'su % de participación actual sobre la utilidad acumulada':'lo registrado ese año'}. Valor que se desea repartir/pagar ahora: $${a.valorPagar.toFixed(2)}. ${a.anticipoValor>0 ? `Ya se le entregó un anticipo de $${a.anticipoValor.toFixed(2)} que debe restarse.` : "Sin anticipos entregados."}`
-  ).join("\n");
-  const contenido = `Empresa: ${nombreEmpresa}\nPeriodo: ${periodo}\nModalidad de reparto: ${modalidadRepartoCalc==='actuales'?'Accionistas actuales (dueños de toda la utilidad acumulada según % actual)':'Accionistas históricos de ese año'}\n\nAccionistas a calcular (usa el "valor a repartir" como base del cálculo de retención, no el "le corresponde"):\n${textoAccionistas}`;
+  const infoTarifa = TARIFAS_RETENCION_DIVIDENDOS[tipoBeneficiarioCalc];
+  const franjaDelAnio = franjaExentaDelAnio(anioRepartoCalc);
+  const textoAccionistas = seleccionados.map(a => {
+    const calc = calcularRetencionAccionista(a, anioRepartoCalc);
+    return `- ${a.nombre}: le corresponde $${a.corresponde.toFixed(2)} en total según ${modalidadRepartoCalc==='actuales'?'su % de participación actual sobre la utilidad acumulada':'lo registrado ese año'}. Valor que se desea repartir/pagar ahora: $${a.valorPagar.toFixed(2)}. ${a.anticipoValor>0 ? `Ya se le entregó un anticipo de $${a.anticipoValor.toFixed(2)} que debe restarse.` : "Sin anticipos entregados."}\n  CÁLCULO YA HECHO EN LA APP (usa estos valores tal cual en tu respuesta, no los recalcules): franja exenta disponible después del anticipo = $${calc.franjaRestante.toFixed(2)} (de una franja total de $${calc.franja.toFixed(2)} = 3 SBU del año ${anioRepartoCalc}), base imponible = $${calc.baseImponible.toFixed(2)}, tarifa aplicada = ${(calc.tarifa*100).toFixed(0)}% (${infoTarifa.label}), retención calculada = $${calc.retencion.toFixed(2)}, valor neto a pagar = $${calc.neto.toFixed(2)}.`;
+  }).join("\n");
+  const contenido = `Empresa: ${nombreEmpresa}\nPeriodo: ${periodo}\nModalidad de reparto: ${modalidadRepartoCalc==='actuales'?'Accionistas actuales (dueños de toda la utilidad acumulada según % actual)':'Accionistas históricos de ese año'}\nTipo de beneficiario: ${infoTarifa.label} (tarifa ${(infoTarifa.tarifa*100).toFixed(0)}%)\nFranja exenta total del año ${anioRepartoCalc} (3 SBU): $${franjaDelAnio.toFixed(2)}\n\nAccionistas a calcular (usa el "valor a repartir" como base del cálculo de retención, no el "le corresponde"; el CÁLCULO YA HECHO por la app es la fuente de verdad, no lo recalcules ni lo cambies, solo repítelo en el formato del informe):\n${textoAccionistas}`;
 
   const estadoEl = document.getElementById("estadoCalcRetencion");
   document.getElementById("resultadoCalcRetencion").innerHTML = "";
@@ -6635,6 +6729,23 @@ function imprimirInformeRetencionAccionistas(){
   win.print();
 }
 
+// Trae la "Utilidad Acumulada" del Comparativo SRI... para el año puesto en
+// "Año de análisis", y actualiza también la referencia de pago a cuenta
+// estimado con la tabla progresiva.
+function actualizarUtilidadEscenarioDesdeComparativo(){
+  const anio = parseInt(document.getElementById("escAnio").value, 10) || new Date().getFullYear();
+  const filasComp = calcularFilasComparativo(empresaEscenarioSeleccionada);
+  const fila = filasComp.find(f=>f.anio===anio);
+  const valor = fila ? (fila.acumuladoMostrado||0) : 0;
+  document.getElementById("escUtilidad").value = valor.toFixed(2);
+  const refAnio = document.getElementById("refAnioTabla");
+  const refMonto = document.getElementById("refMontoTabla");
+  const refPago = document.getElementById("refPagoTabla");
+  if(refAnio) refAnio.textContent = anio;
+  if(refMonto) refMonto.textContent = "$"+valor.toFixed(2);
+  if(refPago) refPago.textContent = "$"+calcularImpuestoTablaProgresiva(valor).toFixed(2);
+}
+
 async function ejecutarGenerarEscenarios(){
   const anio = document.getElementById("escAnio").value.trim();
   const utilidad = parseFloat(document.getElementById("escUtilidad").value)||0;
@@ -6653,8 +6764,9 @@ async function ejecutarGenerarEscenarios(){
   }).join("\n");
   const pagos = (datosDividendosCache.pagosACuenta||{})[empresaEscenarioSeleccionada] || [];
   const pagosTexto = pagos.length ? pagos.map(p=>`Pago a cuenta año ${p.anio}: $${Number(p.monto).toFixed(2)}, plazo de compensación hasta el cierre del ejercicio ${p.anio+2}`).join("\n") : "Sin pagos a cuenta registrados";
+  const pagoACuentaEstimadoTabla = calcularImpuestoTablaProgresiva(utilidad);
 
-  const contenido = `Empresa: ${nombreEmpresa}\nAño de análisis: ${anio}\nUtilidad acumulada no distribuida: USD $${utilidad.toFixed(2)}\nPago(s) a cuenta ya realizado (monto total relevante para esta decisión): USD $${pagoACuenta.toFixed(2)}\nDetalle de pagos a cuenta:\n${pagosTexto}\nAnticipos de dividendos ya pagados este año: USD $${anticipos.toFixed(2)}\nRetenciones ya realizadas por distribución de dividendos, disponibles para compensar el pago a cuenta (dentro de los 2 ejercicios fiscales posteriores al pago, 3 años en total contando el del pago): USD $${retencionesRealizadas.toFixed(2)}\nAccionistas y % de participación (según capital al año ${ultimoAnioCapital}):\n${accionistas}`;
+  const contenido = `Empresa: ${nombreEmpresa}\nAño de análisis: ${anio}\nUtilidad acumulada no distribuida: USD $${utilidad.toFixed(2)}\nPago(s) a cuenta ya realizado (monto total relevante para esta decisión): USD $${pagoACuenta.toFixed(2)}\nDetalle de pagos a cuenta:\n${pagosTexto}\nAnticipos de dividendos ya pagados este año: USD $${anticipos.toFixed(2)}\nRetenciones ya realizadas por distribución de dividendos, disponibles para compensar el pago a cuenta (dentro de los 2 ejercicios fiscales posteriores al pago, 3 años en total contando el del pago): USD $${retencionesRealizadas.toFixed(2)}\nPago a cuenta ESTIMADO si no se distribuye antes del 31 de julio (ya calculado con la tabla progresiva oficial de Impuesto a la Renta de Personas Naturales, aplicada sobre la utilidad acumulada no distribuida — usa este valor tal cual, no lo recalcules): USD $${pagoACuentaEstimadoTabla.toFixed(2)}\nAccionistas y % de participación (según capital al año ${ultimoAnioCapital}):\n${accionistas}`;
 
   const estadoEl = document.getElementById("estadoEscenarios");
   document.getElementById("resultadoEscenarios").innerHTML = "";
