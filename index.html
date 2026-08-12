@@ -6149,10 +6149,30 @@ async function recalcularHistorialDividendosDesdeComparativo(){
   const datosCapital = datosDividendosCache.resumenCapital.empresas[clave];
   const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
   if(!datosCapital || !datosResumen){ alert("Faltan datos de capital o de dividendos para esta empresa."); return; }
-  if(!confirm("Esto reemplaza, año por año, el valor de cada accionista en el Historial de Dividendos (usando Utilidad a Distribuir del Comparativo SRI × % de capital de ese año). Los montos de IMP. RENTA y A PAGAR no se tocan. ¿Continuar?")) return;
+  if(!confirm(`Esto reemplaza, año por año, el valor de cada accionista en el Historial de Dividendos.
 
-  const filasComparativo = calcularFilasComparativo(clave);
+Para cada año se usa el AUMENTO real de la Utilidad Acumulada de ese año respecto al anterior (no solo el campo "Utilidad a Distribuir") — así, si algún año no tiene "Utilidad a Distribuir" registrada pero el acumulado sí subió (por ejemplo, por un ajuste manual del acumulado), esa diferencia igual se reparte y el total siempre cuadra con la Utilidad Acumulada final.
+
+Si un año no tiene su propio dato de capital social, se usa el capital del año siguiente más cercano que sí tenga datos.
+
+Los montos de IMP. RENTA y A PAGAR no se tocan. ¿Continuar?`)) return;
+
+  const filasComparativo = calcularFilasComparativo(clave); // ya viene ordenado por año, con acumuladoMostrado encadenado
   const aniosCapitalLocal = datosDividendosCache.resumenCapital.anios;
+  // Unión de todos los años relevantes: los del Comparativo (que ya cubren
+  // 1992-año actual) y los que ya existan en el Historial de capital.
+  const todosLosAnios = Array.from(new Set([...aniosCapitalLocal, ...filasComparativo.map(f=>f.anio)])).sort((a,b)=>a-b);
+
+  // Busca el año más cercano (primero hacia adelante, luego hacia atrás si no
+  // hay ninguno) que sí tenga datos de capital social, para usar su % cuando
+  // el año en cuestión no tenga capital propio registrado.
+  function anioConCapitalMasCercano(anio){
+    if((datosCapital.suman[anio]||0) > 0) return anio;
+    const haciaAdelante = aniosCapitalLocal.filter(a=>a>=anio && (datosCapital.suman[a]||0)>0).sort((a,b)=>a-b);
+    if(haciaAdelante.length) return haciaAdelante[0];
+    const haciaAtras = aniosCapitalLocal.filter(a=>a<=anio && (datosCapital.suman[a]||0)>0).sort((a,b)=>b-a);
+    return haciaAtras.length ? haciaAtras[0] : null;
+  }
 
   // Unión de accionistas (capital + dividendos ya existentes), para no perder a nadie
   const nombresUnion = Array.from(new Set([
@@ -6173,16 +6193,27 @@ async function recalcularHistorialDividendosDesdeComparativo(){
   });
 
   const sumanNuevo = {};
-  for(const anio of aniosCapitalLocal){
+  let acumuladoAnterior = 0; // arranca en 0 (año 1991, igual que en el Comparativo)
+  for(const anio of todosLosAnios){
     const filaComp = filasComparativo.find(f=>f.anio===anio);
-    const utilidadDistribuirAnio = filaComp ? (filaComp.utilidadMostrada||0) : 0;
-    const totalCapitalAnio = datosCapital.suman[anio] || 0;
+    const acumuladoEsteAnio = filaComp ? (filaComp.acumuladoMostrado||0) : acumuladoAnterior;
+    // Monto EFECTIVO a repartir este año = cuánto subió el acumulado respecto
+    // al año anterior — esto captura tanto la "Utilidad a Distribuir" normal
+    // de ese año, como cualquier salto que venga de un ajuste manual del
+    // acumulado sin una "Utilidad a Distribuir" explícita ese mismo año.
+    const montoEfectivo = acumuladoEsteAnio - acumuladoAnterior;
+    acumuladoAnterior = acumuladoEsteAnio;
+
+    if(Math.abs(montoEfectivo) < 0.005){ sumanNuevo[anio] = 0; continue; }
+
+    const anioCapitalAUsar = anioConCapitalMasCercano(anio);
+    const totalCapitalAnio = anioCapitalAUsar!==null ? (datosCapital.suman[anioCapitalAUsar]||0) : 0;
     let sumaAnio = 0;
     filasNuevas.forEach(fn => {
-      const filaCap = datosCapital.filas.find(f=>f.accionista===fn.accionista);
-      const capitalAccionista = filaCap ? (filaCap.valores[anio]||0) : 0;
+      const filaCap = anioCapitalAUsar!==null ? datosCapital.filas.find(f=>f.accionista===fn.accionista) : null;
+      const capitalAccionista = filaCap ? (filaCap.valores[anioCapitalAUsar]||0) : 0;
       const porcentaje = totalCapitalAnio ? (capitalAccionista/totalCapitalAnio) : 0;
-      const valorAsignado = utilidadDistribuirAnio * porcentaje;
+      const valorAsignado = montoEfectivo * porcentaje;
       fn.valores[anio] = valorAsignado;
       sumaAnio += valorAsignado;
     });
@@ -6194,14 +6225,10 @@ async function recalcularHistorialDividendosDesdeComparativo(){
 
   datosResumen.filas = filasNuevas;
   datosResumen.suman = sumanNuevo;
-  if(!datosDividendosCache.resumenDividendos.anios.length){
-    datosDividendosCache.resumenDividendos.anios = [...aniosCapitalLocal];
-  } else {
-    datosDividendosCache.resumenDividendos.anios = Array.from(new Set([...datosDividendosCache.resumenDividendos.anios, ...aniosCapitalLocal])).sort((a,b)=>a-b);
-  }
+  datosDividendosCache.resumenDividendos.anios = todosLosAnios;
 
   await guardarDatosDividendos(datosDividendosCache);
-  await registrarCambio("Dividendos", "editar", `Historial de dividendos recalculado desde Comparativo SRI + % de capital: ${datosDividendosCache.porEmpresa[clave]?.nombreHoja||clave}`);
+  await registrarCambio("Dividendos", "editar", `Historial de dividendos recalculado desde Comparativo SRI + % de capital (con ajuste de saltos de acumulado): ${datosDividendosCache.porEmpresa[clave]?.nombreHoja||clave}`);
   pintarDetalleEmpresaDividendo();
 }
 

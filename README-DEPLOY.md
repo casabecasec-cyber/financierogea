@@ -226,6 +226,17 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido de raíz: el recálculo no cuadraba cuando había un año sin "Utilidad a Distribuir"
+  pero con salto en "Utilidad Acumulada"** — esto pasa, por ejemplo, cuando sobrescribiste
+  manualmente el acumulado de un año sin llenar la "Utilidad a Distribuir" de ese mismo año. El
+  botón "🔄 Recalcular desde Comparativo SRI + % de Capital" ahora usa el **aumento real del
+  acumulado entre un año y el anterior** (no solo el campo "Utilidad a Distribuir") como el
+  monto a repartir cada año — así cualquier salto, venga de donde venga, siempre se reparte y
+  el total del Historial de Dividendos cuadra exactamente con la Utilidad Acumulada final del
+  Comparativo SRI. Además, si un año no tiene su propio dato de capital social, automáticamente
+  usa el capital del año siguiente más cercano que sí tenga datos (en vez de repartir con 0%
+  para todos). Verificado con una simulación matemática antes de entregarlo.
+
 - **Nuevo: informe de diferencias entre Comparativo SRI y Historial de Dividendos** — botón
   "🔍 Ver informe de diferencias con Comparativo SRI" en "Trabajar con Resúmenes". Muestra, año
   por año, la "Utilidad a Distribuir" del Comparativo SRI contra la fila SUMAN del Historial de
