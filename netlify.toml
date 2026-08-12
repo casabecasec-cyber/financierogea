@@ -11,6 +11,7 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["firebase-admin"]
 
 [[redirects]]
   from = "/api/analizar"
@@ -20,4 +21,9 @@
 [[redirects]]
   from = "/api/leer-enlace"
   to = "/.netlify/functions/leer_enlace"
+  status = 200
+
+[[redirects]]
+  from = "/api/crear-usuario"
+  to = "/.netlify/functions/crear_usuario"
   status = 200

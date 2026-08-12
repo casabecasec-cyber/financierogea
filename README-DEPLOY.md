@@ -226,6 +226,57 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **🔴 Nuevo — requiere configuración manual: sistema de usuarios con roles (Administrador /
+  Solo lectura)** — ahora puedes crear usuarios adicionales para esta app, con dos roles:
+  - **Administrador**: acceso completo, igual que tu cuenta principal.
+  - **Solo lectura**: puede ver e imprimir/descargar todo, pero **no puede editar, guardar ni
+    eliminar nada** — la app bloquea esas acciones con un aviso claro, y además las reglas de
+    Firebase (ver abajo) lo rechazan del lado del servidor aunque alguien intentara saltarse la
+    app.
+  Todos los usuarios (principal, admin adicionales, solo lectura) ven **los mismos datos** de
+  la empresa — no se crean copias separadas por usuario.
+
+  ### Paso 1 — Agrega esta regla a Firebase Realtime Database
+  Sin esto, el sistema de roles no funciona. Entra a Firebase Console → tu proyecto → Realtime
+  Database → pestaña "Reglas", y agrega esta ruta al mismo nivel que tus demás rutas (junto a
+  `dividendos_data`, `actas_juntas`, etc., que ya caen bajo tu regla `$other` existente y no
+  necesitan cambios):
+  ```json
+  "roles_control_documental": {
+    "$uid": {
+      ".read": "auth.uid === $uid || auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3'",
+      ".write": "auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3'"
+    }
+  }
+  ```
+  Esto permite que cada usuario consulte su propio rol al iniciar sesión, y que solo tu cuenta
+  principal pueda asignar/cambiar roles directamente en la base de datos (la gestión normal de
+  usuarios la harás desde la nueva pantalla "👥 Administración de Usuarios" en la app, que usa
+  el servidor, no esta regla directamente — pero la regla debe existir de todas formas).
+
+  ### Paso 2 — Configura la cuenta de servicio de Firebase en Netlify
+  Crear/gestionar usuarios requiere el SDK de administración de Firebase, que corre en el
+  servidor (nunca en el navegador, por seguridad). Pasos:
+  1. Firebase Console → ⚙️ Configuración del proyecto → pestaña "Cuentas de servicio".
+  2. Botón "Generar nueva clave privada" → descarga un archivo `.json`.
+  3. Abre ese archivo y copia estos 3 valores.
+  4. En Netlify: tu sitio → Site configuration → Environment variables → agrega:
+     - `FIREBASE_PROJECT_ID` → el campo `project_id` del JSON
+     - `FIREBASE_CLIENT_EMAIL` → el campo `client_email` del JSON
+     - `FIREBASE_PRIVATE_KEY` → el campo `private_key` del JSON, **completo, con las comillas y
+       los `\n` tal cual aparecen** (no los reemplaces por saltos de línea reales)
+     - `FIREBASE_DATABASE_URL` → la URL de tu Realtime Database (ej.
+       `https://financierogea-ec95d-default-rtdb.firebaseio.com`)
+  5. Vuelve a desplegar el sitio (un nuevo commit/push ya lo hace automáticamente).
+
+  ### Paso 3 — Crea usuarios desde la app
+  Con tu cuenta principal, entra a **"👥 Administración de Usuarios"** (nuevo ítem en el menú,
+  solo visible para administradores) → completa correo, contraseña y rol → "Crear usuario". Ya
+  puedes compartirle esas credenciales a esa persona para que inicie sesión.
+
+  **Sin estos 2 pasos configurados, la pantalla de Administración de Usuarios mostrará un error
+  explicando qué falta** — el resto de la app sigue funcionando normal mientras tanto.
+
 - **Nuevo: enlaces a actas de junta realizadas anteriormente** — en "Actas de Junta", debajo de
   la lista de actas generadas en la app, nueva sección "🔗 Actas de junta realizadas
   anteriormente (enlaces)". Guarda ahí los enlaces (OneDrive, Google Drive, etc.) de actas que

@@ -31,6 +31,13 @@ input,select,textarea{font-family:inherit;background:var(--panel2);color:var(--t
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);}
 a{color:var(--accent);}
 .hidden{display:none !important;}
+.solo-admin{display:none !important;}
+body:not(.modo-lectura) .solo-admin{display:flex !important;}
+body.modo-lectura::before{
+  content:"👁️ MODO SOLO LECTURA — puedes ver e imprimir, no puedes editar ni eliminar";
+  display:block; position:sticky; top:0; z-index:999; background:var(--warn); color:#1a1a1a;
+  text-align:center; font-size:12px; font-weight:600; padding:5px;
+}
 
 /* LOGIN */
 #loginScreen{
@@ -163,6 +170,7 @@ tr:hover td{background:var(--panel2);}
     <button class="navBtn" data-view="cesiones" onclick="goTo('cesiones')">📜 Cesión de Acciones</button>
     <button class="navBtn" data-view="logcambios" onclick="goTo('logcambios')">📋 Historial de Cambios</button>
     <button class="navBtn" data-view="dividendos" onclick="goTo('dividendos')">💰 Dividendos</button>
+    <button class="navBtn solo-admin" data-view="usuarios" onclick="goTo('usuarios')">👥 Administración de Usuarios</button>
     <div id="userBox">
       Conectado como<br><b id="userEmailFoot">-</b>
       <button onclick="logout()">Cerrar sesión</button>
@@ -257,9 +265,18 @@ function cambiarTema(tema){
 }
 aplicarTema(temaActual);
 const LEER_ENLACE_ENDPOINT = "/api/leer-enlace";
+const CREAR_USUARIO_ENDPOINT = "/api/crear-usuario";
+
+// Todos los datos de la empresa viven bajo este uid fijo (el dueño original
+// de la cuenta) — sin importar con qué usuario secundario (admin o solo
+// lectura) se inicie sesión, todos ven y (si tienen permiso) editan los
+// MISMOS datos. "currentUser.uid" sigue usándose solo para saber QUIÉN inició
+// sesión (para el registro de cambios y para consultar su rol/permiso).
+const DATOS_UID = "s51EqDX0m9hWmo9C4Hy00dFqD0C3";
 
 let currentUser = null;
 let currentView = "dashboard";
+let usuarioRol = null; // 'admin' | 'lectura' — se determina al iniciar sesión
 let empresasCache = [];
 let empresaSeleccionadaId = null;
 let checklistModo = "mensual"; // 'mensual' | 'anual'
@@ -268,9 +285,12 @@ let checklistAnio = hoyInicial.getFullYear();
 let checklistMes = hoyInicial.getMonth()+1; // 1-12
 
 /* =========================================================================
-   AUTENTICACIÓN — solo inicio de sesión, sin creación de cuentas.
-   Esta app comparte la base de datos con CasaBecas; usa la misma cuenta
-   de administrador que ya tiene acceso configurado en las reglas.
+   AUTENTICACIÓN — inicio de sesión + control de acceso por rol.
+   Esta app comparte la base de datos con CasaBecas; el usuario dueño
+   original (DATOS_UID) siempre es "admin". Los usuarios adicionales que se
+   creen desde "Administración de Usuarios" quedan con rol "admin" o
+   "lectura" (guardado en la ruta "roles_control_documental/{uid}" de
+   Firebase) — si un usuario no tiene rol asignado ahí, no puede entrar.
    ========================================================================= */
 function submitAuth(){
   const email = document.getElementById("authEmail").value.trim();
@@ -294,18 +314,57 @@ function traducirErrorAuth(code){
 }
 function logout(){ auth.signOut(); }
 
-auth.onAuthStateChanged(user => {
+auth.onAuthStateChanged(async user => {
   currentUser = user;
   if(user){
+    // Determina el rol del usuario que inició sesión. El dueño original
+    // (DATOS_UID) siempre es admin; cualquier otro usuario necesita tener un
+    // rol asignado en "roles_control_documental/{uid}" o no se le deja entrar.
+    if(user.uid === DATOS_UID){
+      usuarioRol = "admin";
+    } else {
+      try{
+        const snap = await db.ref(`roles_control_documental/${user.uid}`).once("value");
+        usuarioRol = snap.val() || null;
+      }catch(e){ usuarioRol = null; }
+      if(!usuarioRol){
+        document.getElementById("loginError").textContent = "Tu usuario no tiene un rol asignado en esta app. Pide a un administrador que te lo asigne desde \"Administración de Usuarios\".";
+        auth.signOut();
+        return;
+      }
+    }
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("app").classList.add("show");
-    document.getElementById("userEmailFoot").textContent = user.email;
+    document.getElementById("userEmailFoot").textContent = user.email + (usuarioRol==="lectura" ? " (solo lectura)" : "");
+    document.body.classList.toggle("modo-lectura", usuarioRol==="lectura");
     cargarEmpresas().then(() => goTo("dashboard"));
   } else {
+    usuarioRol = null;
     document.getElementById("loginScreen").style.display = "flex";
     document.getElementById("app").classList.remove("show");
   }
 });
+
+// Bloqueo de acciones de escritura para usuarios con rol "lectura": intercepta
+// cualquier clic en un botón/enlace cuyo onclick llame a una función cuyo
+// nombre empiece con un verbo de escritura (guardar, eliminar, agregar,
+// crear, etc.) y lo cancela con un aviso — Firebase también lo rechazaría
+// (las reglas son la protección real), pero esto da un mensaje claro en vez
+// de un error críptico de permisos.
+const PATRON_FUNCION_ESCRITURA = /^(guardar|eliminar|agregar|crear|actualizar|confirmar|recalcular|sincronizar|editar|marcar|registrar|toggleFormaPago|toggleMetodoPago|cambiarMetodoPago)/i;
+document.addEventListener("click", function(e){
+  if(usuarioRol !== "lectura") return;
+  const btn = e.target.closest("button, a");
+  if(!btn) return;
+  const onclickAttr = btn.getAttribute("onclick") || "";
+  const match = onclickAttr.match(/^\s*(\w+)\(/);
+  if(match && PATRON_FUNCION_ESCRITURA.test(match[1])){
+    e.preventDefault();
+    e.stopPropagation();
+    alert("Tu usuario tiene permiso de solo lectura e impresión — no puedes editar, guardar ni eliminar en esta app.");
+  }
+}, true);
+
 
 /* =========================================================================
    NAVEGACIÓN
@@ -331,7 +390,8 @@ function goTo(view){
     actasjunta: renderActasJuntas,
     cesiones: renderCesiones,
     logcambios: renderLogCambios,
-    dividendos: renderDividendos
+    dividendos: renderDividendos,
+    usuarios: renderAdminUsuarios
   };
   (renderers[view] || renderDashboard)();
 }
@@ -595,7 +655,7 @@ function limpiarClave(s){
 }
 
 async function cargarEmpresas(){
-  const snap = await db.ref(`empresas/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`empresas/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   empresasCache = Object.keys(val).map(id => ({id, ...val[id]}));
   if(!empresaSeleccionadaId && empresasCache.length) empresaSeleccionadaId = empresasCache[0].id;
@@ -604,10 +664,10 @@ async function cargarEmpresas(){
 async function guardarEmpresa(datos, id){
   const payload = {...datos, actualizado: Date.now()};
   if(id){
-    await db.ref(`empresas/${currentUser.uid}/${id}`).update(payload);
+    await db.ref(`empresas/${DATOS_UID}/${id}`).update(payload);
   } else {
     payload.creado = Date.now();
-    const ref = db.ref(`empresas/${currentUser.uid}`).push();
+    const ref = db.ref(`empresas/${DATOS_UID}`).push();
     await ref.set(payload);
     id = ref.key;
   }
@@ -616,14 +676,14 @@ async function guardarEmpresa(datos, id){
 }
 
 async function eliminarEmpresa(id){
-  await db.ref(`empresas/${currentUser.uid}/${id}`).remove();
+  await db.ref(`empresas/${DATOS_UID}/${id}`).remove();
   if(empresaSeleccionadaId===id) empresaSeleccionadaId = null;
   await cargarEmpresas();
 }
 
 async function marcarChecklist(empresaId, periodoKey, cumplido, notas){
   const docId = limpiarClave(`${empresaId}_${periodoKey}`);
-  await db.ref(`checklist_estado/${currentUser.uid}/${docId}`).update({
+  await db.ref(`checklist_estado/${DATOS_UID}/${docId}`).update({
     empresaId, periodoKey, cumplido, notas: notas||"",
     fechaCumplido: cumplido ? Date.now() : null
   });
@@ -631,11 +691,11 @@ async function marcarChecklist(empresaId, periodoKey, cumplido, notas){
 
 async function actualizarObservacionChecklist(empresaId, periodoKey, notas){
   const docId = limpiarClave(`${empresaId}_${periodoKey}`);
-  await db.ref(`checklist_estado/${currentUser.uid}/${docId}`).update({ empresaId, periodoKey, notas: notas||"" });
+  await db.ref(`checklist_estado/${DATOS_UID}/${docId}`).update({ empresaId, periodoKey, notas: notas||"" });
 }
 
 async function obtenerEstadosChecklist(empresaId){
-  const snap = await db.ref(`checklist_estado/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`checklist_estado/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   const mapa = {};
   Object.values(val).forEach(v => { if(v.empresaId===empresaId) mapa[v.periodoKey] = v; });
@@ -643,7 +703,7 @@ async function obtenerEstadosChecklist(empresaId){
 }
 
 async function cargarTramites(tipo){
-  const snap = await db.ref(`tramites/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`tramites/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val)
     .map(id => ({id, ...val[id]}))
@@ -654,10 +714,10 @@ async function cargarTramites(tipo){
 async function guardarTramite(datos, id){
   const payload = {...datos, actualizado: Date.now()};
   if(id){
-    await db.ref(`tramites/${currentUser.uid}/${id}`).update(payload);
+    await db.ref(`tramites/${DATOS_UID}/${id}`).update(payload);
   } else {
     payload.creado = Date.now();
-    const ref = db.ref(`tramites/${currentUser.uid}`).push();
+    const ref = db.ref(`tramites/${DATOS_UID}`).push();
     await ref.set(payload);
     id = ref.key;
   }
@@ -665,12 +725,12 @@ async function guardarTramite(datos, id){
 }
 
 async function eliminarTramite(id){
-  await db.ref(`tramites/${currentUser.uid}/${id}`).remove();
+  await db.ref(`tramites/${DATOS_UID}/${id}`).remove();
 }
 
 /* --- Documentos de revisión: órdenes de compra, roles de pago, avalúos --- */
 async function cargarDocumentosRevision(categoria){
-  const snap = await db.ref(`documentos_revision/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`documentos_revision/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val)
     .map(id => ({id, ...val[id]}))
@@ -681,10 +741,10 @@ async function cargarDocumentosRevision(categoria){
 async function guardarDocumentoRevision(datos, id){
   const payload = {...datos, actualizado: Date.now()};
   if(id){
-    await db.ref(`documentos_revision/${currentUser.uid}/${id}`).update(payload);
+    await db.ref(`documentos_revision/${DATOS_UID}/${id}`).update(payload);
   } else {
     payload.creado = Date.now();
-    const ref = db.ref(`documentos_revision/${currentUser.uid}`).push();
+    const ref = db.ref(`documentos_revision/${DATOS_UID}`).push();
     await ref.set(payload);
     id = ref.key;
   }
@@ -692,12 +752,12 @@ async function guardarDocumentoRevision(datos, id){
 }
 
 async function eliminarDocumentoRevision(id){
-  await db.ref(`documentos_revision/${currentUser.uid}/${id}`).remove();
+  await db.ref(`documentos_revision/${DATOS_UID}/${id}`).remove();
 }
 
 /* --- Elaboración de Memos y Oficios --- */
 async function cargarDocumentosElaborados(tipo){
-  const snap = await db.ref(`documentos_elaborados/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`documentos_elaborados/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val)
     .map(id => ({id, ...val[id]}))
@@ -708,10 +768,10 @@ async function cargarDocumentosElaborados(tipo){
 async function guardarDocumentoElaborado(datos, id){
   const payload = {...datos, actualizado: Date.now()};
   if(id){
-    await db.ref(`documentos_elaborados/${currentUser.uid}/${id}`).update(payload);
+    await db.ref(`documentos_elaborados/${DATOS_UID}/${id}`).update(payload);
   } else {
     payload.creado = Date.now();
-    const ref = db.ref(`documentos_elaborados/${currentUser.uid}`).push();
+    const ref = db.ref(`documentos_elaborados/${DATOS_UID}`).push();
     await ref.set(payload);
     id = ref.key;
   }
@@ -719,7 +779,7 @@ async function guardarDocumentoElaborado(datos, id){
 }
 
 async function eliminarDocumentoElaborado(id){
-  await db.ref(`documentos_elaborados/${currentUser.uid}/${id}`).remove();
+  await db.ref(`documentos_elaborados/${DATOS_UID}/${id}`).remove();
 }
 
 // Asigna un número interno correlativo por año y tipo (MEMO-2026-0001, OFICIO-2026-0001,
@@ -731,7 +791,7 @@ const PREFIJOS_NUMERO = {
 };
 async function obtenerSiguienteNumeroDocumento(tipo){
   const anio = new Date().getFullYear();
-  const ref = db.ref(`contadores_documentos/${currentUser.uid}/${tipo}/${anio}`);
+  const ref = db.ref(`contadores_documentos/${DATOS_UID}/${tipo}/${anio}`);
   const resultado = await ref.transaction(actual => (actual || 0) + 1);
   const numero = resultado.snapshot.val();
   const prefijo = PREFIJOS_NUMERO[tipo] || tipo.toUpperCase();
@@ -740,7 +800,7 @@ async function obtenerSiguienteNumeroDocumento(tipo){
 
 /* --- Documentos Legales (pagarés, letras de cambio, contratos) --- */
 async function cargarDocumentosLegales(tipo){
-  const snap = await db.ref(`documentos_legales/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`documentos_legales/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val)
     .map(id => ({id, ...val[id]}))
@@ -750,222 +810,222 @@ async function cargarDocumentosLegales(tipo){
 async function guardarDocumentoLegal(datos, id){
   const payload = {...datos, actualizado: Date.now()};
   if(id){
-    await db.ref(`documentos_legales/${currentUser.uid}/${id}`).update(payload);
+    await db.ref(`documentos_legales/${DATOS_UID}/${id}`).update(payload);
   } else {
     payload.creado = Date.now();
-    const ref = db.ref(`documentos_legales/${currentUser.uid}`).push();
+    const ref = db.ref(`documentos_legales/${DATOS_UID}`).push();
     await ref.set(payload);
     id = ref.key;
   }
   return id;
 }
 async function eliminarDocumentoLegal(id){
-  await db.ref(`documentos_legales/${currentUser.uid}/${id}`).remove();
+  await db.ref(`documentos_legales/${DATOS_UID}/${id}`).remove();
 }
 
 /* --- Actas de Reunión --- */
 async function cargarActas(){
-  const snap = await db.ref(`actas_reunion/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`actas_reunion/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(b.creado||0)-(a.creado||0));
 }
 async function guardarActa(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`actas_reunion/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`actas_reunion/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`actas_reunion/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`actas_reunion/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarActa(id){ await db.ref(`actas_reunion/${currentUser.uid}/${id}`).remove(); }
+async function eliminarActa(id){ await db.ref(`actas_reunion/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Equipos de Trabajo --- */
 async function cargarEquipos(){
-  const snap = await db.ref(`equipos_trabajo/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`equipos_trabajo/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(b.creado||0)-(a.creado||0));
 }
 async function guardarEquipo(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`equipos_trabajo/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`equipos_trabajo/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`equipos_trabajo/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`equipos_trabajo/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarEquipo(id){ await db.ref(`equipos_trabajo/${currentUser.uid}/${id}`).remove(); }
+async function eliminarEquipo(id){ await db.ref(`equipos_trabajo/${DATOS_UID}/${id}`).remove(); }
 
 /* --- PDF pesados de soportes: guardados aparte para que editar/eliminar un
    punto no tenga que re-subir los PDF de todos los demás puntos cada vez. --- */
 async function guardarPdfSoporte(soporteId, base64){
-  await db.ref(`equipos_pdfs/${currentUser.uid}/${soporteId}`).set({ data: base64, guardado: Date.now() });
+  await db.ref(`equipos_pdfs/${DATOS_UID}/${soporteId}`).set({ data: base64, guardado: Date.now() });
 }
 async function cargarPdfSoporte(soporteId){
-  const snap = await db.ref(`equipos_pdfs/${currentUser.uid}/${soporteId}`).once("value");
+  const snap = await db.ref(`equipos_pdfs/${DATOS_UID}/${soporteId}`).once("value");
   const val = snap.val();
   return val ? val.data : null;
 }
 async function eliminarPdfSoporte(soporteId){
-  await db.ref(`equipos_pdfs/${currentUser.uid}/${soporteId}`).remove();
+  await db.ref(`equipos_pdfs/${DATOS_UID}/${soporteId}`).remove();
 }
 
 /* --- Cumpleaños de colaboradores --- */
 async function cargarColaboradores(){
-  const snap = await db.ref(`colaboradores/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`colaboradores/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
 }
 async function guardarColaborador(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`colaboradores/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`colaboradores/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`colaboradores/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`colaboradores/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarColaborador(id){ await db.ref(`colaboradores/${currentUser.uid}/${id}`).remove(); }
+async function eliminarColaborador(id){ await db.ref(`colaboradores/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Auditoría general --- */
 async function cargarAuditorias(){
-  const snap = await db.ref(`auditorias_generales/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`auditorias_generales/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(b.creado||0)-(a.creado||0));
 }
 async function guardarAuditoria(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`auditorias_generales/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`auditorias_generales/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`auditorias_generales/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`auditorias_generales/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarAuditoria(id){ await db.ref(`auditorias_generales/${currentUser.uid}/${id}`).remove(); }
+async function eliminarAuditoria(id){ await db.ref(`auditorias_generales/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Activos Fijos --- */
 async function cargarActivosFijos(empresaId){
-  const snap = await db.ref(`activos_fijos/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`activos_fijos/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   const todos = Object.keys(val).map(id => ({id, ...val[id]}));
   return empresaId ? todos.filter(a=>a.empresaId===empresaId) : todos;
 }
 async function guardarActivoFijo(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`activos_fijos/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`activos_fijos/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`activos_fijos/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`activos_fijos/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarActivoFijo(id){ await db.ref(`activos_fijos/${currentUser.uid}/${id}`).remove(); }
+async function eliminarActivoFijo(id){ await db.ref(`activos_fijos/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Área Bancaria --- */
 async function cargarBancos(empresaId){
-  const snap = await db.ref(`bancos_empresa/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`bancos_empresa/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   const todos = Object.keys(val).map(id => ({id, ...val[id]}));
   return empresaId ? todos.filter(b=>b.empresaId===empresaId) : todos;
 }
 async function guardarBanco(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`bancos_empresa/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`bancos_empresa/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`bancos_empresa/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`bancos_empresa/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarBanco(id){ await db.ref(`bancos_empresa/${currentUser.uid}/${id}`).remove(); }
+async function eliminarBanco(id){ await db.ref(`bancos_empresa/${DATOS_UID}/${id}`).remove(); }
 
 async function cargarFlujoCaja(empresaId){
-  const snap = await db.ref(`flujos_caja/${currentUser.uid}/${empresaId}`).once("value");
+  const snap = await db.ref(`flujos_caja/${DATOS_UID}/${empresaId}`).once("value");
   return snap.val();
 }
 async function guardarFlujoCaja(empresaId, datos){
-  await db.ref(`flujos_caja/${currentUser.uid}/${empresaId}`).set({...datos, actualizado: Date.now()});
+  await db.ref(`flujos_caja/${DATOS_UID}/${empresaId}`).set({...datos, actualizado: Date.now()});
 }
 
 /* --- Planificación de Vacaciones --- */
 async function cargarVacaciones(){
-  const snap = await db.ref(`vacaciones/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`vacaciones/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(a.fechaSalida||0)-(b.fechaSalida||0));
 }
 async function guardarVacacion(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`vacaciones/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`vacaciones/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`vacaciones/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`vacaciones/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarVacacion(id){ await db.ref(`vacaciones/${currentUser.uid}/${id}`).remove(); }
+async function eliminarVacacion(id){ await db.ref(`vacaciones/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Actas de Junta General (Ordinaria/Extraordinaria/Universal) --- */
 async function cargarActasJuntas(empresaId){
-  const snap = await db.ref(`actas_juntas/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`actas_juntas/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   const todas = Object.keys(val).map(id => ({id, ...val[id]}));
   return (empresaId ? todas.filter(a=>a.empresaId===empresaId) : todas).sort((a,b)=>(a.creado||0)-(b.creado||0));
 }
 async function guardarActaJunta(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`actas_juntas/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`actas_juntas/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`actas_juntas/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`actas_juntas/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarActaJunta(id){ await db.ref(`actas_juntas/${currentUser.uid}/${id}`).remove(); }
+async function eliminarActaJunta(id){ await db.ref(`actas_juntas/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Enlaces a actas de junta realizadas anteriormente (fuera de la app),
    guardados por empresa --- */
 async function cargarEnlacesActasAnteriores(empresaId){
-  const snap = await db.ref(`enlaces_actas_juntas/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`enlaces_actas_juntas/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   const todos = Object.keys(val).map(id => ({id, ...val[id]}));
   return (empresaId ? todos.filter(e=>e.empresaId===empresaId) : todos).sort((a,b)=>(a.creado||0)-(b.creado||0));
 }
 async function guardarEnlaceActaAnterior(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`enlaces_actas_juntas/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`enlaces_actas_juntas/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`enlaces_actas_juntas/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`enlaces_actas_juntas/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarEnlaceActaAnterior(id){ await db.ref(`enlaces_actas_juntas/${currentUser.uid}/${id}`).remove(); }
+async function eliminarEnlaceActaAnterior(id){ await db.ref(`enlaces_actas_juntas/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Cesión de Acciones/Participaciones --- */
 async function cargarCesiones(empresaId){
-  const snap = await db.ref(`cesiones_acciones/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`cesiones_acciones/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   const todas = Object.keys(val).map(id => ({id, ...val[id]}));
   return (empresaId ? todas.filter(c=>c.empresaId===empresaId) : todas).sort((a,b)=>(a.creado||0)-(b.creado||0));
 }
 async function guardarCesion(datos, id){
   const payload = {...datos, actualizado: Date.now()};
-  if(id){ await db.ref(`cesiones_acciones/${currentUser.uid}/${id}`).update(payload); }
-  else { payload.creado = Date.now(); const ref = db.ref(`cesiones_acciones/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  if(id){ await db.ref(`cesiones_acciones/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`cesiones_acciones/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
   return id;
 }
-async function eliminarCesion(id){ await db.ref(`cesiones_acciones/${currentUser.uid}/${id}`).remove(); }
+async function eliminarCesion(id){ await db.ref(`cesiones_acciones/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Auditoría de cambios: quién hizo qué y cuándo --- */
 async function registrarCambio(modulo, accion, detalle){
   try{
-    const ref = db.ref(`log_cambios/${currentUser.uid}`).push();
+    const ref = db.ref(`log_cambios/${DATOS_UID}`).push();
     await ref.set({ fecha: Date.now(), usuario: currentUser.email, modulo, accion, detalle: detalle||"" });
   }catch(e){ console.warn("No se pudo registrar el cambio en el log de auditoría", e); }
 }
 async function cargarLogCambios(){
-  const snap = await db.ref(`log_cambios/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`log_cambios/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(b.fecha||0)-(a.fecha||0));
 }
 
 /* --- Dividendos (importados desde Excel, editables) --- */
 async function cargarDatosDividendos(){
-  const snap = await db.ref(`dividendos_data/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`dividendos_data/${DATOS_UID}`).once("value");
   return snap.val();
 }
 async function guardarDatosDividendos(datos){
-  await db.ref(`dividendos_data/${currentUser.uid}`).set(datos);
+  await db.ref(`dividendos_data/${DATOS_UID}`).set(datos);
 }
 
 /* --- Historial de archivos de dividendos importados --- */
 async function cargarArchivosDividendos(){
-  const snap = await db.ref(`dividendos_archivos/${currentUser.uid}`).once("value");
+  const snap = await db.ref(`dividendos_archivos/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
   return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(b.fechaImportacion||0)-(a.fechaImportacion||0));
 }
 async function guardarArchivoDividendos(datos){
-  const ref = db.ref(`dividendos_archivos/${currentUser.uid}`).push();
+  const ref = db.ref(`dividendos_archivos/${DATOS_UID}`).push();
   await ref.set(datos);
   return ref.key;
 }
 async function eliminarArchivoDividendos(id){
-  await db.ref(`dividendos_archivos/${currentUser.uid}/${id}`).remove();
+  await db.ref(`dividendos_archivos/${DATOS_UID}/${id}`).remove();
 }
 
 /* --- Conversión de números a letras (para montos en documentos legales) --- */
@@ -4603,6 +4663,121 @@ function edadQueCumple(fechaNacTimestamp){
   const dias = diasHastaProximoCumpleanos(fechaNacTimestamp);
   const fechaCumple = new Date(Date.now()+dias*86400000);
   return fechaCumple.getFullYear() - nac.getFullYear();
+}
+
+/* =========================================================================
+   ADMINISTRACIÓN DE USUARIOS — crear usuarios con rol "admin" (acceso
+   completo) o "lectura" (solo ver/imprimir, sin editar ni eliminar). Solo
+   visible/accesible para usuarios con rol admin. La creación/gestión real
+   ocurre en el servidor (netlify/functions/crear_usuario.js) usando el SDK
+   de administración de Firebase, para no cerrar la sesión del admin actual.
+   ========================================================================= */
+async function renderAdminUsuarios(){
+  const main = document.getElementById("main");
+  if(usuarioRol !== "admin"){
+    main.innerHTML = `<div class="pageTitle"><div><h2>Administración de Usuarios</h2></div></div>
+      <div class="card emptyState">No tienes permisos para ver esta sección.</div>`;
+    return;
+  }
+  main.innerHTML = `
+    <div class="pageTitle"><div><h2>Administración de Usuarios</h2><p>Crea usuarios con acceso completo (admin) o de solo lectura/impresión, sin poder editar ni eliminar</p></div></div>
+    <div class="card">
+      <h3 style="margin-top:0;">+ Crear nuevo usuario</h3>
+      <div class="grid3">
+        <div class="field" style="margin:0;"><label>Correo</label><input type="email" id="nuevoUsuarioEmail" placeholder="correo@ejemplo.com"></div>
+        <div class="field" style="margin:0;"><label>Contraseña (mín. 6 caracteres)</label><input type="password" id="nuevoUsuarioPass"></div>
+        <div class="field" style="margin:0;"><label>Rol</label>
+          <select id="nuevoUsuarioRol">
+            <option value="lectura">Solo lectura (ver e imprimir)</option>
+            <option value="admin">Administrador (acceso completo)</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn primary" style="margin-top:8px;" onclick="ejecutarCrearUsuario()">Crear usuario</button>
+      <span id="estadoCrearUsuario" style="margin-left:10px;color:var(--muted);font-size:13px;"></span>
+    </div>
+    <div class="card" id="tablaUsuarios">Cargando...</div>
+  `;
+  pintarTablaUsuarios();
+}
+
+// Llama a la función serverless con el token de sesión del admin actual, para
+// que el servidor pueda verificar que quien pide la acción es realmente admin.
+async function llamarGestionUsuarios(payload){
+  const idToken = await currentUser.getIdToken();
+  const resp = await fetch(CREAR_USUARIO_ENDPOINT, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ idToken, ...payload })
+  });
+  const data = await resp.json();
+  if(!resp.ok || data.error){ throw new Error(data.error || "Error al gestionar usuarios."); }
+  return data;
+}
+
+async function pintarTablaUsuarios(){
+  const cont = document.getElementById("tablaUsuarios");
+  cont.innerHTML = `<h3 style="margin-top:0;">Usuarios con acceso</h3><p style="color:var(--muted);">Cargando...</p>`;
+  try{
+    const data = await llamarGestionUsuarios({ accion:"listar" });
+    const usuarios = data.usuarios || [];
+    cont.innerHTML = `<h3 style="margin-top:0;">Usuarios con acceso</h3>
+      <table><thead><tr><th>Correo</th><th>Rol</th><th></th></tr></thead><tbody>
+        <tr><td><b>(cuenta principal)</b></td><td><span class="pill ok">Administrador</span></td><td></td></tr>
+        ${usuarios.map(u => `<tr>
+          <td>${escapeHtml(u.email)}</td>
+          <td>
+            <select onchange="ejecutarCambiarRolUsuario('${u.uid}', this.value)">
+              <option value="lectura" ${u.rol==='lectura'?'selected':''}>Solo lectura</option>
+              <option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option>
+            </select>
+          </td>
+          <td><button class="btn small danger" onclick="ejecutarEliminarUsuario('${u.uid}','${escapeHtml(u.email)}')">Eliminar</button></td>
+        </tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted);">Sin usuarios adicionales creados todavía.</td></tr>`}
+      </tbody></table>`;
+  }catch(e){
+    cont.innerHTML = `<h3 style="margin-top:0;">Usuarios con acceso</h3>
+      <div class="emptyState" style="color:var(--danger);">No se pudo cargar: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;color:var(--muted);">Si el mensaje menciona variables de entorno, revisa la sección de configuración en el README-DEPLOY.md — falta configurar la cuenta de servicio de Firebase en Netlify.</span></div>`;
+  }
+}
+
+async function ejecutarCrearUsuario(){
+  const email = document.getElementById("nuevoUsuarioEmail").value.trim();
+  const password = document.getElementById("nuevoUsuarioPass").value;
+  const rol = document.getElementById("nuevoUsuarioRol").value;
+  if(!email || !password){ alert("Ingresa correo y contraseña."); return; }
+  const estadoEl = document.getElementById("estadoCrearUsuario");
+  estadoEl.innerHTML = `<span class="spinner"></span> Creando...`;
+  try{
+    await llamarGestionUsuarios({ accion:"crear", email, password, rol });
+    estadoEl.textContent = "Usuario creado.";
+    document.getElementById("nuevoUsuarioEmail").value = "";
+    document.getElementById("nuevoUsuarioPass").value = "";
+    pintarTablaUsuarios();
+  }catch(e){
+    estadoEl.textContent = "";
+    alert("No se pudo crear el usuario: " + e.message);
+  }
+}
+
+async function ejecutarCambiarRolUsuario(uid, rol){
+  try{
+    await llamarGestionUsuarios({ accion:"cambiarRol", uid, rol });
+    pintarTablaUsuarios();
+  }catch(e){
+    alert("No se pudo cambiar el rol: " + e.message);
+    pintarTablaUsuarios();
+  }
+}
+
+async function ejecutarEliminarUsuario(uid, email){
+  if(!confirm(`¿Eliminar el acceso de ${email}? Ya no podrá iniciar sesión.`)) return;
+  try{
+    await llamarGestionUsuarios({ accion:"eliminar", uid });
+    pintarTablaUsuarios();
+  }catch(e){
+    alert("No se pudo eliminar: " + e.message);
+  }
 }
 
 async function renderCumpleanos(){
