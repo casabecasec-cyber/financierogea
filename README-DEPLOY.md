@@ -274,12 +274,16 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
   solo visible para administradores) → completa correo, contraseña y rol → "Crear usuario". Ya
   puedes compartirle esas credenciales a esa persona para que inicie sesión.
 
-  **Actualización — encontrada la causa real del error 502**: `firebase-admin` tiene problemas
-  conocidos al empaquetarse con `esbuild` (el compilador rápido que usa Netlify por defecto) —
-  provoca que la función se caiga por completo en producción, sin poder ni siquiera devolver un
-  mensaje de error. Ya se corrigió: solo la función `crear_usuario` ahora usa el empaquetador
-  clásico de Netlify (`zisi`), mucho más confiable para paquetes complejos como este; las demás
-  funciones (`analizar`, `leer_enlace`) siguen igual que antes, sin cambios.
+  **Actualización — encontrada la causa raíz definitiva (con el log de build de Netlify)**: el
+  problema real no era solo el bundler — el **build completo estaba fallando** ("Cannot find
+  module 'firebase-admin'"), lo que significa que **ningún cambio se estaba publicando en
+  absoluto**, ni siquiera los que no tenían nada que ver con esto. Netlify explica en su propio
+  log: los `package.json` puestos DENTRO de la carpeta de una función no se instalan
+  automáticamente. La solución (recomendada por el propio mensaje de error de Netlify como "la
+  más rápida y segura"): se movió la dependencia `firebase-admin` del `package.json` que estaba
+  en `netlify/functions/` a uno nuevo en la **raíz del proyecto** (junto a `index.html` y
+  `netlify.toml`), que es donde Netlify sí la instala automáticamente antes de construir las
+  funciones. **Este es el archivo que faltaba subir junto con los demás.**
 
 - **Corregido: error en consola al navegar rápido desde el Dashboard** ("Cannot set properties
   of null, setting 'innerHTML'") — si el usuario cambiaba de pantalla mientras el Dashboard
