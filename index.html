@@ -7522,7 +7522,17 @@ function pintarDetalleDistribActual(){
 
     <div class="card">
       <h3 style="margin-top:0;">📌 Pago a cuenta sobre utilidades no distribuidas</h3>
-      <p class="helpNote">Registra aquí los pagos a cuenta que la empresa haya realizado (Art. 39.2.1 LRTI / Resolución NAC-DGERCGC26-00000026). Tienes hasta el cierre de los 2 ejercicios fiscales posteriores al pago (3 años en total contando el del pago) para compensarlo con retenciones de dividendos o con el impuesto a la renta — si no, se pierde el crédito. Todos los campos son editables y se pueden eliminar.</p>
+      <p class="helpNote">Registra aquí los pagos a cuenta que la empresa haya realizado (Art. 39.2.1 LRTI / Resolución NAC-DGERCGC26-00000026). Tienes hasta el cierre de los 2 ejercicios fiscales posteriores al pago (3 años en total contando el del pago) para compensarlo con retenciones de dividendos o con el impuesto a la renta — si no, se pierde el crédito. Todos los campos son editables y se pueden eliminar. Las filas marcadas "🔗 Auto (retención)" se generan solas desde la Calculadora de retención en Escenarios.</p>
+      <div class="field" style="background:var(--panel2);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+        <b style="font-size:13px;">📐 Dato informativo — Pago a cuenta estimado según tabla progresiva (Art. 39.2.1 LRTI)</b>
+        <p class="helpNote" style="margin:6px 0 0;">${(() => {
+          const filasCompRef = calcularFilasComparativo(empresaDistribActualSeleccionada);
+          const filaAnioRef = filasCompRef.find(f=>f.anio===anioActualCalendario);
+          const utilidadNoDistribuidaRef = filaAnioRef ? (filaAnioRef.acumuladoMostrado||0) : 0;
+          const estimadoRef = calcularImpuestoTablaProgresiva(utilidadNoDistribuidaRef);
+          return `Si al 31 de julio de ${anioActualCalendario} no se distribuye ni capitaliza, la Utilidad Acumulada actual de <b>$${utilidadNoDistribuidaRef.toFixed(2)}</b> (Comparativo SRI...) generaría un pago a cuenta estimado de <b style="color:var(--warn);">$${estimadoRef.toFixed(2)}</b>. Esto es solo una referencia (mismo cálculo que en Escenarios) — <b>no se registra automáticamente</b> como pago real; si efectivamente se paga, agrégalo abajo con "+ Registrar pago a cuenta".`;
+        })()}</p>
+      </div>
       <div id="listaPagosACuenta"></div>
       <div class="grid3">
         <div class="field"><label>Año del pago</label><input type="number" id="pacAnio" placeholder="Ej. 2025"></div>
@@ -7553,6 +7563,9 @@ function pintarDetalleDistribActual(){
       <button class="btn small" style="margin-left:8px;" onclick="guardarDistribActual()">💾 Guardar</button>
       <button class="btn small" style="margin-left:8px;" onclick="imprimirDistribucionActual()">🖨️ Imprimir / Descargar PDF</button>
       <span id="estadoDistribActual" style="margin-left:10px;color:var(--muted);font-size:13px;"></span>
+      ${datos.ultimoResultadoIA && datos.ultimoUtilidadTotalUsada!==undefined && Math.abs((datos.ultimoUtilidadTotalUsada||0)-(datos.utilidadTotal||0))>0.5 ? `
+      <p class="helpNote" style="background:rgba(239,90,90,.15);color:var(--danger);padding:8px 10px;border-radius:6px;margin-top:10px;">⚠️ Este resultado se calculó con una Utilidad Acumulada de $${(datos.ultimoUtilidadTotalUsada||0).toFixed(2)}, pero el campo de arriba ahora tiene $${(datos.utilidadTotal||0).toFixed(2)}. El resumen de abajo está desactualizado — presiona "✨ Calcular con IA" de nuevo para que coincida.</p>
+      ` : ''}
       <div id="resultadoDistribActual">${datos.ultimoResultadoIA ? renderResultadoDistribActual(datos.ultimoResultadoIA) : ''}</div>
     </div>
 
@@ -7629,7 +7642,7 @@ function recalcularPorcentajesDistribBtn(){
 async function actualizarUtilidadTotalDistrib(valor){
   const datos = datosDividendosCache.distribucionActual[empresaDistribActualSeleccionada];
   datos.utilidadTotal = parseFloat(valor)||0;
-  pintarTablaAccionistasDistrib();
+  pintarDetalleDistribActual();
 }
 
 // Trae la "Utilidad Acumulada" ya calculada en el Comparativo SRI/Súper
@@ -7644,10 +7657,8 @@ function traerUtilidadAcumuladaDeComparativo(clave){
   const valor = fila ? (fila.acumuladoMostrado||0) : 0;
   const datos = obtenerOInicializarDistribActual(clave);
   datos.utilidadTotal = valor;
-  const inputEl = document.getElementById("distribUtilidadTotal");
-  if(inputEl) inputEl.value = valor.toFixed(2);
+  pintarDetalleDistribActual();
   setSafeText("estadoTraerAcumulado", `Se trajo $${valor.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})} del año ${anioSel} (Comparativo SRI...). Presiona "💾 Guardar" para conservarlo.`);
-  pintarTablaAccionistasDistrib();
 }
 
 function actualizarAccionistaDistrib(idx, campo, valor){
@@ -7793,6 +7804,7 @@ async function ejecutarCalculoDistribActual(){
       }
     });
     datos.ultimoResultadoIA = resultado;
+    datos.ultimoUtilidadTotalUsada = datos.utilidadTotal;
     await guardarDatosDividendos(datosDividendosCache);
     await registrarCambio("Dividendos", "generar_ia", `Cálculo de distribución a accionistas actuales generado: ${nombreEmpresa}`);
     estadoEl.textContent = "Cálculo completo.";

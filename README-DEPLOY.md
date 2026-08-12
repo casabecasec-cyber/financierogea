@@ -226,6 +226,20 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: el resumen de IA en Distribución Actual no avisaba si la Utilidad Acumulada
+  había cambiado** — al traer un nuevo valor (con "↺ Traer valor de ese año" o editándolo a
+  mano), el resumen/detalle generado antes por la IA se quedaba mostrado en pantalla usando el
+  monto viejo, sin ninguna señal de que ya no correspondía. Ahora, si el campo "Utilidad
+  acumulada total a repartir" cambia después del último cálculo, aparece un aviso rojo claro
+  ("⚠️ Este resultado se calculó con una Utilidad Acumulada de $X, pero el campo de arriba
+  ahora tiene $Y") indicando que hay que volver a presionar "✨ Calcular con IA".
+- **Nuevo: dato informativo del pago a cuenta estimado en "Pago a cuenta sobre utilidades no
+  distribuidas"** (Distribución Actual) — una tarjeta que muestra, usando la Utilidad Acumulada
+  actual del Comparativo SRI y la tabla progresiva oficial (mismo cálculo que en Escenarios),
+  cuánto sería el pago a cuenta estimado si no se distribuye antes del 31 de julio. Es solo
+  informativo — no se registra automáticamente como un pago real (para eso sigue estando
+  "+ Registrar pago a cuenta"), evitando mezclar una proyección con un pago que sí ocurrió.
+
 - **Nuevo: los informes de retención se pueden volver a ver** — antes, el informe generado
   (individual + conjunto ejecutivo) solo se veía justo después de calcular, y desaparecía al
   cambiar de pestaña o recargar. Ahora, aunque ya se guarda el informe completo junto con cada
