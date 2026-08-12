@@ -226,6 +226,31 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: las retenciones calculadas ahora se guardan (editables y eliminables)** — en
+  Dividendos → Escenarios → Calculadora de retención, cada vez que presionas "✨ Calcular
+  retención y generar informes" el resultado se **guarda automáticamente** en una lista
+  "📋 Retenciones realizadas (guardadas)" debajo de la calculadora, con: año, periodo, fecha,
+  N° de accionistas, total pagado, total retenido, total neto, y forma de pago.
+  - **✏️ Editar**: carga esa retención de vuelta en el formulario (periodo, fecha, año,
+    modalidad, tipo de beneficiario, accionistas con sus montos) — al volver a calcular,
+    **actualiza el mismo registro** en vez de crear uno nuevo.
+  - **Eliminar**: quita el registro (y su efecto en el Comparativo SRI, ver abajo).
+- **Nuevo: columna "Utilidad Repartida" en el Comparativo SRI** — se llena sola con la suma de
+  las retenciones guardadas para cada año (no es editable ahí, se gestiona desde la
+  Calculadora). La fórmula de "Utilidad Acumulada" ahora es: acumulado anterior + Utilidad a
+  Distribuir − Utilidad Repartida — así que procesar una retención resta automáticamente ese
+  monto de la utilidad acumulada de la empresa, reflejando que ya se pagó y dejó de estar
+  retenida. Al eliminar una retención, esa resta se revierte sola.
+- **Nuevo: forma de pago en "Pago a cuenta sobre utilidades no distribuidas"** (Distribución
+  Accionistas Actuales) y también en cada retención guardada — botón "💳 Pago" que despliega un
+  panel con dos opciones:
+  - **Pago bancario**: agrega uno o varios pagos (cheque o transferencia), cada uno con monto,
+    referencia/N° y fecha — se pueden ir sumando hasta completar el total; se puede seguir
+    agregando más en cualquier momento.
+  - **Envío a cuentas por pagar**: un monto que se va **acumulando** cada vez que agregas una
+    cuenta por pagar nueva (para cuando el pago se divide en varias partes o hay varias cuentas
+    pendientes con el tiempo).
+
 - **Nuevo: campo "Fecha de retención" en la Calculadora de retención** (Dividendos →
   Escenarios) — junto al campo de "Etiqueta del periodo", ahora hay un selector de fecha
   específica (la fecha del acta/pago). Es opcional; si la llenas, aparece en el informe en
