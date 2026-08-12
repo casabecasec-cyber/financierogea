@@ -211,27 +211,29 @@ function sbuDelAnio(anio){
 }
 function franjaExentaDelAnio(anio){ return sbuDelAnio(anio) * 3; }
 
-// Tabla progresiva de Impuesto a la Renta para Personas Naturales, año 2026
-// (Resolución NAC-DGERCGC25-00000043) — usada para estimar el "pago a cuenta
-// sobre utilidades no distribuidas" (Art. 39.2.1 LRTI), que se calcula con
-// esta misma tabla aplicada al saldo no distribuido. Se aplica tal cual para
-// 2026; para otros años es una aproximación de referencia.
-const TABLA_PROGRESIVA_IR_2026 = [
-  { desde: 0,       impuestoBase: 0,       tarifa: 0.00 },
-  { desde: 78527,   impuestoBase: 0,       tarifa: 0.05 },
-  { desde: 157053,  impuestoBase: 3926,    tarifa: 0.10 },
-  { desde: 314108,  impuestoBase: 19632,   tarifa: 0.15 },
-  { desde: 471193,  impuestoBase: 43195,   tarifa: 0.20 },
-  { desde: 628268,  impuestoBase: 74609,   tarifa: 0.25 },
-  { desde: 785321,  impuestoBase: 113873,  tarifa: 0.30 },
-  { desde: 942353,  impuestoBase: 160982,  tarifa: 0.35 },
+// Tabla de TARIFA ÚNICA para el "pago a cuenta sobre utilidades no
+// distribuidas" (Art. 39.2.1 LRTI, Ley Orgánica de Transparencia Social,
+// vigente desde el ejercicio 2025/2026). IMPORTANTE: NO es la tabla
+// progresiva de Impuesto a la Renta de Personas Naturales (esa es para otra
+// cosa) y NO es marginal por tramos como el IR — es una tarifa ÚNICA que se
+// aplica sobre el 100% del saldo acumulado no distribuido, según en qué
+// tramo cae ese saldo completo (ej. si el saldo es $300,000, cae en el
+// tramo 2 y se aplica 0.75% a los $300,000 completos, no solo al exceso
+// sobre $100,000).
+const TABLA_PAGO_A_CUENTA_39_2_1 = [
+  { desde: 0,           tarifa: 0.0000 },
+  { desde: 100000.01,   tarifa: 0.0075 },
+  { desde: 1000000.01,  tarifa: 0.0125 },
+  { desde: 10000000.01, tarifa: 0.0175 },
+  { desde: 100000000.01,tarifa: 0.0225 },
+  { desde: 500000000.01,tarifa: 0.0250 },
 ];
-function calcularImpuestoTablaProgresiva(monto){
+function calcularPagoACuentaTarifaUnica(monto){
   monto = Number(monto)||0;
   if(monto<=0) return 0;
-  let tramo = TABLA_PROGRESIVA_IR_2026[0];
-  for(const t of TABLA_PROGRESIVA_IR_2026){ if(monto >= t.desde) tramo = t; else break; }
-  return tramo.impuestoBase + (monto - tramo.desde) * tramo.tarifa;
+  let tarifa = TABLA_PAGO_A_CUENTA_39_2_1[0].tarifa;
+  for(const t of TABLA_PAGO_A_CUENTA_39_2_1){ if(monto >= t.desde) tarifa = t.tarifa; else break; }
+  return monto * tarifa;
 }
 const TARIFAS_RETENCION_DIVIDENDOS = {
   residente: { label: "Persona natural residente en Ecuador", tarifa: 0.12 },
@@ -6579,20 +6581,24 @@ function pintarListaPagosACuenta(){
   if(!cont) return;
   const clave = empresaDistribActualSeleccionada;
   const pagos = (datosDividendosCache.pagosACuenta||{})[clave] || [];
-  if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta registrados.</p>`; return; }
+  if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta registrados.</p>`; pintarSaldoCreditoTributario(); return; }
   const hoyAnio = new Date().getFullYear();
-  cont.innerHTML = `<table><thead><tr><th>Origen</th><th>Año del pago</th><th>Monto</th><th>Plazo para compensar (hasta cierre de)</th><th>Estado</th><th>Observación</th><th>Forma de pago</th><th></th></tr></thead><tbody>
+  cont.innerHTML = `<table><thead><tr><th>Origen</th><th>Año del pago</th><th>Monto</th><th>Compensado/usado</th><th>Saldo disponible</th><th>Plazo (hasta cierre de)</th><th>Estado</th><th>Observación</th><th>Forma de pago</th><th></th></tr></thead><tbody>
     ${pagos.map((p, idx) => {
       const anioLimite = p.anio + 2;
       const vencido = hoyAnio > anioLimite;
       const porVencer = !vencido && (anioLimite - hoyAnio) <= 1;
       const esAutoDesdeRetencion = !!p.retencionId;
+      const compensado = p.montoCompensado||0;
+      const saldoDisponible = Math.max(0, (p.monto||0) - compensado);
       return `<tr>
-        <td>${esAutoDesdeRetencion ? '<span class="pill ok">🔗 Auto (retención)</span>' : '<span class="pill muted">Manual</span>'}</td>
+        <td>${esAutoDesdeRetencion ? '<span class="pill ok">🔗 Auto (retención)</span>' : '<span class="pill muted">Manual (Art. 39.2.1)</span>'}</td>
         <td><input type="number" style="width:80px;" value="${p.anio}" ${esAutoDesdeRetencion?'disabled title="Se edita desde la retención en Escenarios"':''} onchange="editarPagoACuenta(${idx},'anio',this.value)"></td>
         <td><input type="number" style="width:100px;" value="${p.monto}" ${esAutoDesdeRetencion?'disabled title="Se edita desde la retención en Escenarios"':''} onchange="editarPagoACuenta(${idx},'monto',this.value)"></td>
-        <td>Ejercicio ${anioLimite}</td>
-        <td>${vencido?'<span class="pill danger">Crédito perdido</span>':(porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>')}</td>
+        <td>${esAutoDesdeRetencion ? '<span style="color:var(--muted);">N/A</span>' : `<input type="number" style="width:100px;" value="${compensado}" onchange="editarPagoACuenta(${idx},'montoCompensado',this.value)">`}</td>
+        <td>${esAutoDesdeRetencion ? '<span style="color:var(--muted);">N/A</span>' : `$${saldoDisponible.toFixed(2)}`}</td>
+        <td>${esAutoDesdeRetencion ? '<span style="color:var(--muted);">No aplica (ya es retención final, no genera crédito con vencimiento)</span>' : `Ejercicio ${anioLimite}`}</td>
+        <td>${esAutoDesdeRetencion ? '<span class="pill muted">—</span>' : (vencido?'<span class="pill danger">Crédito perdido</span>':(porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>'))}</td>
         <td><input type="text" style="width:160px;" value="${escapeHtml(p.observacion||'')}" ${esAutoDesdeRetencion?'disabled':''} onchange="editarPagoACuenta(${idx},'observacion',this.value)"></td>
         <td>${badgeFormaPagoACuenta(p)}</td>
         <td>
@@ -6600,8 +6606,48 @@ function pintarListaPagosACuenta(){
           ${esAutoDesdeRetencion ? '<span style="font-size:11px;color:var(--muted);display:block;">Elimínala desde la retención en Escenarios</span>' : `<button class="btn small danger" onclick="eliminarPagoACuenta(${idx})">Eliminar</button>`}
         </td>
       </tr>
-      <tr id="filaFormaPagoACuenta_${idx}" class="hidden"><td colspan="8"></td></tr>`;
+      <tr id="filaFormaPagoACuenta_${idx}" class="hidden"><td colspan="10"></td></tr>`;
     }).join("")}
+  </tbody></table>`;
+  pintarSaldoCreditoTributario();
+}
+
+// Muestra el saldo de crédito tributario del pago a cuenta (Art. 39.2.1),
+// por año y acumulado. Solo considera pagos a cuenta REALES (manuales) — las
+// filas auto-generadas desde retenciones NO generan este tipo de crédito
+// (son retención final ya consumada sobre una distribución, no un anticipo
+// por utilidades no distribuidas), así que se excluyen de este cálculo.
+function pintarSaldoCreditoTributario(){
+  const cont = document.getElementById("saldoCreditoTributario");
+  if(!cont) return;
+  const clave = empresaDistribActualSeleccionada;
+  const pagos = ((datosDividendosCache.pagosACuenta||{})[clave] || []).filter(p=>!p.retencionId);
+  if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta (Art. 39.2.1) registrados todavía.</p>`; return; }
+  const hoyAnio = new Date().getFullYear();
+  let totalDisponible = 0;
+  const filas = pagos.slice().sort((a,b)=>a.anio-b.anio).map(p => {
+    const anioLimite = p.anio + 2;
+    const vencido = hoyAnio > anioLimite;
+    const porVencer = !vencido && (anioLimite - hoyAnio) <= 1;
+    const compensado = p.montoCompensado||0;
+    const saldo = Math.max(0, (p.monto||0) - compensado);
+    if(!vencido) totalDisponible += saldo;
+    return { anio:p.anio, monto:p.monto||0, compensado, saldo, anioLimite, vencido, porVencer };
+  });
+  cont.innerHTML = `<table style="font-size:12px;"><thead><tr><th>Año del pago</th><th>Monto pagado</th><th>Compensado</th><th>Saldo disponible</th><th>Vence en</th><th>Estado</th></tr></thead><tbody>
+    ${filas.map(f => `<tr style="${f.vencido?'opacity:.55;':''}">
+      <td>${f.anio}</td>
+      <td>$${f.monto.toFixed(2)}</td>
+      <td>$${f.compensado.toFixed(2)}</td>
+      <td style="font-weight:600;">$${f.saldo.toFixed(2)}</td>
+      <td>Ejercicio ${f.anioLimite}</td>
+      <td>${f.vencido?'<span class="pill danger">Crédito perdido</span>':(f.porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>')}</td>
+    </tr>`).join("")}
+    <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);">
+      <td colspan="3">SALDO DE CRÉDITO TRIBUTARIO DISPONIBLE (acumulado, no vencido)</td>
+      <td style="color:var(--accent2);font-size:14px;">$${totalDisponible.toFixed(2)}</td>
+      <td colspan="2"></td>
+    </tr>
   </tbody></table>`;
 }
 
@@ -6736,11 +6782,78 @@ async function agregarPagoACuenta(){
   if(!anio || !monto){ alert("Ingresa el año y el monto del pago."); return; }
   if(!datosDividendosCache.pagosACuenta) datosDividendosCache.pagosACuenta = {};
   if(!datosDividendosCache.pagosACuenta[clave]) datosDividendosCache.pagosACuenta[clave] = [];
-  datosDividendosCache.pagosACuenta[clave].push({ anio, monto, observacion, metodoPago:null, pagosBanco:[], cuentasPorPagarAcumulado:0 });
+  datosDividendosCache.pagosACuenta[clave].push({ anio, monto, observacion, metodoPago:null, pagosBanco:[], cuentasPorPagarAcumulado:0, montoCompensado:0 });
   await guardarDatosDividendos(datosDividendosCache);
   await registrarCambio("Dividendos", "editar", `Pago a cuenta registrado: ${datosDividendosCache.porEmpresa[clave]?.nombreHoja||''} año ${anio}, $${monto.toFixed(2)}`);
   document.getElementById("pacAnio").value=""; document.getElementById("pacMonto").value=""; document.getElementById("pacObs").value="";
   pintarListaPagosACuenta();
+}
+
+/* --- Anticipos de dividendos pagados, desglosados por año. Se llenan solos
+   desde las retenciones guardadas (agrupadas por año) y también admiten
+   entradas manuales, para anticipos que no pasaron por la Calculadora de
+   retención. Sirve de contexto para Escenarios y para llevar control
+   histórico de lo ya pagado, empezando desde el primer año que corresponda. --- */
+function pintarListaAnticiposDividendos(){
+  const cont = document.getElementById("listaAnticiposDividendos");
+  if(!cont) return;
+  const clave = empresaEscenarioSeleccionada;
+  const lista = ((datosDividendosCache.anticiposDividendos||{})[clave]||[]).slice().sort((a,b)=>a.anio-b.anio);
+  if(!lista.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin anticipos registrados.</p>`; return; }
+  const total = lista.reduce((s,a)=>s+(a.monto||0),0);
+  cont.innerHTML = `<table style="font-size:12px;"><thead><tr><th>Año</th><th>Monto</th><th>Origen</th><th>Observación</th><th></th></tr></thead><tbody>
+    ${lista.map((a,idx) => {
+      const esAuto = !!a.retencionId;
+      return `<tr>
+        <td>${a.anio}</td>
+        <td>${esAuto ? `$${Number(a.monto).toFixed(2)}` : `<input type="number" style="width:100px;" value="${a.monto}" onchange="editarAnticipoDividendo(${idx},'monto',this.value)">`}</td>
+        <td>${esAuto ? '<span class="pill ok">🔗 Auto (retención)</span>' : '<span class="pill muted">Manual</span>'}</td>
+        <td>${esAuto ? escapeHtml(a.observacion||'') : `<input type="text" style="width:160px;" value="${escapeHtml(a.observacion||'')}" onchange="editarAnticipoDividendo(${idx},'observacion',this.value)">`}</td>
+        <td>${esAuto ? '<span style="font-size:11px;color:var(--muted);">Ver en retenciones</span>' : `<button class="btn small danger" onclick="eliminarAnticipoDividendo(${idx})">Eliminar</button>`}</td>
+      </tr>`;
+    }).join("")}
+    <tr style="font-weight:bold;background:var(--panel2);"><td>TOTAL</td><td>$${total.toFixed(2)}</td><td colspan="3"></td></tr>
+  </tbody></table>`;
+}
+
+async function agregarAnticipoDividendoManual(){
+  const clave = empresaEscenarioSeleccionada;
+  const anio = parseInt(document.getElementById("antAnio").value, 10);
+  const monto = parseFloat(document.getElementById("antMonto").value)||0;
+  const observacion = document.getElementById("antObs").value.trim();
+  if(!anio || !monto){ alert("Ingresa el año y el monto del anticipo."); return; }
+  if(!datosDividendosCache.anticiposDividendos) datosDividendosCache.anticiposDividendos = {};
+  if(!datosDividendosCache.anticiposDividendos[clave]) datosDividendosCache.anticiposDividendos[clave] = [];
+  datosDividendosCache.anticiposDividendos[clave].push({ anio, monto, observacion, retencionId:null });
+  await guardarDatosDividendos(datosDividendosCache);
+  document.getElementById("antAnio").value=""; document.getElementById("antMonto").value=""; document.getElementById("antObs").value="";
+  pintarListaAnticiposDividendos();
+}
+
+async function editarAnticipoDividendo(idx, campo, valor){
+  const clave = empresaEscenarioSeleccionada;
+  const lista = (datosDividendosCache.anticiposDividendos||{})[clave];
+  if(!lista || !lista[idx] || lista[idx].retencionId) return;
+  lista[idx][campo] = campo==="observacion" ? valor : (parseFloat(valor)||0);
+  await guardarDatosDividendos(datosDividendosCache);
+  pintarListaAnticiposDividendos();
+}
+
+async function eliminarAnticipoDividendo(idx){
+  const clave = empresaEscenarioSeleccionada;
+  const lista = (datosDividendosCache.anticiposDividendos||{})[clave];
+  if(!lista || !lista[idx] || lista[idx].retencionId) return;
+  if(!confirm("¿Eliminar este anticipo?")) return;
+  lista.splice(idx,1);
+  await guardarDatosDividendos(datosDividendosCache);
+  pintarListaAnticiposDividendos();
+}
+
+// Suma los anticipos (auto + manuales) de un año específico — se usa para
+// pasarle el dato a la IA en Escenarios ("Anticipos ya pagados este año").
+function calcularAnticiposDelAnio(clave, anio){
+  const lista = (datosDividendosCache.anticiposDividendos||{})[clave] || [];
+  return lista.filter(a=>a.anio===anio).reduce((s,a)=>s+(a.monto||0),0);
 }
 
 async function editarPagoACuenta(idx, campo, valor){
@@ -6820,20 +6933,27 @@ function pintarFormEscenario(){
           <p class="helpNote" style="margin-top:4px;">Toma la "Utilidad Acumulada" del Comparativo SRI/Súper Cías/Contable para esta empresa, en el año que pongas en "Año de análisis" — presiona el botón después de cambiar el año.</p>
         </div>
       </div>
-      <div class="grid2">
-        <div class="field"><label>Monto de pago(s) a cuenta ya realizado (USD) — se auto-completa si hay registros, editable manualmente</label>
-          <input type="number" id="escPagoACuenta" value="${pagosVigentes.reduce((s,p)=>s+Number(p.monto||0),0).toFixed(2)}">
+      <div class="field">
+        <label>Monto de pago(s) a cuenta ya realizado (USD) — se auto-completa si hay registros, editable manualmente</label>
+        <input type="number" id="escPagoACuenta" value="${pagosVigentes.reduce((s,p)=>s+Number(p.monto||0),0).toFixed(2)}">
+      </div>
+      <div class="field">
+        <label>📆 Anticipos de dividendos pagados por año</label>
+        <p class="helpNote">Se llenan solos con el total pagado de cada retención guardada en la Calculadora de retención (más abajo), agrupado por año — también puedes agregar entradas manuales para anticipos que no pasaron por la calculadora.</p>
+        <div id="listaAnticiposDividendos"></div>
+        <div class="grid3">
+          <div class="field" style="margin:0;"><label>Año</label><input type="number" id="antAnio" placeholder="Ej. 2025"></div>
+          <div class="field" style="margin:0;"><label>Monto (USD)</label><input type="number" id="antMonto"></div>
+          <div class="field" style="margin:0;"><label>Observación (opcional)</label><input type="text" id="antObs"></div>
         </div>
-        <div class="field"><label>Anticipos de dividendos ya pagados este año (USD, manual)</label>
-          <input type="number" id="escAnticipos" value="0">
-        </div>
+        <button class="btn small" onclick="agregarAnticipoDividendoManual()">+ Agregar anticipo</button>
       </div>
       <div class="field"><label>Retenciones ya realizadas por distribución de dividendos (USD) — disponibles para compensar el pago a cuenta dentro de los 2 ejercicios fiscales posteriores al pago (3 años en total)</label>
         <input type="number" id="escRetencionesRealizadas" value="0">
       </div>
       <div class="field" style="background:var(--panel2);border-radius:8px;padding:10px 12px;">
         <b style="font-size:13px;">📐 Referencia: Pago a cuenta estimado según tabla progresiva (Art. 39.2.1 LRTI)</b>
-        <p class="helpNote" style="margin:6px 0 0;">Si al 31 de julio de <span id="refAnioTabla">${hoyAnio}</span> no se distribuye ni capitaliza, la utilidad acumulada de <b id="refMontoTabla">$${utilidadAcumuladaAuto.toFixed(2)}</b> generaría un anticipo estimado de <b id="refPagoTabla" style="color:var(--warn);">$${calcularImpuestoTablaProgresiva(utilidadAcumuladaAuto).toFixed(2)}</b>, aplicando la tabla progresiva de Impuesto a la Renta de Personas Naturales vigente (tramos de 0% a 35% según el monto). Este cálculo se actualiza al traer la utilidad acumulada.</p>
+        <p class="helpNote" style="margin:6px 0 0;">Si al 31 de julio de <span id="refAnioTabla">${hoyAnio}</span> no se distribuye ni capitaliza, la utilidad acumulada de <b id="refMontoTabla">$${utilidadAcumuladaAuto.toFixed(2)}</b> generaría un anticipo estimado de <b id="refPagoTabla" style="color:var(--warn);">$${calcularPagoACuentaTarifaUnica(utilidadAcumuladaAuto).toFixed(2)}</b>, aplicando la tabla de tarifa única del Art. 39.2.1 LRTI (0% hasta $100,000; 0.75% de $100,000 a $1,000,000; 1.25% de $1,000,000 a $10,000,000; 1.75% de $10,000,000 a $100,000,000; 2.25% de $100,000,000 a $500,000,000; 2.5% en adelante — se aplica sobre el 100% del saldo, no de forma marginal). Este cálculo se actualiza al traer la utilidad acumulada.</p>
       </div>
       <div class="field"><label>Instrucciones adicionales (opcional)</label><textarea id="escInstrucciones" rows="2" placeholder="Ej. la empresa necesita mantener liquidez para un proyecto en 2027..."></textarea></div>
       <button class="btn primary" onclick="ejecutarGenerarEscenarios()">✨ Generar escenarios con IA</button>
@@ -6861,6 +6981,7 @@ function pintarFormEscenario(){
     </div>
   `;
   pintarListaAccionistasCalc();
+  pintarListaAnticiposDividendos();
   pintarListaRetencionesRealizadas();
 }
 
@@ -7053,6 +7174,7 @@ async function ejecutarCalculoRetencionAccionistas(){
     }
     retencionEnEdicionId = null;
     sincronizarPagoACuentaDesdeRetencion(clave, registro);
+    sincronizarAnticipoDesdeRetencion(clave, registro);
     await guardarDatosDividendos(datosDividendosCache);
     estadoEl.textContent = "Cálculo completo y guardado (también se pasó automáticamente a Pago a Cuenta en Distribución Actual).";
     pintarListaRetencionesRealizadas();
@@ -7081,6 +7203,24 @@ function sincronizarPagoACuentaDesdeRetencion(clave, r){
   }
   entrada.anio = r.anio;
   entrada.monto = r.totalRetencion;
+  entrada.observacion = `Retención de dividendos — periodo ${r.periodo}${r.fechaRetencion?` (${fmtFecha(new Date(r.fechaRetencion+"T00:00:00").getTime())})`:''} — generado automáticamente`;
+}
+
+// Igual que sincronizarPagoACuentaDesdeRetencion, pero para el desglose de
+// "Anticipos de dividendos pagados por año" en Escenarios — usa el valor
+// BRUTO pagado a los accionistas (totalValorPagar), ya que un anticipo es lo
+// que efectivamente se entregó, no el impuesto retenido de eso.
+function sincronizarAnticipoDesdeRetencion(clave, r){
+  if(!datosDividendosCache.anticiposDividendos) datosDividendosCache.anticiposDividendos = {};
+  if(!datosDividendosCache.anticiposDividendos[clave]) datosDividendosCache.anticiposDividendos[clave] = [];
+  const lista = datosDividendosCache.anticiposDividendos[clave];
+  let entrada = lista.find(a=>a.retencionId===r.id);
+  if(!entrada){
+    entrada = { anio:r.anio, monto:0, observacion:"", retencionId:r.id };
+    lista.push(entrada);
+  }
+  entrada.anio = r.anio;
+  entrada.monto = r.totalValorPagar;
   entrada.observacion = `Retención de dividendos — periodo ${r.periodo}${r.fechaRetencion?` (${fmtFecha(new Date(r.fechaRetencion+"T00:00:00").getTime())})`:''} — generado automáticamente`;
 }
 
@@ -7218,15 +7358,19 @@ function cancelarEdicionRetencion(){
 }
 
 async function eliminarRetencionRealizada(id){
-  if(!confirm("¿Eliminar esta retención guardada? Esto también quita su monto de la columna \"Utilidad Repartida\" del Comparativo SRI para ese año, y su entrada vinculada en \"Pago a cuenta\" (Distribución Actual).")) return;
+  if(!confirm("¿Eliminar esta retención guardada? Esto también quita su monto de la columna \"Utilidad Repartida\" del Comparativo SRI para ese año, y sus entradas vinculadas en \"Pago a cuenta\" y \"Anticipos de dividendos\".")) return;
   const clave = empresaEscenarioSeleccionada;
   datosDividendosCache.retenciones[clave] = (datosDividendosCache.retenciones[clave]||[]).filter(r=>r.id!==id);
   if(datosDividendosCache.pagosACuenta?.[clave]){
     datosDividendosCache.pagosACuenta[clave] = datosDividendosCache.pagosACuenta[clave].filter(p=>p.retencionId!==id);
   }
+  if(datosDividendosCache.anticiposDividendos?.[clave]){
+    datosDividendosCache.anticiposDividendos[clave] = datosDividendosCache.anticiposDividendos[clave].filter(a=>a.retencionId!==id);
+  }
   await guardarDatosDividendos(datosDividendosCache);
   if(retencionEnEdicionId===id) cancelarEdicionRetencion();
   pintarListaRetencionesRealizadas();
+  pintarListaAnticiposDividendos();
 }
 
 // Panel expandible de forma de pago: banco (uno o varios cheques/
@@ -7357,14 +7501,14 @@ function actualizarUtilidadEscenarioDesdeComparativo(){
   const refPago = document.getElementById("refPagoTabla");
   if(refAnio) refAnio.textContent = anio;
   if(refMonto) refMonto.textContent = "$"+valor.toFixed(2);
-  if(refPago) refPago.textContent = "$"+calcularImpuestoTablaProgresiva(valor).toFixed(2);
+  if(refPago) refPago.textContent = "$"+calcularPagoACuentaTarifaUnica(valor).toFixed(2);
 }
 
 async function ejecutarGenerarEscenarios(){
   const anio = document.getElementById("escAnio").value.trim();
   const utilidad = parseFloat(document.getElementById("escUtilidad").value)||0;
   const pagoACuenta = parseFloat(document.getElementById("escPagoACuenta").value)||0;
-  const anticipos = parseFloat(document.getElementById("escAnticipos").value)||0;
+  const anticipos = calcularAnticiposDelAnio(empresaEscenarioSeleccionada, parseInt(anio,10));
   const retencionesRealizadas = parseFloat(document.getElementById("escRetencionesRealizadas").value)||0;
   const instrucciones = document.getElementById("escInstrucciones").value.trim();
   if(!utilidad){ alert("Ingresa la utilidad acumulada no distribuida."); return; }
@@ -7378,9 +7522,9 @@ async function ejecutarGenerarEscenarios(){
   }).join("\n");
   const pagos = (datosDividendosCache.pagosACuenta||{})[empresaEscenarioSeleccionada] || [];
   const pagosTexto = pagos.length ? pagos.map(p=>`Pago a cuenta año ${p.anio}: $${Number(p.monto).toFixed(2)}, plazo de compensación hasta el cierre del ejercicio ${p.anio+2}`).join("\n") : "Sin pagos a cuenta registrados";
-  const pagoACuentaEstimadoTabla = calcularImpuestoTablaProgresiva(utilidad);
+  const pagoACuentaEstimadoTabla = calcularPagoACuentaTarifaUnica(utilidad);
 
-  const contenido = `Empresa: ${nombreEmpresa}\nAño de análisis: ${anio}\nUtilidad acumulada no distribuida: USD $${utilidad.toFixed(2)}\nPago(s) a cuenta ya realizado (monto total relevante para esta decisión): USD $${pagoACuenta.toFixed(2)}\nDetalle de pagos a cuenta:\n${pagosTexto}\nAnticipos de dividendos ya pagados este año: USD $${anticipos.toFixed(2)}\nRetenciones ya realizadas por distribución de dividendos, disponibles para compensar el pago a cuenta (dentro de los 2 ejercicios fiscales posteriores al pago, 3 años en total contando el del pago): USD $${retencionesRealizadas.toFixed(2)}\nPago a cuenta ESTIMADO si no se distribuye antes del 31 de julio (ya calculado con la tabla progresiva oficial de Impuesto a la Renta de Personas Naturales, aplicada sobre la utilidad acumulada no distribuida — usa este valor tal cual, no lo recalcules): USD $${pagoACuentaEstimadoTabla.toFixed(2)}\nAccionistas y % de participación (según capital al año ${ultimoAnioCapital}):\n${accionistas}`;
+  const contenido = `Empresa: ${nombreEmpresa}\nAño de análisis: ${anio}\nUtilidad acumulada no distribuida: USD $${utilidad.toFixed(2)}\nPago(s) a cuenta ya realizado (monto total relevante para esta decisión): USD $${pagoACuenta.toFixed(2)}\nDetalle de pagos a cuenta:\n${pagosTexto}\nAnticipos de dividendos ya pagados este año: USD $${anticipos.toFixed(2)}\nRetenciones ya realizadas por distribución de dividendos, disponibles para compensar el pago a cuenta (dentro de los 2 ejercicios fiscales posteriores al pago, 3 años en total contando el del pago): USD $${retencionesRealizadas.toFixed(2)}\nPago a cuenta ESTIMADO si no se distribuye antes del 31 de julio (ya calculado con la tabla de TARIFA ÚNICA del Art. 39.2.1 LRTI — 0% a 2.5% según el saldo total, aplicada sobre el 100% del monto, NO es la tabla progresiva de personas naturales — usa este valor tal cual, no lo recalcules): USD $${pagoACuentaEstimadoTabla.toFixed(2)}\nAccionistas y % de participación (según capital al año ${ultimoAnioCapital}):\n${accionistas}`;
 
   const estadoEl = document.getElementById("estadoEscenarios");
   document.getElementById("resultadoEscenarios").innerHTML = "";
@@ -7524,13 +7668,13 @@ function pintarDetalleDistribActual(){
       <h3 style="margin-top:0;">📌 Pago a cuenta sobre utilidades no distribuidas</h3>
       <p class="helpNote">Registra aquí los pagos a cuenta que la empresa haya realizado (Art. 39.2.1 LRTI / Resolución NAC-DGERCGC26-00000026). Tienes hasta el cierre de los 2 ejercicios fiscales posteriores al pago (3 años en total contando el del pago) para compensarlo con retenciones de dividendos o con el impuesto a la renta — si no, se pierde el crédito. Todos los campos son editables y se pueden eliminar. Las filas marcadas "🔗 Auto (retención)" se generan solas desde la Calculadora de retención en Escenarios.</p>
       <div class="field" style="background:var(--panel2);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
-        <b style="font-size:13px;">📐 Dato informativo — Pago a cuenta estimado según tabla progresiva (Art. 39.2.1 LRTI)</b>
+        <b style="font-size:13px;">📐 Dato informativo — Pago a cuenta estimado según tarifa única (Art. 39.2.1 LRTI)</b>
         <p class="helpNote" style="margin:6px 0 0;">${(() => {
           const filasCompRef = calcularFilasComparativo(empresaDistribActualSeleccionada);
           const filaAnioRef = filasCompRef.find(f=>f.anio===anioActualCalendario);
           const utilidadNoDistribuidaRef = filaAnioRef ? (filaAnioRef.acumuladoMostrado||0) : 0;
-          const estimadoRef = calcularImpuestoTablaProgresiva(utilidadNoDistribuidaRef);
-          return `Si al 31 de julio de ${anioActualCalendario} no se distribuye ni capitaliza, la Utilidad Acumulada actual de <b>$${utilidadNoDistribuidaRef.toFixed(2)}</b> (Comparativo SRI...) generaría un pago a cuenta estimado de <b style="color:var(--warn);">$${estimadoRef.toFixed(2)}</b>. Esto es solo una referencia (mismo cálculo que en Escenarios) — <b>no se registra automáticamente</b> como pago real; si efectivamente se paga, agrégalo abajo con "+ Registrar pago a cuenta".`;
+          const estimadoRef = calcularPagoACuentaTarifaUnica(utilidadNoDistribuidaRef);
+          return `Si al 31 de julio de ${anioActualCalendario} no se distribuye ni capitaliza, la Utilidad Acumulada actual de <b>$${utilidadNoDistribuidaRef.toFixed(2)}</b> (Comparativo SRI...) generaría un pago a cuenta estimado de <b style="color:var(--warn);">$${estimadoRef.toFixed(2)}</b>, aplicando la tabla de tarifa única del Art. 39.2.1 (0% a 2.5% según el saldo total). Esto es solo una referencia (mismo cálculo que en Escenarios) — <b>no se registra automáticamente</b> como pago real; si efectivamente se paga, agrégalo abajo con "+ Registrar pago a cuenta".`;
         })()}</p>
       </div>
       <div id="listaPagosACuenta"></div>
@@ -7540,6 +7684,12 @@ function pintarDetalleDistribActual(){
         <div class="field"><label>Observación (opcional)</label><input type="text" id="pacObs"></div>
       </div>
       <button class="btn small" onclick="agregarPagoACuenta()">+ Registrar pago a cuenta</button>
+    </div>
+
+    <div class="card" style="overflow-x:auto;">
+      <h3 style="margin-top:0;">💳 Saldo de Crédito Tributario (Pago a Cuenta Art. 39.2.1) — por año y acumulado</h3>
+      <p class="helpNote">Solo cuenta el pago a cuenta REAL (manual, Art. 39.2.1) — no incluye las filas auto-generadas desde retenciones, porque esas ya son una retención final sobre una distribución, no un anticipo con crédito compensable. Edita "Compensado/usado" arriba en cada pago a medida que lo vayas aplicando contra retenciones futuras o el impuesto a la renta, para que este saldo se mantenga correcto. El total acumulado excluye los años ya vencidos (crédito perdido).</p>
+      <div id="saldoCreditoTributario"></div>
     </div>
 
     <div class="card" style="overflow-x:auto;">

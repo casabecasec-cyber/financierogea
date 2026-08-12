@@ -226,6 +226,52 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **🔴 Corregido (importante): la tabla usada para el "pago a cuenta estimado" estaba
+  equivocada.** Había implementado la tabla progresiva de Impuesto a la Renta de Personas
+  Naturales (0% a 35%, marginal por tramos) para estimar el pago a cuenta sobre utilidades no
+  distribuidas — pero el Art. 39.2.1 LRTI tiene su **propia tabla de tarifa única**, mucho más
+  baja y con una lógica distinta (se aplica sobre el 100% del saldo completo, no de forma
+  marginal por tramos):
+  | Saldo acumulado | Tarifa |
+  |---|---|
+  | Hasta $100,000 | 0% |
+  | $100,000.01 – $1,000,000 | 0.75% |
+  | $1,000,000.01 – $10,000,000 | 1.25% |
+  | $10,000,000.01 – $100,000,000 | 1.75% |
+  | $100,000,000.01 – $500,000,000 | 2.25% |
+  | Más de $500,000,000 | 2.5% |
+
+  Ya corregido en todos los lugares donde se usaba (Escenarios, Distribución Actual, y los
+  prompts de la IA) — verificado contra 3 ejemplos numéricos de fuentes tributarias
+  especializadas, todos coinciden exactamente. **Si ya usaste el "pago a cuenta estimado" en
+  algún informe antes de esta actualización, ese número era demasiado alto — vuelve a generarlo
+  con la app actualizada.**
+- **Nuevo: "💳 Saldo de Crédito Tributario (Pago a Cuenta Art. 39.2.1) — por año y acumulado"**
+  (Distribución Actual, debajo de la tabla de Pago a Cuenta) — muestra, por cada pago a cuenta
+  real (no las filas auto-generadas desde retenciones, que no generan este tipo de crédito):
+  monto pagado, cuánto ya se ha compensado/usado (nuevo campo editable "Compensado/usado" en la
+  tabla de arriba), el saldo disponible, cuándo vence, y su estado (Vigente / Por vencer /
+  Crédito perdido). Al final, un total con el **saldo de crédito tributario acumulado
+  disponible** (excluyendo los años ya vencidos).
+- Se corrigió también que las filas auto-generadas desde retenciones ya no muestran un
+  "vencimiento de crédito" (eso solo aplica al pago a cuenta real; una retención ya es un
+  impuesto final, no un anticipo compensable con vencimiento).
+
+- **Nuevo: "Anticipos de dividendos pagados por año"** (Escenarios) — reemplaza el campo
+  plano que solo pedía un monto para "este año". Ahora es un desglose completo por año, igual
+  que Pago a Cuenta:
+  - Se llena solo con el total pagado de cada retención guardada en la Calculadora de
+    retención, agrupado por año (marcado "🔗 Auto (retención)").
+  - También puedes agregar entradas manuales para anticipos que no pasaron por la calculadora
+    (por ejemplo, si empezaste a llevar el control desde 2025 y ya hay un pago hecho en 2026).
+  - Muestra un total general, y cada año queda a la vista para llevar el control histórico
+    completo, no solo del año actual.
+  - Al generar escenarios, el monto de "anticipos" que se le pasa a la IA es automáticamente
+    el total del año puesto en "Año de análisis" (sumando lo auto-generado y lo manual de ese
+    año).
+  - Al editar o eliminar una retención en la Calculadora, su anticipo vinculado se actualiza o
+    se quita solo, igual que ya pasaba con "Pago a cuenta".
+
 - **Corregido: el resumen de IA en Distribución Actual no avisaba si la Utilidad Acumulada
   había cambiado** — al traer un nuevo valor (con "↺ Traer valor de ese año" o editándolo a
   mano), el resumen/detalle generado antes por la IA se quedaba mostrado en pantalla usando el
