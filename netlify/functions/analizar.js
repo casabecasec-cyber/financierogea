@@ -624,12 +624,19 @@ ${contenido}
     return { statusCode: 400, headers, body: JSON.stringify({ error: "Modo no soportado" }) };
   }
 
-  // Modelo por modo: Revisión de Documentos usa Haiku (mucho más rápido, evita
-  // el límite de 30s de Netlify); Diagnóstico de oficios y Soportes usan Sonnet 5.
+  // Modelo por modo: Revisión de Documentos y la generación/revisión de
+  // documentos de texto largo (actas, memos, oficios, cesión de acciones)
+  // usan Haiku — mucho más rápido, evita el límite de ~27s de Netlify para
+  // funciones síncronas, que Sonnet puede superar en documentos largos.
+  // Diagnóstico de oficios, Soportes y los cálculos de dividendos siguen en
+  // Sonnet 5 (necesitan más razonamiento).
   const MODOS_HAIKU = new Set([
     "revision_orden_compra", "revision_rol_pago", "revision_avaluo",
     "corregir_orden_compra", "corregir_rol_pago", "corregir_avaluo",
     "generar_puntos_proyecto", "analizar_punto_proyecto",
+    "generar_memo", "generar_oficio", "revisar_memo", "revisar_oficio",
+    "generar_acta_junta", "revisar_acta_junta",
+    "generar_cesion_acciones", "revisar_cesion_acciones",
   ]);
   const modelo = MODOS_HAIKU.has(modo) ? "claude-haiku-4-5-20251001" : "claude-sonnet-5";
 

@@ -1046,7 +1046,7 @@ Me obligo a pagar esta suma en ${c.lugarPago||'____________'}, ${venc}.
 
 En caso de mora en el pago, me obligo a cancelar sobre el saldo no pagado la máxima tasa de interés de mora legalmente permitida por la Junta de Política y Regulación Monetaria y Financiera del Ecuador, sin perjuicio de las acciones legales a que hubiere lugar.
 
-Este pagaré se sujeta a lo dispuesto en el Art. 486 y siguientes del Código de Comercio del Ecuador (Registro Oficial Suplemento 497 de 29-05-2019), y su acción de cobro prescribe en tres años desde su vencimiento (Art. 479 ibídem).
+Este pagaré se sujeta a lo dispuesto en el Art. 486 y siguientes del Código de Comercio del Ecuador (Registro Oficial Suplemento 497 de 29-05-2019).
 
 DEUDOR (SUSCRIPTOR):
 Nombre: ${c.deudorNombre||'____________'}
@@ -1094,7 +1094,7 @@ Domicilio: ${c.giradoDomicilio||'____________'}
 
 Lugar de pago: ${c.lugarPago||'____________'}
 
-Esta letra de cambio se sujeta a los Arts. 113 al 127 y concordantes del Código de Comercio del Ecuador. Su acción de cobro prescribe en tres años desde el vencimiento (Art. 479 ibídem).
+Esta letra de cambio se sujeta a los Arts. 113 al 127 y concordantes del Código de Comercio del Ecuador.
 
 GIRADOR:
 Nombre: ${c.giradorNombre||'____________'}
@@ -1482,7 +1482,21 @@ async function renderDashboard(){
     <div class="grid2">
       <div class="card"><h3 style="margin-top:0">⚠️ Alertas de cumplimiento</h3><div id="alertasCumplimiento">Cargando...</div></div>
       <div class="card"><h3 style="margin-top:0">📨 Trámites próximos a vencer</h3><div id="alertasTramites">Cargando...</div></div>
-    </div>`;
+    </div>
+    <div class="card"><h3 style="margin-top:0">🎂 Próximos cumpleaños</h3><div id="alertasCumpleanosDashboard">Cargando...</div></div>`;
+
+  cargarColaboradores().then(lista => {
+    const cont = document.getElementById("alertasCumpleanosDashboard");
+    if(!cont) return;
+    const proximos = lista
+      .filter(c=>c.fechaNacimiento)
+      .map(c=>({...c, dias: diasHastaProximoCumpleanos(c.fechaNacimiento)}))
+      .filter(c=>c.dias<=30)
+      .sort((a,b)=>a.dias-b.dias);
+    cont.innerHTML = !proximos.length
+      ? `<p style="color:var(--muted);">No hay cumpleaños en los próximos 30 días. <button class="btn small" onclick="goTo('cumpleanos')">Ver todos</button></p>`
+      : proximos.map(c => `<p>${c.dias===0?'🎉 <b>¡Hoy!</b>':`en ${c.dias} día(s)`} — <b>${escapeHtml(c.nombre)}</b> ${c.cargo?`(${escapeHtml(c.cargo)})`:''} cumple ${edadQueCumple(c.fechaNacimiento)} años</p>`).join("") + `<button class="btn small" onclick="goTo('cumpleanos')">Ver todos</button>`;
+  }).catch(()=>{ const c=document.getElementById("alertasCumpleanosDashboard"); if(c) c.innerHTML = `<p style="color:var(--muted);">No se pudo cargar.</p>`; });
 
   const [pub, priv] = await Promise.all([cargarTramites("publico"), cargarTramites("privado")]);
   const hoy = new Date();
@@ -3383,6 +3397,7 @@ async function abrirDetalleLegal(tipo, id){
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
           <button class="btn small" onclick="imprimirDocumentoLegal('${tipo}','${id}')">🖨️ Imprimir</button>
+          <button class="btn small" onclick="descargarPDFLegal('${tipo}','${id}')">⬇️ Descargar PDF</button>
           <button class="btn small" onclick="descargarWordLegal('${tipo}','${id}')">⬇️ Descargar Word</button>
         </div>
         ${esTituloValor ? `
@@ -3438,6 +3453,31 @@ async function confirmarDocumentoLegal(tipo, id){
   abrirDetalleLegal(tipo, id);
 }
 
+// Genera el bloque de endosos para imprimir/exportar: SIEMPRE incluye el
+// espacio de endosos en los títulos valor (pagaré, letra de cambio), aunque
+// todavía no se haya usado ninguno — porque el documento puede circular y
+// endosarse más adelante, y en papel esa sección debe estar prevista desde
+// el inicio. Muestra los ya registrados como filas llenas, y agrega filas en
+// blanco adicionales para los siguientes.
+const FILAS_ENDOSO_BLANCO_MINIMO = 4;
+function bloqueEndososHtml(endosos){
+  const registrados = endosos||[];
+  const filasLlenas = registrados.map(e => `<tr><td>${fmtFecha(e.fecha)}</td><td>${escapeHtml(e.endosante)}</td><td>${escapeHtml(e.endosatario)}</td><td></td></tr>`).join("");
+  const filasVacias = Array(FILAS_ENDOSO_BLANCO_MINIMO).fill(0).map(()=>`<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join("");
+  return `<div style="margin-top:32px;page-break-inside:avoid;">
+    <h3 style="font-size:13px;border-bottom:1px solid #999;padding-bottom:4px;">ENDOSOS (Art. 124-127 Código de Comercio)</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;">
+      <thead><tr>
+        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Fecha</th>
+        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Endosante (transfiere)</th>
+        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Endosatario (recibe)</th>
+        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Firma</th>
+      </tr></thead>
+      <tbody>${filasLlenas}${filasVacias}</tbody>
+    </table>
+  </div>`;
+}
+
 function textoEndososParaExportar(endosos){
   if(!endosos || !endosos.length) return "";
   return "\n\n---------------------------------------\nENDOSOS\n" +
@@ -3447,21 +3487,72 @@ function textoEndososParaExportar(endosos){
 async function imprimirDocumentoLegal(tipo, id){
   const d = documentosLegalesCache[tipo].find(x=>x.id===id);
   const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const textoCompleto = (document.getElementById("legContenido")?.value || d.contenido) + textoEndososParaExportar(d.endosos);
-  const encabezado = d.numeroAsignado ? `<p><b>N° ${escapeHtml(d.numeroAsignado)}</b></p>` : `<p style="color:#b00;"><b>BORRADOR — sin confirmar</b></p>`;
+  const esTituloValor = plantilla.categoria==="titulo_valor";
+  const textoDocumento = document.getElementById("legContenido")?.value || d.contenido;
+  const encabezado = d.numeroAsignado
+    ? `<p style="font-size:12px;color:#555;"><b>N° ${escapeHtml(d.numeroAsignado)}</b></p>`
+    : `<p style="font-size:12px;color:#b00;"><b>BORRADOR — sin confirmar</b></p>`;
   const win = window.open("", "_blank");
   win.document.write(`<html><head><title>${plantilla.nombre}</title>
-    <style>body{font-family:Georgia,serif;padding:40px;color:#111;line-height:1.5;} pre{white-space:pre-wrap;font-family:inherit;font-size:13px;}</style>
-    </head><body>${encabezado}<pre>${escapeHtml(textoCompleto)}</pre></body></html>`);
+    <style>
+      @page { size: A4; margin: 18mm; }
+      body{font-family:Georgia,'Times New Roman',serif;padding:0;color:#1a1a1a;line-height:1.55;}
+      .portada-linea{height:4px;background:linear-gradient(90deg,#1a2733,#3a4a5c);margin-bottom:14px;}
+      .titulo-doc{font-size:11px;letter-spacing:.08em;color:#5c6b7a;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:16px;display:flex;justify-content:space-between;}
+      pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0;}
+      table{border-collapse:collapse;}
+      .pie{margin-top:26px;font-size:9px;color:#8ea2b3;border-top:1px solid #d7dee6;padding-top:6px;}
+    </style>
+    </head><body>
+    <div class="portada-linea"></div>
+    <div class="titulo-doc"><span>${plantilla.nombre}</span><span>Control Documental</span></div>
+    ${encabezado}
+    <pre>${escapeHtml(textoDocumento)}</pre>
+    ${esTituloValor ? bloqueEndososHtml(d.endosos) : ''}
+    <div class="pie">Documento generado por Control Documental.</div>
+    </body></html>`);
   win.document.close(); win.focus(); win.print();
+}
+
+async function descargarPDFLegal(tipo, id){
+  const d = documentosLegalesCache[tipo].find(x=>x.id===id);
+  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
+  const esTituloValor = plantilla.categoria==="titulo_valor";
+  const textoDocumento = document.getElementById("legContenido")?.value || d.contenido;
+  const encabezado = d.numeroAsignado
+    ? `<p style="font-size:12px;color:#555;"><b>N° ${escapeHtml(d.numeroAsignado)}</b></p>`
+    : `<p style="font-size:12px;color:#b00;"><b>BORRADOR — sin confirmar</b></p>`;
+  const win = window.open("", "_blank");
+  win.document.write(`<html><head><title>${plantilla.nombre}</title>
+    <style>
+      @page { size: A4; margin: 18mm; }
+      body{font-family:Georgia,'Times New Roman',serif;padding:0;color:#1a1a1a;line-height:1.55;}
+      .portada-linea{height:4px;background:linear-gradient(90deg,#1a2733,#3a4a5c);margin-bottom:14px;}
+      .titulo-doc{font-size:11px;letter-spacing:.08em;color:#5c6b7a;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:16px;display:flex;justify-content:space-between;}
+      pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0;}
+      table{border-collapse:collapse;}
+      .pie{margin-top:26px;font-size:9px;color:#8ea2b3;border-top:1px solid #d7dee6;padding-top:6px;}
+    </style>
+    </head><body>
+    <div class="portada-linea"></div>
+    <div class="titulo-doc"><span>${plantilla.nombre}</span><span>Control Documental</span></div>
+    ${encabezado}
+    <pre>${escapeHtml(textoDocumento)}</pre>
+    ${esTituloValor ? bloqueEndososHtml(d.endosos) : ''}
+    <div class="pie">Documento generado por Control Documental.</div>
+    <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
+    </body></html>`);
+  win.document.close(); win.focus();
 }
 
 async function descargarWordLegal(tipo, id){
   const d = documentosLegalesCache[tipo].find(x=>x.id===id);
   const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const textoCompleto = (document.getElementById("legContenido")?.value || d.contenido) + textoEndososParaExportar(d.endosos);
-  const html = textoCompleto.split("\n").map(l=>`<p>${escapeHtml(l)}</p>`).join("");
-  descargarWord(plantilla.nombre + (d.numeroAsignado?'_'+d.numeroAsignado:''), html);
+  const esTituloValor = plantilla.categoria==="titulo_valor";
+  const textoDocumento = document.getElementById("legContenido")?.value || d.contenido;
+  const htmlCuerpo = textoDocumento.split("\n").map(l=>`<p>${escapeHtml(l)||'&nbsp;'}</p>`).join("");
+  const htmlEndosos = esTituloValor ? bloqueEndososHtml(d.endosos) : '';
+  descargarWord(plantilla.nombre + (d.numeroAsignado?'_'+d.numeroAsignado:''), htmlCuerpo + htmlEndosos);
 }
 
 /* =========================================================================
@@ -6589,16 +6680,17 @@ function pintarListaPagosACuenta(){
       const vencido = hoyAnio > anioLimite;
       const porVencer = !vencido && (anioLimite - hoyAnio) <= 1;
       const esAutoDesdeRetencion = !!p.retencionId;
+      const montoBase = montoEfectivoPagoACuenta(p);
       const compensado = p.montoCompensado||0;
-      const saldoDisponible = Math.max(0, (p.monto||0) - compensado);
+      const saldoDisponible = Math.max(0, montoBase - compensado);
       return `<tr>
         <td>${esAutoDesdeRetencion ? '<span class="pill ok">🔗 Auto (retención)</span>' : '<span class="pill muted">Manual (Art. 39.2.1)</span>'}</td>
         <td><input type="number" style="width:80px;" value="${p.anio}" ${esAutoDesdeRetencion?'disabled title="Se edita desde la retención en Escenarios"':''} onchange="editarPagoACuenta(${idx},'anio',this.value)"></td>
         <td><input type="number" style="width:100px;" value="${p.monto}" ${esAutoDesdeRetencion?'disabled title="Se edita desde la retención en Escenarios"':''} onchange="editarPagoACuenta(${idx},'monto',this.value)"></td>
-        <td>${esAutoDesdeRetencion ? '<span style="color:var(--muted);">N/A</span>' : `<input type="number" style="width:100px;" value="${compensado}" onchange="editarPagoACuenta(${idx},'montoCompensado',this.value)">`}</td>
-        <td>${esAutoDesdeRetencion ? '<span style="color:var(--muted);">N/A</span>' : `$${saldoDisponible.toFixed(2)}`}</td>
-        <td>${esAutoDesdeRetencion ? '<span style="color:var(--muted);">No aplica (ya es retención final, no genera crédito con vencimiento)</span>' : `Ejercicio ${anioLimite}`}</td>
-        <td>${esAutoDesdeRetencion ? '<span class="pill muted">—</span>' : (vencido?'<span class="pill danger">Crédito perdido</span>':(porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>'))}</td>
+        <td><input type="number" style="width:100px;" value="${compensado}" onchange="editarPagoACuenta(${idx},'montoCompensado',this.value)"></td>
+        <td>$${saldoDisponible.toFixed(2)}</td>
+        <td>Ejercicio ${anioLimite}</td>
+        <td>${vencido?'<span class="pill danger">Crédito perdido</span>':(porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>')}</td>
         <td><input type="text" style="width:160px;" value="${escapeHtml(p.observacion||'')}" ${esAutoDesdeRetencion?'disabled':''} onchange="editarPagoACuenta(${idx},'observacion',this.value)"></td>
         <td>${badgeFormaPagoACuenta(p)}</td>
         <td>
@@ -6612,30 +6704,33 @@ function pintarListaPagosACuenta(){
   pintarSaldoCreditoTributario();
 }
 
-// Muestra el saldo de crédito tributario del pago a cuenta (Art. 39.2.1),
-// por año y acumulado. Solo considera pagos a cuenta REALES (manuales) — las
-// filas auto-generadas desde retenciones NO generan este tipo de crédito
-// (son retención final ya consumada sobre una distribución, no un anticipo
-// por utilidades no distribuidas), así que se excluyen de este cálculo.
+// Muestra el saldo de crédito tributario del pago a cuenta, por año y
+// acumulado — incluye TODOS los pagos a cuenta registrados (tanto los
+// manuales del Art. 39.2.1 como los auto-generados desde retenciones, ya
+// que estos últimos también quedan acreditados como pago a cuenta real una
+// vez efectuados). El monto usado por fila es el monto real (según la forma
+// de pago registrada, si ya existe una).
 function pintarSaldoCreditoTributario(){
   const cont = document.getElementById("saldoCreditoTributario");
   if(!cont) return;
   const clave = empresaDistribActualSeleccionada;
-  const pagos = ((datosDividendosCache.pagosACuenta||{})[clave] || []).filter(p=>!p.retencionId);
-  if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta (Art. 39.2.1) registrados todavía.</p>`; return; }
+  const pagos = (datosDividendosCache.pagosACuenta||{})[clave] || [];
+  if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta registrados todavía.</p>`; return; }
   const hoyAnio = new Date().getFullYear();
   let totalDisponible = 0;
   const filas = pagos.slice().sort((a,b)=>a.anio-b.anio).map(p => {
     const anioLimite = p.anio + 2;
     const vencido = hoyAnio > anioLimite;
     const porVencer = !vencido && (anioLimite - hoyAnio) <= 1;
+    const montoBase = montoEfectivoPagoACuenta(p);
     const compensado = p.montoCompensado||0;
-    const saldo = Math.max(0, (p.monto||0) - compensado);
+    const saldo = Math.max(0, montoBase - compensado);
     if(!vencido) totalDisponible += saldo;
-    return { anio:p.anio, monto:p.monto||0, compensado, saldo, anioLimite, vencido, porVencer };
+    return { anio:p.anio, monto:montoBase, compensado, saldo, anioLimite, vencido, porVencer, esAuto:!!p.retencionId };
   });
-  cont.innerHTML = `<table style="font-size:12px;"><thead><tr><th>Año del pago</th><th>Monto pagado</th><th>Compensado</th><th>Saldo disponible</th><th>Vence en</th><th>Estado</th></tr></thead><tbody>
+  cont.innerHTML = `<table style="font-size:12px;"><thead><tr><th>Origen</th><th>Año del pago</th><th>Monto pagado</th><th>Compensado</th><th>Saldo disponible</th><th>Vence en</th><th>Estado</th></tr></thead><tbody>
     ${filas.map(f => `<tr style="${f.vencido?'opacity:.55;':''}">
+      <td>${f.esAuto?'<span class="pill ok">🔗 Auto</span>':'<span class="pill muted">Manual</span>'}</td>
       <td>${f.anio}</td>
       <td>$${f.monto.toFixed(2)}</td>
       <td>$${f.compensado.toFixed(2)}</td>
@@ -6644,11 +6739,26 @@ function pintarSaldoCreditoTributario(){
       <td>${f.vencido?'<span class="pill danger">Crédito perdido</span>':(f.porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>')}</td>
     </tr>`).join("")}
     <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);">
-      <td colspan="3">SALDO DE CRÉDITO TRIBUTARIO DISPONIBLE (acumulado, no vencido)</td>
+      <td colspan="4">SALDO DE CRÉDITO TRIBUTARIO DISPONIBLE (acumulado, no vencido)</td>
       <td style="color:var(--accent2);font-size:14px;">$${totalDisponible.toFixed(2)}</td>
       <td colspan="2"></td>
     </tr>
   </tbody></table>`;
+}
+
+// Monto REAL de un pago a cuenta: si ya se registró una forma de pago
+// (banco o cuentas por pagar), ese es el valor confiable — puede diferir del
+// campo "Monto" original (por ejemplo, si la retención vinculada se pagó
+// mediante cuentas por pagar por el valor neto a los accionistas). Si no
+// hay forma de pago registrada todavía, se usa el "Monto" tal cual.
+function montoEfectivoPagoACuenta(p){
+  if(p.metodoPago==="banco"){
+    return (p.pagosBanco||[]).reduce((s,x)=>s+(x.monto||0),0);
+  }
+  if(p.metodoPago==="cuentasPorPagar"){
+    return p.cuentasPorPagarAcumulado||0;
+  }
+  return p.monto||0;
 }
 
 function badgeFormaPagoACuenta(p){
@@ -6919,7 +7029,7 @@ function pintarFormEscenario(){
   cont.innerHTML = `
     <div class="card">
       <h3 style="margin-top:0;">${escapeHtml(nombreEmpresa)}</h3>
-      ${pagosVigentes.length ? `<p class="helpNote">Pago(s) a cuenta vigentes que se pueden compensar: ${pagosVigentes.map(p=>`$${Number(p.monto).toFixed(2)} (año ${p.anio}, plazo hasta ${p.anio+2})`).join("; ")}</p>` : `<p class="helpNote">No hay pagos a cuenta registrados como vigentes para esta empresa (regístralos en "Distribución Accionistas Actuales").</p>`}
+      ${pagosVigentes.length ? `<p class="helpNote">Pago(s) a cuenta vigentes que se pueden compensar: ${pagosVigentes.map(p=>`$${montoEfectivoPagoACuenta(p).toFixed(2)} (año ${p.anio}, plazo hasta ${p.anio+2})`).join("; ")}</p>` : `<p class="helpNote">No hay pagos a cuenta registrados como vigentes para esta empresa (regístralos en "Distribución Accionistas Actuales").</p>`}
       <div class="grid2">
         <div class="field"><label>Año de análisis</label><input type="number" id="escAnio" value="${hoyAnio}"></div>
         <div class="field"><label>Utilidad acumulada no distribuida (USD)</label>
@@ -6932,7 +7042,7 @@ function pintarFormEscenario(){
       </div>
       <div class="field">
         <label>Monto de pago(s) a cuenta ya realizado (USD) — se auto-completa si hay registros, editable manualmente</label>
-        <input type="number" id="escPagoACuenta" value="${pagosVigentes.reduce((s,p)=>s+Number(p.monto||0),0).toFixed(2)}">
+        <input type="number" id="escPagoACuenta" value="${pagosVigentes.reduce((s,p)=>s+montoEfectivoPagoACuenta(p),0).toFixed(2)}">
       </div>
       <div class="field">
         <label>📆 Anticipos de dividendos pagados por año</label>
@@ -7713,7 +7823,7 @@ function pintarDetalleDistribActual(){
 
     <div class="card" style="overflow-x:auto;">
       <h3 style="margin-top:0;">💳 Saldo de Crédito Tributario (Pago a Cuenta Art. 39.2.1) — por año y acumulado</h3>
-      <p class="helpNote">Solo cuenta el pago a cuenta REAL (manual, Art. 39.2.1) — no incluye las filas auto-generadas desde retenciones, porque esas ya son una retención final sobre una distribución, no un anticipo con crédito compensable. Edita "Compensado/usado" arriba en cada pago a medida que lo vayas aplicando contra retenciones futuras o el impuesto a la renta, para que este saldo se mantenga correcto. El total acumulado excluye los años ya vencidos (crédito perdido).</p>
+      <p class="helpNote">Incluye todos los pagos a cuenta registrados (manuales del Art. 39.2.1 y los auto-generados desde retenciones, usando el monto real de la forma de pago si ya está registrada). Edita "Compensado/usado" arriba en cada pago a medida que lo vayas aplicando contra retenciones futuras o el impuesto a la renta, para que este saldo se mantenga correcto. El total acumulado excluye los años ya vencidos (crédito perdido).</p>
       <div id="saldoCreditoTributario"></div>
     </div>
 
@@ -7876,7 +7986,7 @@ async function ejecutarGenerarPlanMultianual(){
   const pagos = (datosDividendosCache.pagosACuenta||{})[empresaDistribActualSeleccionada] || [];
   const hoyAnio = new Date().getFullYear();
   const pagosVigentes = pagos.filter(p => hoyAnio <= (p.anio+2));
-  const pagosTexto = pagosVigentes.length ? pagosVigentes.map(p=>`Pago a cuenta año ${p.anio}: $${Number(p.monto).toFixed(2)}, plazo de compensación hasta el cierre del ejercicio ${p.anio+2}`).join("\n") : "Sin pagos a cuenta vigentes";
+  const pagosTexto = pagosVigentes.length ? pagosVigentes.map(p=>`Pago a cuenta año ${p.anio}: $${montoEfectivoPagoACuenta(p).toFixed(2)}, plazo de compensación hasta el cierre del ejercicio ${p.anio+2}`).join("\n") : "Sin pagos a cuenta vigentes";
 
   const contenido = `Empresa: ${nombreEmpresa}\nUtilidad acumulada total a distribuir: USD $${datos.utilidadTotal.toFixed(2)}\nAño de inicio del plan: ${hoyAnio}\nAccionistas actuales y % de participación:\n${textoAccionistas}\nPagos a cuenta vigentes:\n${pagosTexto}`;
 

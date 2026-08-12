@@ -226,6 +226,42 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: la IA "tardaba demasiado" al generar Actas de Junta (y otros documentos de texto
+  largo)** — Netlify tiene un límite de ~27 segundos para funciones síncronas, y Sonnet a veces
+  lo superaba en documentos largos. Se cambió el modelo usado para generar/revisar Actas de
+  Junta, Memos, Oficios y Cesión de Acciones a **Haiku 4.5** — mucho más rápido, evita el
+  timeout, y sigue siendo confiable para redactar este tipo de documento formal (el
+  Diagnóstico de Oficios, Soportes y los cálculos de Dividendos siguen en Sonnet 5, que sí
+  necesitan más razonamiento).
+- **Mejorado: Pagaré y Letra de Cambio** — se quitó la mención de "prescripción" del texto (ya
+  no aparece en ninguno de los dos). Al imprimir/descargar (PDF y Word), ahora **siempre**
+  aparece la sección de "ENDOSOS" con una tabla (fecha, endosante, endosatario, firma) — con
+  filas en blanco listas para usar aunque todavía no se haya registrado ningún endoso en la
+  app, porque el documento puede circular y endosarse más adelante.
+- **Nuevo: diseño profesional en la impresión/PDF de Documentos Legales** — encabezado con
+  línea de color e identificación del tipo de documento, y pie de página — en vez de solo texto
+  plano. Se agregó también el botón **"⬇️ Descargar PDF"** (antes solo había Imprimir y
+  Descargar Word).
+- **Nuevo: "🎂 Próximos cumpleaños" en el Dashboard** — muestra los cumpleaños de los próximos
+  30 días (misma lógica que el módulo de Cumpleaños), con un botón "Ver todos" para ir al
+  módulo completo.
+
+- **Corregido: "Saldo de Crédito Tributario" excluía los pagos auto-generados desde
+  retenciones, aunque ya estuvieran acreditados** — antes solo contaba los pagos a cuenta
+  manuales (Art. 39.2.1), dejando fuera los que vienen de una retención ya efectuada. Ahora
+  incluye TODOS los pagos a cuenta registrados (manuales y auto-generados), tratándolos igual
+  para efectos de vigencia, "Compensado/usado" y saldo disponible — usando el monto real según
+  la forma de pago registrada, si ya existe.
+
+- **Corregido: "Monto de pago(s) a cuenta ya realizado" no traía el valor real cuando ya
+  tenías registrada la forma de pago** — el resumen seguía sumando el campo "Monto" original de
+  cada pago a cuenta, ignorando lo que ya habías confirmado en "💳 Pago" (banco o cuentas por
+  pagar), que es el valor real/confirmado. Ahora, si un pago a cuenta ya tiene forma de pago
+  registrada, se usa ese valor (suma de cheques/transferencias, o el acumulado de cuentas por
+  pagar) tanto en el campo autocompletado como en la nota de "Pago(s) a cuenta vigentes" y en lo
+  que se le envía a la IA — si todavía no tiene forma de pago registrada, sigue usando el
+  "Monto" original.
+
 - **Corregido: una retención calculada NO es un "anticipo"** — quité la sincronización que
   creaba automáticamente una fila en "Anticipos de dividendos" a partir de cada retención
   guardada; era conceptualmente incorrecto (la retención formal es un hecho distinto al
