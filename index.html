@@ -6244,48 +6244,60 @@ function toggleInformeDiferenciasComparativo(){
   const cuadraTodo = Math.abs(totalDiferencia) < 0.5;
   wrap.innerHTML = `
     <div class="card" style="margin-top:10px;">
-      <h4 style="margin-top:0;">🔍 Diferencias por año — ${escapeHtml(nombreEmpresa)}</h4>
-      <table style="font-size:12px;"><thead><tr><th>Año</th><th>Utilidad a Distribuir (Comparativo SRI)</th><th>SUMAN (Historial Dividendos)</th><th>Diferencia</th></tr></thead><tbody>
+      <h4 style="margin-top:0;">🔍 Diferencias por año (acumulado corrido) — ${escapeHtml(nombreEmpresa)}</h4>
+      <table style="font-size:12px;"><thead><tr><th>Año</th><th>Utilidad a Distribuir (año, Comparativo)</th><th>SUMAN (año, Dividendos)</th><th>Acumulado Comparativo</th><th>Acumulado Dividendos</th><th>Diferencia acumulada</th></tr></thead><tbody>
         ${filas.map(f => `<tr style="${!f.cuadra?'background:rgba(239,90,90,.14);':''}">
           <td>${f.anio}</td>
           <td>$${f.utilidadDistribuirComparativo.toFixed(2)}</td>
           <td>$${f.sumanDividendos.toFixed(2)}</td>
+          <td>$${(f.acumuladoComparativo||0).toFixed(2)}</td>
+          <td>$${f.acumuladoDividendosCorrido.toFixed(2)}</td>
           <td style="font-weight:600;color:${f.cuadra?'var(--accent2)':'var(--danger)'};">${f.cuadra?'✓ $0.00':'$'+f.diferencia.toFixed(2)}</td>
         </tr>`).join("")}
         <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);">
-          <td>TOTAL</td>
+          <td>TOTAL / FINAL</td>
+          <td colspan="2"></td>
           <td>$${totalComparativo.toFixed(2)}</td>
           <td>$${totalDividendos.toFixed(2)}</td>
           <td style="color:${cuadraTodo?'var(--accent2)':'var(--danger)'};">${cuadraTodo?'✓ Cuadra':'$'+totalDiferencia.toFixed(2)}</td>
         </tr>
       </tbody></table>
-      <p class="helpNote" style="margin-top:8px;">${cuadraTodo ? 'Todo cuadra: la suma de lo distribuido en el Historial de Dividendos coincide con la Utilidad a Distribuir del Comparativo SRI... en todos los años.' : 'Hay diferencia en el/los año(s) resaltado(s) en rojo — probablemente porque se editó un valor a mano en el Historial de Dividendos (o en el Comparativo) después de la última vez que se usó "Recalcular desde Comparativo SRI". Presiona "🔄 Recalcular" para que vuelvan a cuadrar, o revisa manualmente esos años.'}</p>
+      <p class="helpNote" style="margin-top:8px;">${cuadraTodo ? 'Todo cuadra: el acumulado corrido del Historial de Dividendos coincide con la Utilidad Acumulada del Comparativo SRI... en todos los años.' : 'Hay diferencia acumulada a partir del/los año(s) resaltado(s) en rojo. Presiona "🔄 Recalcular desde Comparativo SRI + % de Capital" para que vuelvan a cuadrar.'}</p>
     </div>
   `;
 }
 
-// Concilia, año por año, la "Utilidad a Distribuir" del Comparativo SRI...
-// contra la fila SUMAN del Historial de Dividendos de esa misma empresa.
-// En teoría deberían coincidir siempre (el botón "Recalcular" reparte
-// exactamente la Utilidad a Distribuir entre los accionistas), pero si se
-// editaron valores a mano después, o no se ha recalculado, pueden diferir.
+// Concilia, año por año, la Utilidad Acumulada CORRIDA del Comparativo SRI...
+// contra la Utilidad Acumulada corrida del Historial de Dividendos (suma
+// corrida de SUMAN) — la MISMA lógica que ya usa la fila "TOTAL ACUMULADO
+// EMPRESA" en pantalla. Se compara por acumulados (no por el campo "Utilidad
+// a Distribuir" en crudo de cada año) porque el recálculo reparte según el
+// AUMENTO real del acumulado de cada año, que puede venir de una "Utilidad a
+// Distribuir" explícita o de un ajuste manual del acumulado — comparar los
+// acumulados corridos es lo único que siempre refleja correctamente si ya
+// cuadra o no, en cualquiera de los dos casos.
 function calcularConciliacionComparativoVsDividendos(clave){
   const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
   const filasComparativo = calcularFilasComparativo(clave);
   const aniosDividendos = datosDividendosCache.resumenDividendos.anios || [];
   const aniosUnion = Array.from(new Set([...filasComparativo.map(f=>f.anio), ...aniosDividendos])).sort((a,b)=>a-b);
 
+  let acumuladoDividendosCorrido = 0;
   const filas = aniosUnion.map(anio => {
     const filaComp = filasComparativo.find(f=>f.anio===anio);
     const utilidadDistribuirComparativo = filaComp ? (filaComp.utilidadMostrada||0) : 0;
+    const acumuladoComparativo = filaComp ? (filaComp.acumuladoMostrado||0) : null;
     const sumanDividendos = (datosResumen?.suman[anio])||0;
-    const diferencia = sumanDividendos - utilidadDistribuirComparativo;
-    return { anio, utilidadDistribuirComparativo, sumanDividendos, diferencia, cuadra: Math.abs(diferencia) < 0.5 };
-  }).filter(f => Math.abs(f.utilidadDistribuirComparativo) > 0.001 || Math.abs(f.sumanDividendos) > 0.001);
+    acumuladoDividendosCorrido += sumanDividendos;
+    const diferencia = acumuladoComparativo!==null ? (acumuladoDividendosCorrido - acumuladoComparativo) : 0;
+    const cuadra = acumuladoComparativo===null ? true : Math.abs(diferencia) < 0.5;
+    return { anio, utilidadDistribuirComparativo, sumanDividendos, acumuladoComparativo, acumuladoDividendosCorrido, diferencia, cuadra };
+  }).filter(f => Math.abs(f.utilidadDistribuirComparativo) > 0.001 || Math.abs(f.sumanDividendos) > 0.001 || (f.acumuladoComparativo!==null && Math.abs(f.acumuladoComparativo) > 0.001));
 
-  const totalDiferencia = filas.reduce((s,f)=>s+f.diferencia, 0);
-  const totalComparativo = filas.reduce((s,f)=>s+f.utilidadDistribuirComparativo, 0);
-  const totalDividendos = filas.reduce((s,f)=>s+f.sumanDividendos, 0);
+  const ultima = filas[filas.length-1];
+  const totalDiferencia = ultima ? ultima.diferencia : 0;
+  const totalComparativo = ultima ? (ultima.acumuladoComparativo||0) : 0;
+  const totalDividendos = ultima ? ultima.acumuladoDividendosCorrido : 0;
   return { filas, totalDiferencia, totalComparativo, totalDividendos };
 }
 
@@ -7976,6 +7988,8 @@ function construirHtmlInformeResumenes(){
       <td>${f.anio}</td>
       <td class="num">${fmtMoneda(f.utilidadDistribuirComparativo)}</td>
       <td class="num">${fmtMoneda(f.sumanDividendos)}</td>
+      <td class="num">${fmtMoneda(f.acumuladoComparativo)}</td>
+      <td class="num">${fmtMoneda(f.acumuladoDividendosCorrido)}</td>
       <td class="num" style="font-weight:700;">${f.cuadra?'✓ $0.00':fmtMoneda(f.diferencia)}</td>
     </tr>`).join("");
 
@@ -8028,11 +8042,11 @@ function construirHtmlInformeResumenes(){
     <table><thead><tr><th>Accionista</th>${aniosDividendos.map(a=>`<th>${a}</th>`).join("")}<th>TOTAL ACUMULADO</th></tr></thead>
     <tbody>${filasDividendoHtml}${filaSumanDivHtml}</tbody></table>
 
-    <h2 class="seccion">Conciliación: Comparativo SRI vs. Historial de Dividendos</h2>
-    <p class="parrafo-ia">Compara, año por año, la "Utilidad a Distribuir" del Comparativo SRI/Súper Cías/Contable contra lo efectivamente repartido en el Historial de Dividendos. En teoría deben coincidir siempre; las filas resaltadas en rojo muestran una diferencia — usa "🔄 Recalcular desde Comparativo SRI + % de Capital" en la app para volver a alinearlas, o revisa esos años manualmente.</p>
-    ${filasConciliacion.length ? `<table><thead><tr><th>Año</th><th>Utilidad a Distribuir (Comparativo SRI)</th><th>SUMAN (Historial Dividendos)</th><th>Diferencia</th></tr></thead>
+    <h2 class="seccion">Conciliación: Comparativo SRI vs. Historial de Dividendos (acumulado corrido)</h2>
+    <p class="parrafo-ia">Compara, año por año, la Utilidad Acumulada corrida del Comparativo SRI/Súper Cías/Contable contra el acumulado corrido de lo efectivamente repartido en el Historial de Dividendos (mismo criterio que "Recalcular desde Comparativo SRI", que reparte según el aumento real del acumulado de cada año). En teoría deben coincidir siempre; las filas resaltadas en rojo muestran una diferencia acumulada a partir de ese año — usa "🔄 Recalcular desde Comparativo SRI + % de Capital" en la app para volver a alinearlas.</p>
+    ${filasConciliacion.length ? `<table><thead><tr><th>Año</th><th>Utilidad a Distribuir (año, Comparativo)</th><th>SUMAN (año, Dividendos)</th><th>Acumulado Comparativo</th><th>Acumulado Dividendos</th><th>Diferencia acumulada</th></tr></thead>
     <tbody>${filasConciliacionHtml}
-      <tr style="font-weight:700;background:#eef2f6;"><td>TOTAL</td><td class="num">${fmtMoneda(totalComparativo)}</td><td class="num">${fmtMoneda(totalDividendos)}</td><td class="num">${cuadraTodo?'✓ Cuadra':fmtMoneda(totalDiferencia)}</td></tr>
+      <tr style="font-weight:700;background:#eef2f6;"><td>TOTAL / FINAL</td><td class="num"></td><td class="num"></td><td class="num">${fmtMoneda(totalComparativo)}</td><td class="num">${fmtMoneda(totalDividendos)}</td><td class="num">${cuadraTodo?'✓ Cuadra':fmtMoneda(totalDiferencia)}</td></tr>
     </tbody></table>` : `<p style="color:#8ea2b3;">Sin años para comparar.</p>`}
 
     <div class="pie">
@@ -8092,12 +8106,12 @@ function descargarExcelInformeResumenes(){
   ]);
   wsDiv["!cols"] = encDiv.map(()=>({wch:16}));
 
-  // Hoja 3: Conciliación
-  const encConc = ["Año", "Utilidad a Distribuir (Comparativo SRI)", "SUMAN (Historial Dividendos)", "Diferencia", "¿Cuadra?"];
-  const filasConc = filasConciliacion.map(f => [f.anio, f.utilidadDistribuirComparativo, f.sumanDividendos, f.diferencia, f.cuadra?"Sí":"No"]);
-  filasConc.push(["TOTAL", totalComparativo, totalDividendos, totalDiferencia, Math.abs(totalDiferencia)<0.5?"Sí":"No"]);
+  // Hoja 3: Conciliación (acumulado corrido — misma lógica que "Recalcular")
+  const encConc = ["Año", "Utilidad a Distribuir (año, Comparativo)", "SUMAN (año, Dividendos)", "Acumulado Comparativo", "Acumulado Dividendos", "Diferencia acumulada", "¿Cuadra?"];
+  const filasConc = filasConciliacion.map(f => [f.anio, f.utilidadDistribuirComparativo, f.sumanDividendos, f.acumuladoComparativo, f.acumuladoDividendosCorrido, f.diferencia, f.cuadra?"Sí":"No"]);
+  filasConc.push(["TOTAL / FINAL", "", "", totalComparativo, totalDividendos, totalDiferencia, Math.abs(totalDiferencia)<0.5?"Sí":"No"]);
   const wsConc = XLSX.utils.aoa_to_sheet([
-    [`Conciliación Comparativo SRI vs. Historial de Dividendos — ${nombreEmpresa}`], [`Generado el ${fmtFecha(Date.now())}`], [],
+    [`Conciliación Comparativo SRI vs. Historial de Dividendos (acumulado corrido) — ${nombreEmpresa}`], [`Generado el ${fmtFecha(Date.now())}`], [],
     encConc, ...filasConc
   ]);
   wsConc["!cols"] = encConc.map(()=>({wch:20}));

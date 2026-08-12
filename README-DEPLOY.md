@@ -226,6 +226,15 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: el informe ejecutivo, PDF y Excel mostraban una diferencia que ya no existía en
+  pantalla** — la causa: la conciliación del informe/PDF/Excel comparaba el campo "Utilidad a
+  Distribuir" en crudo de cada año contra SUMAN, mientras que el recálculo (y la fila "TOTAL
+  ACUMULADO EMPRESA" en pantalla) trabajan con el **acumulado corrido** de cada año — dos
+  lógicas distintas que podían no coincidir cuando hubo un salto de acumulado sin "Utilidad a
+  Distribuir" explícita. Ahora las tres vistas (pantalla, informe/PDF, Excel) usan exactamente
+  la misma comparación por acumulado corrido, así que si en pantalla ya dice "✓ cuadra", el
+  informe ejecutivo, el PDF y el Excel también lo van a decir.
+
 - **Corregido de raíz: el recálculo no cuadraba cuando había un año sin "Utilidad a Distribuir"
   pero con salto en "Utilidad Acumulada"** — esto pasa, por ejemplo, cuando sobrescribiste
   manualmente el acumulado de un año sin llenar la "Utilidad a Distribuir" de ese mismo año. El
