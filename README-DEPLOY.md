@@ -226,6 +226,13 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: campo "Fecha de retención" en la Calculadora de retención** (Dividendos →
+  Escenarios) — junto al campo de "Etiqueta del periodo", ahora hay un selector de fecha
+  específica (la fecha del acta/pago). Es opcional; si la llenas, aparece en el informe en
+  pantalla, en el resultado de la IA (se le pasa como dato del cálculo) y en el PDF impreso,
+  junto a la fecha en que se generó el informe (que son cosas distintas: una es cuándo ocurre
+  la retención, la otra cuándo se emitió el documento).
+
 - **Corregido: el informe ejecutivo, PDF y Excel mostraban una diferencia que ya no existía en
   pantalla** — la causa: la conciliación del informe/PDF/Excel comparaba el campo "Utilidad a
   Distribuir" en crudo de cada año contra SUMAN, mientras que el recálculo (y la fila "TOTAL

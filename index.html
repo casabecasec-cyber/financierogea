@@ -6713,7 +6713,10 @@ function pintarFormEscenario(){
     <div class="card">
       <h3 style="margin-top:0;">🧮 Calculadora de retención por accionista(s) y periodo</h3>
       <p class="helpNote">Elige uno o varios accionistas, el periodo, y el valor que corresponde pagarle a cada uno. Si ya se anticipó algún valor de dividendos, indícalo para restarlo. La IA calcula la retención de impuestos y emite un informe individual por accionista y un informe conjunto ejecutivo.</p>
-      <div class="field"><label>Etiqueta del periodo (opcional — si lo dejas vacío se usa el año elegido abajo, ej. "Primer semestre 2026")</label><input type="text" id="calcPeriodo" placeholder="Ej. Primer semestre 2026"></div>
+      <div class="grid2">
+        <div class="field" style="margin:0;"><label>Etiqueta del periodo (opcional — si lo dejas vacío se usa el año elegido abajo, ej. "Primer semestre 2026")</label><input type="text" id="calcPeriodo" placeholder="Ej. Primer semestre 2026"></div>
+        <div class="field" style="margin:0;"><label>Fecha de retención (fecha del acta/pago)</label><input type="date" id="calcFechaRetencion"></div>
+      </div>
       <div id="listaAccionistasCalc"></div>
       <button class="btn primary" style="margin-top:8px;" onclick="ejecutarCalculoRetencionAccionistas()">✨ Calcular retención y generar informes</button>
       <button class="btn small" style="margin-left:8px;" onclick="imprimirInformeRetencionAccionistas()">🖨️ Imprimir / Descargar PDF</button>
@@ -6855,6 +6858,7 @@ function actualizarAccionistaCalc(idx, campo, valor){
 
 async function ejecutarCalculoRetencionAccionistas(){
   const periodo = document.getElementById("calcPeriodo").value.trim() || String(anioRepartoCalc);
+  const fechaRetencion = document.getElementById("calcFechaRetencion").value;
   const nombreEmpresa = datosDividendosCache.porEmpresa[empresaEscenarioSeleccionada]?.nombreHoja || empresaEscenarioSeleccionada;
   const seleccionados = (seleccionAccionistasCalc[empresaEscenarioSeleccionada]||[]).filter(a=>a.incluido && a.valorPagar>0);
   if(!seleccionados.length){ alert("Marca al menos un accionista (checklist 'Incluir') con un valor a repartir mayor a cero."); return; }
@@ -6865,16 +6869,16 @@ async function ejecutarCalculoRetencionAccionistas(){
     const calc = calcularRetencionAccionista(a, anioRepartoCalc);
     return `- ${a.nombre}: le corresponde $${a.corresponde.toFixed(2)} en total según ${modalidadRepartoCalc==='actuales'?'su % de participación actual sobre la utilidad acumulada':'lo registrado ese año'}. Valor que se desea repartir/pagar ahora: $${a.valorPagar.toFixed(2)}. ${a.anticipoValor>0 ? `Ya se le entregó un anticipo de $${a.anticipoValor.toFixed(2)} que debe restarse.` : "Sin anticipos entregados."}\n  CÁLCULO YA HECHO EN LA APP (usa estos valores tal cual en tu respuesta, no los recalcules): franja exenta disponible después del anticipo = $${calc.franjaRestante.toFixed(2)} (de una franja total de $${calc.franja.toFixed(2)} = 3 SBU del año ${anioRepartoCalc}), base imponible = $${calc.baseImponible.toFixed(2)}, tarifa aplicada = ${(calc.tarifa*100).toFixed(0)}% (${infoTarifa.label}), retención calculada = $${calc.retencion.toFixed(2)}, valor neto a pagar = $${calc.neto.toFixed(2)}.`;
   }).join("\n");
-  const contenido = `Empresa: ${nombreEmpresa}\nPeriodo: ${periodo}\nModalidad de reparto: ${modalidadRepartoCalc==='actuales'?'Accionistas actuales (dueños de toda la utilidad acumulada según % actual)':'Accionistas históricos de ese año'}\nTipo de beneficiario: ${infoTarifa.label} (tarifa ${(infoTarifa.tarifa*100).toFixed(0)}%)\nFranja exenta total del año ${anioRepartoCalc} (3 SBU): $${franjaDelAnio.toFixed(2)}\n\nAccionistas a calcular (usa el "valor a repartir" como base del cálculo de retención, no el "le corresponde"; el CÁLCULO YA HECHO por la app es la fuente de verdad, no lo recalcules ni lo cambies, solo repítelo en el formato del informe):\n${textoAccionistas}`;
+  const contenido = `Empresa: ${nombreEmpresa}\nPeriodo: ${periodo}\n${fechaRetencion?`Fecha de retención (fecha del acta/pago): ${fmtFecha(new Date(fechaRetencion+"T00:00:00").getTime())}\n`:''}Modalidad de reparto: ${modalidadRepartoCalc==='actuales'?'Accionistas actuales (dueños de toda la utilidad acumulada según % actual)':'Accionistas históricos de ese año'}\nTipo de beneficiario: ${infoTarifa.label} (tarifa ${(infoTarifa.tarifa*100).toFixed(0)}%)\nFranja exenta total del año ${anioRepartoCalc} (3 SBU): $${franjaDelAnio.toFixed(2)}\n\nAccionistas a calcular (usa el "valor a repartir" como base del cálculo de retención, no el "le corresponde"; el CÁLCULO YA HECHO por la app es la fuente de verdad, no lo recalcules ni lo cambies, solo repítelo en el formato del informe):\n${textoAccionistas}`;
 
   const estadoEl = document.getElementById("estadoCalcRetencion");
   document.getElementById("resultadoCalcRetencion").innerHTML = "";
   estadoEl.innerHTML = `<span class="spinner"></span> Calculando con IA...`;
   try{
     const resultado = await llamarIA("calcular_informe_retencion_dividendos", contenido, "");
-    window._ultimoInformeRetencionAccionistas = { resultado, periodo, nombreEmpresa };
+    window._ultimoInformeRetencionAccionistas = { resultado, periodo, nombreEmpresa, fechaRetencion };
     estadoEl.textContent = "Cálculo completo.";
-    document.getElementById("resultadoCalcRetencion").innerHTML = renderInformeRetencionAccionistas(resultado);
+    document.getElementById("resultadoCalcRetencion").innerHTML = renderInformeRetencionAccionistas(resultado, fechaRetencion);
     await registrarCambio("Dividendos", "generar_ia", `Informe de retención calculado: ${nombreEmpresa}, periodo ${periodo}, ${seleccionados.length} accionista(s)`);
   }catch(e){
     estadoEl.textContent = "";
@@ -6882,9 +6886,10 @@ async function ejecutarCalculoRetencionAccionistas(){
   }
 }
 
-function renderInformeRetencionAccionistas(r){
+function renderInformeRetencionAccionistas(r, fechaRetencion){
   if(!r) return "";
   return `<div class="aiBox">
+    ${fechaRetencion?`<p style="color:var(--muted);font-size:13px;"><b>Fecha de retención:</b> ${fmtFecha(new Date(fechaRetencion+"T00:00:00").getTime())}</p>`:''}
     ${r.informes_individuales?.length?`<h4>Informes individuales</h4>${r.informes_individuales.map(f=>`
       <div class="card" style="margin-bottom:8px;">
         <b>${escapeHtml(f.accionista||'')}</b>
@@ -6907,7 +6912,7 @@ function renderInformeRetencionAccionistas(r){
 function imprimirInformeRetencionAccionistas(){
   const datos = window._ultimoInformeRetencionAccionistas;
   if(!datos){ alert("Primero calcula el informe."); return; }
-  const { resultado: r, periodo, nombreEmpresa } = datos;
+  const { resultado: r, periodo, nombreEmpresa, fechaRetencion } = datos;
   const filas = (r.informes_individuales||[]).map(f => `<tr>
       <td>${escapeHtml(f.accionista||'')}</td><td>${escapeHtml(f.valor_registrado||'')}</td><td>${escapeHtml(f.anticipo_restado||'')}</td>
       <td>${escapeHtml(f.base_imponible||'')}</td><td>${escapeHtml(f.tarifa_aplicada||'')}</td><td>${escapeHtml(f.retencion_calculada||'')}</td><td>${escapeHtml(f.valor_neto_a_pagar||'')}</td>
@@ -6917,7 +6922,7 @@ function imprimirInformeRetencionAccionistas(){
     <style>body{font-family:Arial,sans-serif;padding:28px;color:#111;} h1{font-size:18px;} h2{font-size:14px;margin-top:18px;} table{width:100%;border-collapse:collapse;margin-top:8px;} th,td{border:1px solid #ccc;padding:6px;font-size:11px;text-align:left;} th{background:#f0f0f0;}</style>
     </head><body>
     <h1>Informe de Retención de Dividendos — ${escapeHtml(nombreEmpresa)}</h1>
-    <p>Periodo: ${escapeHtml(periodo)} &nbsp; Fecha: ${fmtFecha(new Date())}</p>
+    <p>Periodo: ${escapeHtml(periodo)} &nbsp; ${fechaRetencion?`Fecha de retención: ${fmtFecha(new Date(fechaRetencion+"T00:00:00").getTime())} &nbsp; `:''}Fecha de emisión del informe: ${fmtFecha(new Date())}</p>
     <h2>Detalle por accionista</h2>
     <table><thead><tr><th>Accionista</th><th>Valor registrado</th><th>Anticipo restado</th><th>Base imponible</th><th>Tarifa</th><th>Retención</th><th>Neto a pagar</th></tr></thead>
     <tbody>${filas || '<tr><td colspan="7" style="text-align:center;color:#888;">Sin datos</td></tr>'}</tbody></table>
