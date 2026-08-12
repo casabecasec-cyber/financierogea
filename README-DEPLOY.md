@@ -226,6 +226,13 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Simplificado: Historial de Dividendos por accionista** — se quitaron las columnas
+  "IMP. RENTA" y "A PAGAR" (ya no necesarias en esta tabla). La columna "TOTAL" se renombró a
+  **"TOTAL ACUMULADO"** por accionista (sigue siendo la suma de todos sus años, editable). La
+  fila resumen de toda la empresa se renombró a "TOTAL ACUMULADO EMPRESA" para no confundirla
+  con la columna por accionista — sigue comparándose visualmente contra la "Utilidad Acumulada"
+  del Comparativo SRI... (✓/⚠ por año).
+
 - **Nuevo: fila "TOTAL ACUMULADO" en Historial de Dividendos** — debajo de SUMAN, muestra la
   suma corrida año por año, y bajo cada celda se compara automáticamente contra la "Utilidad
   Acumulada" del Comparativo SRI... para ese mismo año: ✓ verde si cuadra, ⚠ rojo con el monto

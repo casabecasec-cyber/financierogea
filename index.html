@@ -6293,21 +6293,19 @@ function pintarDetalleEmpresaDividendo(){
       <button class="btn small" onclick="recalcularHistorialDividendosDesdeComparativo()">🔄 Recalcular desde Comparativo SRI + % de Capital</button>
       <p class="helpNote" style="margin-top:4px;">Para cada año, toma la "Utilidad a Distribuir" del Comparativo SRI/Súper Cías/Contable y la reparte entre los accionistas según su % real de participación ese año (según el Historial de capital social de arriba) — reemplaza los valores por año de cada accionista abajo para que cuadren con esas dos fuentes. Los montos de IMP. RENTA y A PAGAR no se tocan (ajústalos a mano según corresponda).</p>
       ` : ''}
-      <table style="font-size:12px;"><thead><tr><th>Accionista</th>${anios.map(a=>`<th>${a}</th>`).join("")}<th>TOTAL</th><th>IMP. RENTA</th><th>A PAGAR</th></tr></thead><tbody>
+      <table style="font-size:12px;"><thead><tr><th>Accionista</th>${anios.map(a=>`<th>${a}</th>`).join("")}<th>TOTAL ACUMULADO</th></tr></thead><tbody>
         ${filasDividendoMostrar.map(f => `<tr>
           <td>${escapeHtml(f.accionista)}</td>
           ${anios.map(a=>`<td><input type="number" style="width:90px;" value="${(f.valores[a]||0).toFixed(2)}" onchange="actualizarDividendoHistoricoValor('${empresaDividendoSeleccionada}','${escJs(f.accionista)}',${a},this.value)"></td>`).join("")}
           <td><input type="number" style="width:90px;font-weight:bold;" value="${(f.total||0).toFixed(2)}" onchange="actualizarDividendoHistoricoCampo('${empresaDividendoSeleccionada}','${escJs(f.accionista)}','total',this.value)"></td>
-          <td><input type="number" style="width:90px;" value="${(f.impuestoRenta||0).toFixed(2)}" onchange="actualizarDividendoHistoricoCampo('${empresaDividendoSeleccionada}','${escJs(f.accionista)}','impuestoRenta',this.value)"></td>
-          <td><input type="number" style="width:90px;" value="${(f.dividendoPagar||0).toFixed(2)}" onchange="actualizarDividendoHistoricoCampo('${empresaDividendoSeleccionada}','${escJs(f.accionista)}','dividendoPagar',this.value)"></td>
         </tr>`).join("")}
         ${!accionistaDividendoSeleccionado ? `<tr style="font-weight:bold;background:var(--panel2);">
           <td>SUMAN</td>
           ${anios.map(a=>`<td>${(datosResumen.suman[a]||0).toFixed(2)}</td>`).join("")}
-          <td colspan="3"></td>
+          <td></td>
         </tr>
         <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);">
-          <td>TOTAL ACUMULADO</td>
+          <td>TOTAL ACUMULADO EMPRESA</td>
           ${(() => {
             const filasComp = calcularFilasComparativo(empresaDividendoSeleccionada);
             let acumulado = 0;
@@ -6319,10 +6317,10 @@ function pintarDetalleEmpresaDividendo(){
               return `<td>${acumulado.toFixed(2)}${acumuladoComparativo!==null?`<div style="font-size:9px;font-weight:normal;color:${cuadra?'var(--accent2)':'var(--danger)'};">${cuadra?'✓ cuadra':'⚠ Comparativo: $'+acumuladoComparativo.toFixed(2)}</div>`:''}</td>`;
             }).join("");
           })()}
-          <td colspan="3"></td>
+          <td></td>
         </tr>` : ''}
       </tbody></table>
-      ${!accionistaDividendoSeleccionado ? `<p class="helpNote" style="margin-top:6px;">"TOTAL ACUMULADO" es la suma corrida de la fila SUMAN, año por año — debajo de cada celda se compara contra la "Utilidad Acumulada" del Comparativo SRI... para ese mismo año, para verificar que cuadren (✓) o ver la diferencia (⚠) si no.</p>` : ''}
+      ${!accionistaDividendoSeleccionado ? `<p class="helpNote" style="margin-top:6px;">"TOTAL ACUMULADO EMPRESA" es la suma corrida de la fila SUMAN, año por año — debajo de cada celda se compara contra la "Utilidad Acumulada" del Comparativo SRI... para ese mismo año, para verificar que cuadren (✓) o ver la diferencia (⚠) si no. La columna "TOTAL ACUMULADO" de cada accionista es la suma de todos sus años.</p>` : ''}
     </div>
 
     ${!accionistaDividendoSeleccionado ? `
