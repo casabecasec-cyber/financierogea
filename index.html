@@ -6909,6 +6909,7 @@ function pintarFormEscenario(){
   const cont = document.getElementById("formEscenarioContenido");
   if(!empresaEscenarioSeleccionada){ cont.innerHTML = `<div class="card emptyState">Selecciona una empresa.</div>`; return; }
   const nombreEmpresa = datosDividendosCache.porEmpresa[empresaEscenarioSeleccionada]?.nombreHoja || empresaEscenarioSeleccionada;
+  resincronizarRetencionesGuardadas(empresaEscenarioSeleccionada);
   const pagos = (datosDividendosCache.pagosACuenta||{})[empresaEscenarioSeleccionada] || [];
   const hoyAnio = new Date().getFullYear();
   const pagosVigentes = pagos.filter(p => hoyAnio <= (p.anio+2));
@@ -7222,6 +7223,21 @@ function sincronizarAnticipoDesdeRetencion(clave, r){
   entrada.anio = r.anio;
   entrada.monto = r.totalValorPagar;
   entrada.observacion = `Retención de dividendos — periodo ${r.periodo}${r.fechaRetencion?` (${fmtFecha(new Date(r.fechaRetencion+"T00:00:00").getTime())})`:''} — generado automáticamente`;
+}
+
+// Repara retenciones guardadas ANTES de que existiera la sincronización
+// automática hacia "Pago a cuenta" y "Anticipos de dividendos" — se ejecuta
+// cada vez que se abre Escenarios, revisando TODAS las retenciones guardadas
+// de la empresa y creando/actualizando sus entradas vinculadas si faltan.
+// Es idempotente (no duplica si ya existen), así que es seguro llamarla siempre.
+function resincronizarRetencionesGuardadas(clave){
+  const retenciones = (datosDividendosCache.retenciones||{})[clave] || [];
+  if(!retenciones.length) return;
+  retenciones.forEach(r => {
+    sincronizarPagoACuentaDesdeRetencion(clave, r);
+    sincronizarAnticipoDesdeRetencion(clave, r);
+  });
+  guardarDatosDividendos(datosDividendosCache);
 }
 
 function renderInformeRetencionAccionistas(r, fechaRetencion){
@@ -7639,6 +7655,7 @@ function obtenerOInicializarDistribActual(clave){
 function pintarDetalleDistribActual(){
   const cont = document.getElementById("distribActualContenido");
   if(!empresaDistribActualSeleccionada){ cont.innerHTML = `<div class="card emptyState">Selecciona una empresa.</div>`; return; }
+  resincronizarRetencionesGuardadas(empresaDistribActualSeleccionada);
   const nombreEmpresa = datosDividendosCache.porEmpresa[empresaDistribActualSeleccionada]?.nombreHoja || empresaDistribActualSeleccionada;
   const datos = obtenerOInicializarDistribActual(empresaDistribActualSeleccionada);
   const anioActualCalendario = new Date().getFullYear();

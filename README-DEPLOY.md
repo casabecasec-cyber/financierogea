@@ -226,6 +226,15 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: retenciones guardadas antes de la sincronización automática no pasaban a "Pago a
+  cuenta" ni a "Anticipos de dividendos"** — la sincronización solo se disparaba al calcular una
+  retención NUEVA, así que las que ya existían de antes (calculadas antes de que se agregara esa
+  función) se quedaban sin su entrada vinculada. Ahora, cada vez que abres Escenarios o
+  Distribución Actual, la app revisa automáticamente TODAS las retenciones guardadas de la
+  empresa y crea (o actualiza) sus entradas en Pago a Cuenta y Anticipos si faltan — es
+  automático y no requiere ninguna acción manual; con abrir cualquiera de esas dos pestañas una
+  vez, tus retenciones antiguas quedan reparadas.
+
 - **🔴 Corregido (importante): la tabla usada para el "pago a cuenta estimado" estaba
   equivocada.** Había implementado la tabla progresiva de Impuesto a la Renta de Personas
   Naturales (0% a 35%, marginal por tramos) para estimar el pago a cuenta sobre utilidades no
