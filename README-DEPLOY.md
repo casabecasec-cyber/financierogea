@@ -226,6 +226,20 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: una retención calculada NO es un "anticipo"** — quité la sincronización que
+  creaba automáticamente una fila en "Anticipos de dividendos" a partir de cada retención
+  guardada; era conceptualmente incorrecto (la retención formal es un hecho distinto al
+  anticipo). Ahora "Anticipos de dividendos pagados por año" es **100% manual** — tú registras
+  ahí lo que realmente se entregó por adelantado, por año (en cuotas si aplica). Las filas que
+  ya se habían creado mal por versiones anteriores se limpian solas automáticamente al abrir
+  Escenarios o Distribución Actual.
+- **Nuevo: "⚖️ Saldo: Anticipos vs. Retenciones Realizadas"** (Escenarios) — calcula: suma de
+  todos los anticipos registrados, menos la suma de lo formalmente retenido en las retenciones
+  guardadas. Si el resultado es positivo, se muestra como **Crédito Tributario a favor**; si es
+  negativo, como **Valor a Pagar (pendiente)**. El campo "Retenciones ya realizadas" también se
+  auto-completa ahora con el total retenido de las retenciones guardadas (antes había que
+  escribirlo a mano).
+
 - **Corregido: retenciones guardadas antes de la sincronización automática no pasaban a "Pago a
   cuenta" ni a "Anticipos de dividendos"** — la sincronización solo se disparaba al calcular una
   retención NUEVA, así que las que ya existían de antes (calculadas antes de que se agregara esa

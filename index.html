@@ -6801,18 +6801,14 @@ function pintarListaAnticiposDividendos(){
   const lista = ((datosDividendosCache.anticiposDividendos||{})[clave]||[]).slice().sort((a,b)=>a.anio-b.anio);
   if(!lista.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin anticipos registrados.</p>`; return; }
   const total = lista.reduce((s,a)=>s+(a.monto||0),0);
-  cont.innerHTML = `<table style="font-size:12px;"><thead><tr><th>Año</th><th>Monto</th><th>Origen</th><th>Observación</th><th></th></tr></thead><tbody>
-    ${lista.map((a,idx) => {
-      const esAuto = !!a.retencionId;
-      return `<tr>
+  cont.innerHTML = `<table style="font-size:12px;"><thead><tr><th>Año</th><th>Monto</th><th>Observación</th><th></th></tr></thead><tbody>
+    ${lista.map((a,idx) => `<tr>
         <td>${a.anio}</td>
-        <td>${esAuto ? `$${Number(a.monto).toFixed(2)}` : `<input type="number" style="width:100px;" value="${a.monto}" onchange="editarAnticipoDividendo(${idx},'monto',this.value)">`}</td>
-        <td>${esAuto ? '<span class="pill ok">🔗 Auto (retención)</span>' : '<span class="pill muted">Manual</span>'}</td>
-        <td>${esAuto ? escapeHtml(a.observacion||'') : `<input type="text" style="width:160px;" value="${escapeHtml(a.observacion||'')}" onchange="editarAnticipoDividendo(${idx},'observacion',this.value)">`}</td>
-        <td>${esAuto ? '<span style="font-size:11px;color:var(--muted);">Ver en retenciones</span>' : `<button class="btn small danger" onclick="eliminarAnticipoDividendo(${idx})">Eliminar</button>`}</td>
-      </tr>`;
-    }).join("")}
-    <tr style="font-weight:bold;background:var(--panel2);"><td>TOTAL</td><td>$${total.toFixed(2)}</td><td colspan="3"></td></tr>
+        <td><input type="number" style="width:100px;" value="${a.monto}" onchange="editarAnticipoDividendo(${idx},'monto',this.value)"></td>
+        <td><input type="text" style="width:160px;" value="${escapeHtml(a.observacion||'')}" onchange="editarAnticipoDividendo(${idx},'observacion',this.value)"></td>
+        <td><button class="btn small danger" onclick="eliminarAnticipoDividendo(${idx})">Eliminar</button></td>
+      </tr>`).join("")}
+    <tr style="font-weight:bold;background:var(--panel2);"><td>TOTAL</td><td>$${total.toFixed(2)}</td><td colspan="2"></td></tr>
   </tbody></table>`;
 }
 
@@ -6940,7 +6936,7 @@ function pintarFormEscenario(){
       </div>
       <div class="field">
         <label>📆 Anticipos de dividendos pagados por año</label>
-        <p class="helpNote">Se llenan solos con el total pagado de cada retención guardada en la Calculadora de retención (más abajo), agrupado por año — también puedes agregar entradas manuales para anticipos que no pasaron por la calculadora.</p>
+        <p class="helpNote">Registra aquí los anticipos de dividendos que se le hayan entregado a los accionistas (por año, en cuotas si aplica) — son montos manuales, no se llenan solos (una retención ya calculada no es un anticipo, es la retención formal en sí).</p>
         <div id="listaAnticiposDividendos"></div>
         <div class="grid3">
           <div class="field" style="margin:0;"><label>Año</label><input type="number" id="antAnio" placeholder="Ej. 2025"></div>
@@ -6949,8 +6945,18 @@ function pintarFormEscenario(){
         </div>
         <button class="btn small" onclick="agregarAnticipoDividendoManual()">+ Agregar anticipo</button>
       </div>
-      <div class="field"><label>Retenciones ya realizadas por distribución de dividendos (USD) — disponibles para compensar el pago a cuenta dentro de los 2 ejercicios fiscales posteriores al pago (3 años en total)</label>
-        <input type="number" id="escRetencionesRealizadas" value="0">
+      <div class="field"><label>Retenciones ya realizadas por distribución de dividendos (USD) — se auto-completa con el total retenido de las retenciones guardadas, editable manualmente. Disponibles para compensar el pago a cuenta dentro de los 2 ejercicios fiscales posteriores al pago (3 años en total)</label>
+        <input type="number" id="escRetencionesRealizadas" value="${((datosDividendosCache.retenciones||{})[empresaEscenarioSeleccionada]||[]).reduce((s,r)=>s+(r.totalRetencion||0),0).toFixed(2)}">
+      </div>
+      <div class="field" style="background:var(--panel2);border-radius:8px;padding:10px 12px;">
+        <b style="font-size:13px;">⚖️ Saldo: Anticipos vs. Retenciones Realizadas</b>
+        <p class="helpNote" style="margin:6px 0 0;">${(() => {
+          const totalAnticipos = ((datosDividendosCache.anticiposDividendos||{})[empresaEscenarioSeleccionada]||[]).reduce((s,a)=>s+(a.monto||0),0);
+          const totalRetenido = ((datosDividendosCache.retenciones||{})[empresaEscenarioSeleccionada]||[]).reduce((s,r)=>s+(r.totalRetencion||0),0);
+          const saldo = totalAnticipos - totalRetenido;
+          const esCredito = saldo >= 0;
+          return `Suma de anticipos ($${totalAnticipos.toFixed(2)}) menos retenciones realizadas ($${totalRetenido.toFixed(2)}) = <b style="color:${esCredito?'var(--accent2)':'var(--danger)'};font-size:14px;">$${Math.abs(saldo).toFixed(2)} ${esCredito?'de Crédito Tributario a favor':'de Valor a Pagar (pendiente)'}</b>. ${esCredito ? 'Los anticipos ya entregados cubren (o superan) lo formalmente retenido — ese excedente queda como crédito.' : 'Lo formalmente retenido supera los anticipos entregados — falta cubrir esa diferencia.'}`;
+        })()}</p>
       </div>
       <div class="field" style="background:var(--panel2);border-radius:8px;padding:10px 12px;">
         <b style="font-size:13px;">📐 Referencia: Pago a cuenta estimado según tabla progresiva (Art. 39.2.1 LRTI)</b>
@@ -7175,7 +7181,6 @@ async function ejecutarCalculoRetencionAccionistas(){
     }
     retencionEnEdicionId = null;
     sincronizarPagoACuentaDesdeRetencion(clave, registro);
-    sincronizarAnticipoDesdeRetencion(clave, registro);
     await guardarDatosDividendos(datosDividendosCache);
     estadoEl.textContent = "Cálculo completo y guardado (también se pasó automáticamente a Pago a Cuenta en Distribución Actual).";
     pintarListaRetencionesRealizadas();
@@ -7211,33 +7216,36 @@ function sincronizarPagoACuentaDesdeRetencion(clave, r){
 // "Anticipos de dividendos pagados por año" en Escenarios — usa el valor
 // BRUTO pagado a los accionistas (totalValorPagar), ya que un anticipo es lo
 // que efectivamente se entregó, no el impuesto retenido de eso.
-function sincronizarAnticipoDesdeRetencion(clave, r){
-  if(!datosDividendosCache.anticiposDividendos) datosDividendosCache.anticiposDividendos = {};
-  if(!datosDividendosCache.anticiposDividendos[clave]) datosDividendosCache.anticiposDividendos[clave] = [];
-  const lista = datosDividendosCache.anticiposDividendos[clave];
-  let entrada = lista.find(a=>a.retencionId===r.id);
-  if(!entrada){
-    entrada = { anio:r.anio, monto:0, observacion:"", retencionId:r.id };
-    lista.push(entrada);
-  }
-  entrada.anio = r.anio;
-  entrada.monto = r.totalValorPagar;
-  entrada.observacion = `Retención de dividendos — periodo ${r.periodo}${r.fechaRetencion?` (${fmtFecha(new Date(r.fechaRetencion+"T00:00:00").getTime())})`:''} — generado automáticamente`;
+// Una retención ya calculada/formal NO es un "anticipo" — es la retención en
+// sí. Esta función quita cualquier fila que se haya creado por error en
+// "Anticipos de dividendos" vinculada a una retención (de una versión
+// anterior de la app que sí las creaba), para que esa tabla quede solo con
+// anticipos reales (manuales).
+function limpiarAnticiposDeRetenciones(clave){
+  const lista = (datosDividendosCache.anticiposDividendos||{})[clave];
+  if(!lista || !lista.length) return false;
+  const antes = lista.length;
+  datosDividendosCache.anticiposDividendos[clave] = lista.filter(a=>!a.retencionId);
+  return datosDividendosCache.anticiposDividendos[clave].length !== antes;
 }
 
 // Repara retenciones guardadas ANTES de que existiera la sincronización
-// automática hacia "Pago a cuenta" y "Anticipos de dividendos" — se ejecuta
-// cada vez que se abre Escenarios, revisando TODAS las retenciones guardadas
-// de la empresa y creando/actualizando sus entradas vinculadas si faltan.
-// Es idempotente (no duplica si ya existen), así que es seguro llamarla siempre.
+// automática hacia "Pago a cuenta" — se ejecuta cada vez que se abre
+// Escenarios o Distribución Actual, revisando TODAS las retenciones
+// guardadas de la empresa y creando/actualizando su entrada vinculada en
+// Pago a Cuenta si falta. También limpia cualquier "anticipo" que se haya
+// generado por error desde una retención. Es idempotente, así que es seguro
+// llamarla siempre.
 function resincronizarRetencionesGuardadas(clave){
   const retenciones = (datosDividendosCache.retenciones||{})[clave] || [];
-  if(!retenciones.length) return;
-  retenciones.forEach(r => {
-    sincronizarPagoACuentaDesdeRetencion(clave, r);
-    sincronizarAnticipoDesdeRetencion(clave, r);
-  });
-  guardarDatosDividendos(datosDividendosCache);
+  let huboCambios = limpiarAnticiposDeRetenciones(clave);
+  if(retenciones.length){
+    retenciones.forEach(r => {
+      sincronizarPagoACuentaDesdeRetencion(clave, r);
+    });
+    huboCambios = true;
+  }
+  if(huboCambios) guardarDatosDividendos(datosDividendosCache);
 }
 
 function renderInformeRetencionAccionistas(r, fechaRetencion){
