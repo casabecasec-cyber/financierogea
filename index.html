@@ -6581,24 +6581,26 @@ function pintarListaPagosACuenta(){
   const pagos = (datosDividendosCache.pagosACuenta||{})[clave] || [];
   if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta registrados.</p>`; return; }
   const hoyAnio = new Date().getFullYear();
-  cont.innerHTML = `<table><thead><tr><th>Año del pago</th><th>Monto</th><th>Plazo para compensar (hasta cierre de)</th><th>Estado</th><th>Observación</th><th>Forma de pago</th><th></th></tr></thead><tbody>
+  cont.innerHTML = `<table><thead><tr><th>Origen</th><th>Año del pago</th><th>Monto</th><th>Plazo para compensar (hasta cierre de)</th><th>Estado</th><th>Observación</th><th>Forma de pago</th><th></th></tr></thead><tbody>
     ${pagos.map((p, idx) => {
       const anioLimite = p.anio + 2;
       const vencido = hoyAnio > anioLimite;
       const porVencer = !vencido && (anioLimite - hoyAnio) <= 1;
+      const esAutoDesdeRetencion = !!p.retencionId;
       return `<tr>
-        <td><input type="number" style="width:80px;" value="${p.anio}" onchange="editarPagoACuenta(${idx},'anio',this.value)"></td>
-        <td><input type="number" style="width:100px;" value="${p.monto}" onchange="editarPagoACuenta(${idx},'monto',this.value)"></td>
+        <td>${esAutoDesdeRetencion ? '<span class="pill ok">🔗 Auto (retención)</span>' : '<span class="pill muted">Manual</span>'}</td>
+        <td><input type="number" style="width:80px;" value="${p.anio}" ${esAutoDesdeRetencion?'disabled title="Se edita desde la retención en Escenarios"':''} onchange="editarPagoACuenta(${idx},'anio',this.value)"></td>
+        <td><input type="number" style="width:100px;" value="${p.monto}" ${esAutoDesdeRetencion?'disabled title="Se edita desde la retención en Escenarios"':''} onchange="editarPagoACuenta(${idx},'monto',this.value)"></td>
         <td>Ejercicio ${anioLimite}</td>
         <td>${vencido?'<span class="pill danger">Crédito perdido</span>':(porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>')}</td>
-        <td><input type="text" style="width:160px;" value="${escapeHtml(p.observacion||'')}" onchange="editarPagoACuenta(${idx},'observacion',this.value)"></td>
+        <td><input type="text" style="width:160px;" value="${escapeHtml(p.observacion||'')}" ${esAutoDesdeRetencion?'disabled':''} onchange="editarPagoACuenta(${idx},'observacion',this.value)"></td>
         <td>${badgeFormaPagoACuenta(p)}</td>
         <td>
           <button class="btn small" onclick="toggleFormaPagoACuenta(${idx})">💳 Pago</button>
-          <button class="btn small danger" onclick="eliminarPagoACuenta(${idx})">Eliminar</button>
+          ${esAutoDesdeRetencion ? '<span style="font-size:11px;color:var(--muted);display:block;">Elimínala desde la retención en Escenarios</span>' : `<button class="btn small danger" onclick="eliminarPagoACuenta(${idx})">Eliminar</button>`}
         </td>
       </tr>
-      <tr id="filaFormaPagoACuenta_${idx}" class="hidden"><td colspan="7"></td></tr>`;
+      <tr id="filaFormaPagoACuenta_${idx}" class="hidden"><td colspan="8"></td></tr>`;
     }).join("")}
   </tbody></table>`;
 }
@@ -6751,10 +6753,11 @@ async function editarPagoACuenta(idx, campo, valor){
 }
 
 async function eliminarPagoACuenta(idx){
-  if(!confirm("¿Eliminar este pago a cuenta?")) return;
   const clave = empresaDistribActualSeleccionada;
   const pagos = (datosDividendosCache.pagosACuenta||{})[clave];
-  if(!pagos) return;
+  if(!pagos || !pagos[idx]) return;
+  if(pagos[idx].retencionId){ alert("Esta entrada viene de una retención guardada en Escenarios — elimínala desde ahí para que también se quite de la Utilidad Repartida del Comparativo SRI."); return; }
+  if(!confirm("¿Eliminar este pago a cuenta?")) return;
   pagos.splice(idx, 1);
   await guardarDatosDividendos(datosDividendosCache);
   pintarListaPagosACuenta();
@@ -7049,14 +7052,36 @@ async function ejecutarCalculoRetencionAccionistas(){
       datosDividendosCache.retenciones[clave].push(registro);
     }
     retencionEnEdicionId = null;
+    sincronizarPagoACuentaDesdeRetencion(clave, registro);
     await guardarDatosDividendos(datosDividendosCache);
-    estadoEl.textContent = "Cálculo completo y guardado.";
+    estadoEl.textContent = "Cálculo completo y guardado (también se pasó automáticamente a Pago a Cuenta en Distribución Actual).";
     pintarListaRetencionesRealizadas();
     await registrarCambio("Dividendos", "generar_ia", `Informe de retención calculado y guardado: ${nombreEmpresa}, periodo ${periodo}, ${seleccionados.length} accionista(s)`);
   }catch(e){
     estadoEl.textContent = "";
     alert("No se pudo calcular: " + e.message);
   }
+}
+
+// Crea o actualiza automáticamente, en "Pago a cuenta sobre utilidades no
+// distribuidas" (Distribución Accionistas Actuales), la entrada
+// correspondiente a esta retención — se identifican entre sí por
+// "retencionId", para no duplicar si la retención se vuelve a editar/
+// recalcular. El monto que se pasa es el IMPUESTO RETENIDO (lo que
+// efectivamente se remite/paga por esta retención), no el valor bruto pagado
+// a los accionistas.
+function sincronizarPagoACuentaDesdeRetencion(clave, r){
+  if(!datosDividendosCache.pagosACuenta) datosDividendosCache.pagosACuenta = {};
+  if(!datosDividendosCache.pagosACuenta[clave]) datosDividendosCache.pagosACuenta[clave] = [];
+  const lista = datosDividendosCache.pagosACuenta[clave];
+  let entrada = lista.find(p=>p.retencionId===r.id);
+  if(!entrada){
+    entrada = { anio:r.anio, monto:0, observacion:"", metodoPago:null, pagosBanco:[], cuentasPorPagarAcumulado:0, retencionId:r.id };
+    lista.push(entrada);
+  }
+  entrada.anio = r.anio;
+  entrada.monto = r.totalRetencion;
+  entrada.observacion = `Retención de dividendos — periodo ${r.periodo}${r.fechaRetencion?` (${fmtFecha(new Date(r.fechaRetencion+"T00:00:00").getTime())})`:''} — generado automáticamente`;
 }
 
 function renderInformeRetencionAccionistas(r, fechaRetencion){
@@ -7107,6 +7132,19 @@ function imprimirInformeRetencionAccionistas(){
   win.print();
 }
 
+// Vuelve a mostrar, en el área de resultado, el informe guardado de una
+// retención ya calculada (sin necesidad de recalcular ni de que siga
+// abierta la pestaña donde se generó originalmente).
+function verInformeRetencionGuardada(id){
+  const clave = empresaEscenarioSeleccionada;
+  const r = (datosDividendosCache.retenciones[clave]||[]).find(x=>x.id===id);
+  if(!r){ alert("No se encontró esa retención."); return; }
+  window._ultimoInformeRetencionAccionistas = { resultado: r.resultadoIA, periodo: r.periodo, nombreEmpresa: datosDividendosCache.porEmpresa[clave]?.nombreHoja||clave, fechaRetencion: r.fechaRetencion };
+  document.getElementById("estadoCalcRetencion").textContent = `Mostrando informe guardado: ${r.periodo} (año ${r.anio}).`;
+  document.getElementById("resultadoCalcRetencion").innerHTML = renderInformeRetencionAccionistas(r.resultadoIA, r.fechaRetencion);
+  document.getElementById("resultadoCalcRetencion").scrollIntoView({behavior:"smooth", block:"center"});
+}
+
 function pintarListaRetencionesRealizadas(){
   const cont = document.getElementById("listaRetencionesRealizadas");
   if(!cont) return;
@@ -7126,6 +7164,7 @@ function pintarListaRetencionesRealizadas(){
       <td>$${r.totalNeto.toFixed(2)}</td>
       <td>${badgeFormaPagoRetencion(r)}</td>
       <td>
+        <button class="btn small" onclick="verInformeRetencionGuardada('${r.id}')">👁️ Ver informe</button>
         <button class="btn small" onclick="editarRetencionRealizada('${r.id}')">✏️ Editar</button>
         <button class="btn small" onclick="toggleFormaPagoRetencion('${r.id}')">💳 Pago</button>
         <button class="btn small danger" onclick="eliminarRetencionRealizada('${r.id}')">Eliminar</button>
@@ -7179,9 +7218,12 @@ function cancelarEdicionRetencion(){
 }
 
 async function eliminarRetencionRealizada(id){
-  if(!confirm("¿Eliminar esta retención guardada? Esto también quita su monto de la columna \"Utilidad Repartida\" del Comparativo SRI para ese año.")) return;
+  if(!confirm("¿Eliminar esta retención guardada? Esto también quita su monto de la columna \"Utilidad Repartida\" del Comparativo SRI para ese año, y su entrada vinculada en \"Pago a cuenta\" (Distribución Actual).")) return;
   const clave = empresaEscenarioSeleccionada;
   datosDividendosCache.retenciones[clave] = (datosDividendosCache.retenciones[clave]||[]).filter(r=>r.id!==id);
+  if(datosDividendosCache.pagosACuenta?.[clave]){
+    datosDividendosCache.pagosACuenta[clave] = datosDividendosCache.pagosACuenta[clave].filter(p=>p.retencionId!==id);
+  }
   await guardarDatosDividendos(datosDividendosCache);
   if(retencionEnEdicionId===id) cancelarEdicionRetencion();
   pintarListaRetencionesRealizadas();

@@ -226,6 +226,23 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: los informes de retención se pueden volver a ver** — antes, el informe generado
+  (individual + conjunto ejecutivo) solo se veía justo después de calcular, y desaparecía al
+  cambiar de pestaña o recargar. Ahora, aunque ya se guarda el informe completo junto con cada
+  retención, agregué el botón **"👁️ Ver informe"** en la lista de "Retenciones realizadas" —
+  lo vuelve a mostrar en pantalla (y habilita "🖨️ Imprimir / Descargar PDF" sobre ese mismo
+  informe) sin tener que recalcular nada.
+
+- **Corregido: las retenciones realizadas no pasaban automáticamente a "Pago a cuenta"** —
+  construí ambos sistemas por separado y nunca los conecté. Ahora, cada vez que calculas/
+  guardas una retención en Escenarios, se crea o actualiza automáticamente su entrada
+  correspondiente en "Pago a cuenta sobre utilidades no distribuidas" (Distribución
+  Accionistas Actuales), con el monto del **impuesto retenido** de esa retención. Estas
+  entradas aparecen marcadas con "🔗 Auto (retención)" y no se pueden editar ni eliminar
+  directamente ahí — hay que hacerlo desde la retención en Escenarios, para que todo (Pago a
+  Cuenta, Utilidad Repartida del Comparativo SRI) se mantenga sincronizado desde una sola
+  fuente. Al eliminar la retención, su entrada vinculada en Pago a Cuenta se quita sola.
+
 - **Nuevo: las retenciones calculadas ahora se guardan (editables y eliminables)** — en
   Dividendos → Escenarios → Calculadora de retención, cada vez que presionas "✨ Calcular
   retención y generar informes" el resultado se **guarda automáticamente** en una lista
