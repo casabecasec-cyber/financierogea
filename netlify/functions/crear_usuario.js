@@ -14,24 +14,29 @@
 //   FIREBASE_PRIVATE_KEY    -> campo "private_key" del JSON (con los \n tal cual, entre comillas)
 //   FIREBASE_DATABASE_URL   -> la URL de tu Realtime Database, ej. https://financierogea-ec95d-default-rtdb.firebaseio.com
 
-const admin = require("firebase-admin");
-
 // El dueño original de los datos (definido también en el frontend como
 // DATOS_UID) siempre es administrador, sin necesidad de una entrada en
 // "roles_control_documental".
 const DATOS_UID_OWNER = "s51EqDX0m9hWmo9C4Hy00dFqD0C3";
 
 function inicializarAdmin() {
-  if (admin.apps.length) return;
-  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey,
-    }),
-    databaseURL: process.env.FIREBASE_DATABASE_URL,
-  });
+  // Carga "firebase-admin" aquí (no al inicio del archivo) y dentro del
+  // try/catch del handler — así, si el paquete no está disponible en el
+  // entorno de la función, devolvemos un JSON con el error real en vez de
+  // que la función se caiga en silencio antes de poder generar una respuesta.
+  const admin = require("firebase-admin");
+  if (!admin.apps.length) {
+    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey,
+      }),
+      databaseURL: process.env.FIREBASE_DATABASE_URL,
+    });
+  }
+  return admin;
 }
 
 exports.handler = async (event) => {
@@ -52,8 +57,17 @@ exports.handler = async (event) => {
     };
   }
 
+  let admin;
   try {
-    inicializarAdmin();
+    admin = inicializarAdmin();
+  } catch (err) {
+    return {
+      statusCode: 500, headers,
+      body: JSON.stringify({ error: "No se pudo inicializar Firebase Admin: " + (err.message || String(err)) + " — revisa que FIREBASE_PRIVATE_KEY se haya pegado completo (con las comillas y los \\n tal cual) y que las otras 3 variables estén bien escritas." }),
+    };
+  }
+
+  try {
     const { idToken, accion, email, password, uid, rol } = JSON.parse(event.body || "{}");
     if (!idToken) {
       return { statusCode: 401, headers, body: JSON.stringify({ error: "Falta la sesión del administrador." }) };

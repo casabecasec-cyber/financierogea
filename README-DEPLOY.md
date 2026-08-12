@@ -277,6 +277,14 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
   **Sin estos 2 pasos configurados, la pantalla de Administración de Usuarios mostrará un error
   explicando qué falta** — el resto de la app sigue funcionando normal mientras tanto.
 
+  **Si después de configurar todo sigue saliendo un error genérico ("Error al gestionar
+  usuarios")**: significa que la función se cayó antes de poder generar un mensaje específico
+  — normalmente por un problema con `FIREBASE_PRIVATE_KEY` mal pegada. Ya se corrigió el código
+  para que este tipo de error muestre el detalle real en vez de un mensaje genérico; si lo
+  vuelves a ver después de actualizar, revisa que copiaste el valor de `private_key` del JSON
+  **completo, con las comillas y los `\n` tal cual** (no reemplaces los `\n` por saltos de línea
+  reales al pegarlo en Netlify).
+
 - **Nuevo: enlaces a actas de junta realizadas anteriormente** — en "Actas de Junta", debajo de
   la lista de actas generadas en la app, nueva sección "🔗 Actas de junta realizadas
   anteriormente (enlaces)". Guarda ahí los enlaces (OneDrive, Google Drive, etc.) de actas que
