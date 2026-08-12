@@ -274,16 +274,17 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
   solo visible para administradores) → completa correo, contraseña y rol → "Crear usuario". Ya
   puedes compartirle esas credenciales a esa persona para que inicie sesión.
 
-  **Sin estos 2 pasos configurados, la pantalla de Administración de Usuarios mostrará un error
-  explicando qué falta** — el resto de la app sigue funcionando normal mientras tanto.
+  **Actualización — encontrada la causa real del error 502**: `firebase-admin` tiene problemas
+  conocidos al empaquetarse con `esbuild` (el compilador rápido que usa Netlify por defecto) —
+  provoca que la función se caiga por completo en producción, sin poder ni siquiera devolver un
+  mensaje de error. Ya se corrigió: solo la función `crear_usuario` ahora usa el empaquetador
+  clásico de Netlify (`zisi`), mucho más confiable para paquetes complejos como este; las demás
+  funciones (`analizar`, `leer_enlace`) siguen igual que antes, sin cambios.
 
-  **Si después de configurar todo sigue saliendo un error genérico ("Error al gestionar
-  usuarios")**: significa que la función se cayó antes de poder generar un mensaje específico
-  — normalmente por un problema con `FIREBASE_PRIVATE_KEY` mal pegada. Ya se corrigió el código
-  para que este tipo de error muestre el detalle real en vez de un mensaje genérico; si lo
-  vuelves a ver después de actualizar, revisa que copiaste el valor de `private_key` del JSON
-  **completo, con las comillas y los `\n` tal cual** (no reemplaces los `\n` por saltos de línea
-  reales al pegarlo en Netlify).
+- **Corregido: error en consola al navegar rápido desde el Dashboard** ("Cannot set properties
+  of null, setting 'innerHTML'") — si el usuario cambiaba de pantalla mientras el Dashboard
+  todavía estaba cargando datos, la carga intentaba actualizar elementos que ya no existían.
+  Ahora se detecta ese caso y simplemente no hace nada, sin error.
 
 - **Nuevo: enlaces a actas de junta realizadas anteriormente** — en "Actas de Junta", debajo de
   la lista de actas generadas en la app, nueva sección "🔗 Actas de junta realizadas

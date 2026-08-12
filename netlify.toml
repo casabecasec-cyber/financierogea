@@ -12,6 +12,17 @@
 [functions]
   node_bundler = "esbuild"
 
+# firebase-admin tiene problemas conocidos y documentados al empaquetarse con
+# esbuild (requires dinámicos internos que esbuild no resuelve bien), lo que
+# provoca que la función falle por completo en producción (error 502) aunque
+# el build parezca exitoso. Para esta función específica se usa el
+# empaquetador clásico de Netlify (zisi), que simplemente incluye
+# node_modules tal cual sin intentar transformarlo — mucho más confiable para
+# paquetes complejos como este. Las otras funciones (sin dependencias) siguen
+# con esbuild, sin cambios.
+[functions."crear_usuario"]
+  node_bundler = "zisi"
+
 [[redirects]]
   from = "/api/analizar"
   to = "/.netlify/functions/analizar"

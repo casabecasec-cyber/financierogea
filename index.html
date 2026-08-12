@@ -1605,6 +1605,10 @@ async function renderDashboard(){
     }
   }
 
+  // Si el usuario ya navegó a otra pantalla mientras esto cargaba, no hay
+  // nada que actualizar (evita el error "Cannot set properties of null").
+  if(currentView!=="dashboard" || !document.getElementById("statRow")) return;
+
   document.getElementById("statRow").innerHTML = `
     <div class="statCard"><div class="n">${empresasCache.length}</div><div class="l">Empresas registradas</div></div>
     <div class="statCard"><div class="n">${pub.length + priv.length}</div><div class="l">Trámites totales</div></div>
