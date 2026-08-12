@@ -6137,6 +6137,74 @@ async function actualizarDividendoHistoricoCampo(clave, accionista, campo, valor
   pintarDetalleEmpresaDividendo();
 }
 
+// Recalcula el Historial de Dividendos por accionista tomando, para cada año,
+// la "Utilidad a Distribuir" del Comparativo SRI/Súper Cías/Contable y
+// repartiéndola entre los accionistas según su % real de participación ese
+// año (capital de cada accionista ese año / capital total de la empresa ese
+// año, del Historial de capital social). Así el historial de dividendos
+// queda consistente con esas dos fuentes en vez de depender solo del Excel
+// original importado.
+async function recalcularHistorialDividendosDesdeComparativo(){
+  const clave = empresaDividendoSeleccionada;
+  const datosCapital = datosDividendosCache.resumenCapital.empresas[clave];
+  const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
+  if(!datosCapital || !datosResumen){ alert("Faltan datos de capital o de dividendos para esta empresa."); return; }
+  if(!confirm("Esto reemplaza, año por año, el valor de cada accionista en el Historial de Dividendos (usando Utilidad a Distribuir del Comparativo SRI × % de capital de ese año). Los montos de IMP. RENTA y A PAGAR no se tocan. ¿Continuar?")) return;
+
+  const filasComparativo = calcularFilasComparativo(clave);
+  const aniosCapitalLocal = datosDividendosCache.resumenCapital.anios;
+
+  // Unión de accionistas (capital + dividendos ya existentes), para no perder a nadie
+  const nombresUnion = Array.from(new Set([
+    ...datosCapital.filas.map(f=>f.accionista),
+    ...datosResumen.filas.map(f=>f.accionista)
+  ]));
+  // Reconstruye (o crea) la fila de dividendos de cada accionista, conservando
+  // impuestoRenta/dividendoPagar si ya existían.
+  const filasNuevas = nombresUnion.map(nombre => {
+    const existente = datosResumen.filas.find(f=>f.accionista===nombre);
+    return {
+      accionista: nombre,
+      valores: {},
+      total: 0,
+      impuestoRenta: existente?.impuestoRenta || 0,
+      dividendoPagar: existente?.dividendoPagar || 0,
+    };
+  });
+
+  const sumanNuevo = {};
+  for(const anio of aniosCapitalLocal){
+    const filaComp = filasComparativo.find(f=>f.anio===anio);
+    const utilidadDistribuirAnio = filaComp ? (filaComp.utilidadMostrada||0) : 0;
+    const totalCapitalAnio = datosCapital.suman[anio] || 0;
+    let sumaAnio = 0;
+    filasNuevas.forEach(fn => {
+      const filaCap = datosCapital.filas.find(f=>f.accionista===fn.accionista);
+      const capitalAccionista = filaCap ? (filaCap.valores[anio]||0) : 0;
+      const porcentaje = totalCapitalAnio ? (capitalAccionista/totalCapitalAnio) : 0;
+      const valorAsignado = utilidadDistribuirAnio * porcentaje;
+      fn.valores[anio] = valorAsignado;
+      sumaAnio += valorAsignado;
+    });
+    sumanNuevo[anio] = sumaAnio;
+  }
+  filasNuevas.forEach(fn => {
+    fn.total = Object.values(fn.valores).reduce((s,v)=>s+(v||0), 0);
+  });
+
+  datosResumen.filas = filasNuevas;
+  datosResumen.suman = sumanNuevo;
+  if(!datosDividendosCache.resumenDividendos.anios.length){
+    datosDividendosCache.resumenDividendos.anios = [...aniosCapitalLocal];
+  } else {
+    datosDividendosCache.resumenDividendos.anios = Array.from(new Set([...datosDividendosCache.resumenDividendos.anios, ...aniosCapitalLocal])).sort((a,b)=>a-b);
+  }
+
+  await guardarDatosDividendos(datosDividendosCache);
+  await registrarCambio("Dividendos", "editar", `Historial de dividendos recalculado desde Comparativo SRI + % de capital: ${datosDividendosCache.porEmpresa[clave]?.nombreHoja||clave}`);
+  pintarDetalleEmpresaDividendo();
+}
+
 function pintarDetalleEmpresaDividendo(){
   const cont = document.getElementById("detalleEmpresaDividendo");
   if(!empresaDividendoSeleccionada){ cont.innerHTML = `<div class="card emptyState">Selecciona una empresa.</div>`; return; }
@@ -6167,9 +6235,18 @@ function pintarDetalleEmpresaDividendo(){
   const capitalActual = accionistaDividendoSeleccionado
     ? (filasCapitalMostrar[0]?.valores[ultimoAnioCap]||0)
     : (datosCapital ? (datosCapital.suman[ultimoAnioCap]||0) : 0);
-  const totalDividendosHistorico = filasDividendoMostrar.reduce((s,f)=> s + anios.reduce((s2,a)=>s2+(f.valores[a]||0),0), 0);
-  const totalImpuestoHistorico = filasDividendoMostrar.reduce((s,f)=> s+(f.impuestoRenta||0), 0);
-  const totalPagadoHistorico = filasDividendoMostrar.reduce((s,f)=> s+(f.dividendoPagar||0), 0);
+  const totalDividendosHistorico = accionistaDividendoSeleccionado
+    ? filasDividendoMostrar.reduce((s,f)=> s + anios.reduce((s2,a)=>s2+(f.valores[a]||0),0), 0)
+    : (() => {
+        const filasComp = calcularFilasComparativo(empresaDividendoSeleccionada).filter(f=>f.valorReal!==null&&f.valorReal!==undefined);
+        return filasComp.length ? (filasComp[filasComp.length-1].acumuladoMostrado||0) : 0;
+      })();
+  const totalImpuestoHistorico = accionistaDividendoSeleccionado
+    ? filasDividendoMostrar.reduce((s,f)=> s+(f.impuestoRenta||0), 0)
+    : calcularFilasComparativo(empresaDividendoSeleccionada).reduce((s,f)=> s+(f.raw.impuestoCausado||0), 0);
+  const totalPagadoHistorico = accionistaDividendoSeleccionado
+    ? filasDividendoMostrar.reduce((s,f)=> s+(f.dividendoPagar||0), 0)
+    : calcularFilasComparativo(empresaDividendoSeleccionada).reduce((s,f)=> s+(f.raw.participacionTrabajadoresRepartida||0), 0);
   const capitalTotalEmpresa = datosCapital ? (datosCapital.suman[ultimoAnioCap]||0) : 0;
   const porcentajeParticipacion = accionistaDividendoSeleccionado && capitalTotalEmpresa
     ? (capitalActual/capitalTotalEmpresa*100) : null;
@@ -6187,10 +6264,11 @@ function pintarDetalleEmpresaDividendo(){
     <div class="statRow">
       <div class="statCard"><div class="n">$${capitalActual.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?`Capital de ${escapeHtml(accionistaDividendoSeleccionado)}`:'Capital social actual'} (${ultimoAnioCap})</div></div>
       ${porcentajeParticipacion!==null?`<div class="statCard"><div class="n">${porcentajeParticipacion.toFixed(2)}%</div><div class="l">% de participación en ${escapeHtml(nombreEmpresa)}</div></div>`:''}
-      <div class="statCard"><div class="n">$${totalDividendosHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Utilidad/dividendo histórico ${accionistaDividendoSeleccionado?'de este accionista':'total'}</div></div>
-      <div class="statCard"><div class="n">$${totalImpuestoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Impuesto de renta histórico retenido</div></div>
-      <div class="statCard"><div class="n">$${totalPagadoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">Neto histórico pagado</div></div>
+      <div class="statCard"><div class="n">$${totalDividendosHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Utilidad/dividendo histórico de este accionista':'Utilidad Acumulada a la fecha (Comparativo SRI...)'}</div></div>
+      <div class="statCard"><div class="n">$${totalImpuestoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Impuesto de renta histórico retenido':'Impuesto Causado histórico (Comparativo SRI...)'}</div></div>
+      <div class="statCard"><div class="n">$${totalPagadoHistorico.toLocaleString('es-EC',{maximumFractionDigits:0})}</div><div class="l">${accionistaDividendoSeleccionado?'Neto histórico pagado':'Participación Repartida histórica (Comparativo SRI...)'}</div></div>
     </div>
+    ${!accionistaDividendoSeleccionado ? `<p class="helpNote">Estas 3 tarjetas vienen del Comparativo SRI/Súper Cías/Contable de esta empresa — para cambiarlas, edita los valores allá (o usa "🔄 Recalcular desde Comparativo SRI + % de Capital" abajo para que el Historial de Dividendos quede consistente con ellas).</p>` : ''}
 
     ${datosCapital && filasCapitalMostrar.length ? `
     <div class="card" style="overflow-x:auto;">
@@ -6211,6 +6289,10 @@ function pintarDetalleEmpresaDividendo(){
     <div class="card" style="overflow-x:auto;">
       <h3 style="margin-top:0;">Historial de dividendos ${accionistaDividendoSeleccionado?`— ${escapeHtml(accionistaDividendoSeleccionado)}`:'por accionista'} — ${escapeHtml(nombreEmpresa)}</h3>
       <p class="helpNote">Todos los valores son editables — cámbialos si hace falta corregir algo del archivo importado; se guardan solos al salir de la celda.</p>
+      ${!accionistaDividendoSeleccionado ? `
+      <button class="btn small" onclick="recalcularHistorialDividendosDesdeComparativo()">🔄 Recalcular desde Comparativo SRI + % de Capital</button>
+      <p class="helpNote" style="margin-top:4px;">Para cada año, toma la "Utilidad a Distribuir" del Comparativo SRI/Súper Cías/Contable y la reparte entre los accionistas según su % real de participación ese año (según el Historial de capital social de arriba) — reemplaza los valores por año de cada accionista abajo para que cuadren con esas dos fuentes. Los montos de IMP. RENTA y A PAGAR no se tocan (ajústalos a mano según corresponda).</p>
+      ` : ''}
       <table style="font-size:12px;"><thead><tr><th>Accionista</th>${anios.map(a=>`<th>${a}</th>`).join("")}<th>TOTAL</th><th>IMP. RENTA</th><th>A PAGAR</th></tr></thead><tbody>
         ${filasDividendoMostrar.map(f => `<tr>
           <td>${escapeHtml(f.accionista)}</td>
@@ -6223,8 +6305,24 @@ function pintarDetalleEmpresaDividendo(){
           <td>SUMAN</td>
           ${anios.map(a=>`<td>${(datosResumen.suman[a]||0).toFixed(2)}</td>`).join("")}
           <td colspan="3"></td>
+        </tr>
+        <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);">
+          <td>TOTAL ACUMULADO</td>
+          ${(() => {
+            const filasComp = calcularFilasComparativo(empresaDividendoSeleccionada);
+            let acumulado = 0;
+            return anios.map(a => {
+              acumulado += (datosResumen.suman[a]||0);
+              const filaComp = filasComp.find(f=>f.anio===a);
+              const acumuladoComparativo = filaComp ? (filaComp.acumuladoMostrado||0) : null;
+              const cuadra = acumuladoComparativo!==null && Math.abs(acumulado-acumuladoComparativo)<1;
+              return `<td>${acumulado.toFixed(2)}${acumuladoComparativo!==null?`<div style="font-size:9px;font-weight:normal;color:${cuadra?'var(--accent2)':'var(--danger)'};">${cuadra?'✓ cuadra':'⚠ Comparativo: $'+acumuladoComparativo.toFixed(2)}</div>`:''}</td>`;
+            }).join("");
+          })()}
+          <td colspan="3"></td>
         </tr>` : ''}
       </tbody></table>
+      ${!accionistaDividendoSeleccionado ? `<p class="helpNote" style="margin-top:6px;">"TOTAL ACUMULADO" es la suma corrida de la fila SUMAN, año por año — debajo de cada celda se compara contra la "Utilidad Acumulada" del Comparativo SRI... para ese mismo año, para verificar que cuadren (✓) o ver la diferencia (⚠) si no.</p>` : ''}
     </div>
 
     ${!accionistaDividendoSeleccionado ? `

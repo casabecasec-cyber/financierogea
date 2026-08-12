@@ -226,6 +226,32 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: fila "TOTAL ACUMULADO" en Historial de Dividendos** — debajo de SUMAN, muestra la
+  suma corrida año por año, y bajo cada celda se compara automáticamente contra la "Utilidad
+  Acumulada" del Comparativo SRI... para ese mismo año: ✓ verde si cuadra, ⚠ rojo con el monto
+  del Comparativo si no coincide — para verificar visualmente que ambas tablas están alineadas.
+- **Reconectado: las 3 tarjetas de "Trabajar con Resúmenes" vuelven a venir del Comparativo
+  SRI** (cuando ves la empresa completa, sin filtrar por accionista): "Utilidad Acumulada a la
+  fecha", "Impuesto Causado histórico", y "Participación Repartida histórica" (reemplaza a
+  "Neto histórico pagado"). Ahora que existe el botón "🔄 Recalcular desde Comparativo SRI + %
+  de Capital", tiene sentido que ambas fuentes se mantengan visibles y comparables una junto a
+  la otra — se agregó una nota junto a las tarjetas aclarando que para cambiarlas hay que
+  editar el Comparativo SRI directamente (o usar el botón de recálculo), no el Historial de
+  Dividendos. Cuando filtras por un accionista específico, las tarjetas vuelven a su cálculo
+  anterior basado en el historial de ese accionista (el Comparativo SRI es a nivel de empresa,
+  no por accionista).
+
+- **Nuevo: recalcular el Historial de Dividendos desde Comparativo SRI + % de Capital** — en
+  "Trabajar con Resúmenes", botón "🔄 Recalcular desde Comparativo SRI + % de Capital" sobre la
+  tabla de "Historial de dividendos". Para cada año, toma la "Utilidad a Distribuir" del
+  Comparativo SRI/Súper Cías/Contable y la reparte entre los accionistas según su % **real** de
+  participación ese año específico (capital de cada accionista ese año ÷ capital total de la
+  empresa ese año, del Historial de capital social) — reemplazando los valores por accionista y
+  año, para que el historial de dividendos quede consistente con esas dos fuentes en vez de
+  depender solo de lo que traía el Excel original. Pide confirmación antes de aplicar (porque
+  sobrescribe los valores por año existentes); los montos de IMP. RENTA y A PAGAR no se tocan,
+  se dejan para ajuste manual.
+
 - **Nuevo: cálculos legales determinísticos (no solo estimados por IA)** en Dividendos:
   - **Valores oficiales agregados**: SBU por año (2021-2026, $400 a $482), franja exenta = 3 SBU
     del año de la distribución, tarifas de retención (12% residente, 10% no residente general,
