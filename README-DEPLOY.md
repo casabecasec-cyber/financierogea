@@ -226,6 +226,11 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: faltaba el total en la columna "TOTAL ACUMULADO" de las filas SUMAN y TOTAL
+  ACUMULADO EMPRESA** — esas celdas quedaban vacías; ahora muestran el gran total (suma de
+  todos los años), que debe coincidir con la suma de la columna "TOTAL ACUMULADO" de todos los
+  accionistas.
+
 - **Simplificado: Historial de Dividendos por accionista** — se quitaron las columnas
   "IMP. RENTA" y "A PAGAR" (ya no necesarias en esta tabla). La columna "TOTAL" se renombró a
   **"TOTAL ACUMULADO"** por accionista (sigue siendo la suma de todos sus años, editable). La

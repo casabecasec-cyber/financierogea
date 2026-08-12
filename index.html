@@ -6302,7 +6302,7 @@ function pintarDetalleEmpresaDividendo(){
         ${!accionistaDividendoSeleccionado ? `<tr style="font-weight:bold;background:var(--panel2);">
           <td>SUMAN</td>
           ${anios.map(a=>`<td>${(datosResumen.suman[a]||0).toFixed(2)}</td>`).join("")}
-          <td></td>
+          <td>${anios.reduce((s,a)=>s+(datosResumen.suman[a]||0),0).toFixed(2)}</td>
         </tr>
         <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);">
           <td>TOTAL ACUMULADO EMPRESA</td>
@@ -6317,10 +6317,10 @@ function pintarDetalleEmpresaDividendo(){
               return `<td>${acumulado.toFixed(2)}${acumuladoComparativo!==null?`<div style="font-size:9px;font-weight:normal;color:${cuadra?'var(--accent2)':'var(--danger)'};">${cuadra?'✓ cuadra':'⚠ Comparativo: $'+acumuladoComparativo.toFixed(2)}</div>`:''}</td>`;
             }).join("");
           })()}
-          <td></td>
+          <td>${anios.reduce((s,a)=>s+(datosResumen.suman[a]||0),0).toFixed(2)}</td>
         </tr>` : ''}
       </tbody></table>
-      ${!accionistaDividendoSeleccionado ? `<p class="helpNote" style="margin-top:6px;">"TOTAL ACUMULADO EMPRESA" es la suma corrida de la fila SUMAN, año por año — debajo de cada celda se compara contra la "Utilidad Acumulada" del Comparativo SRI... para ese mismo año, para verificar que cuadren (✓) o ver la diferencia (⚠) si no. La columna "TOTAL ACUMULADO" de cada accionista es la suma de todos sus años.</p>` : ''}
+      ${!accionistaDividendoSeleccionado ? `<p class="helpNote" style="margin-top:6px;">"TOTAL ACUMULADO EMPRESA" es la suma corrida de la fila SUMAN, año por año — debajo de cada celda se compara contra la "Utilidad Acumulada" del Comparativo SRI... para ese mismo año, para verificar que cuadren (✓) o ver la diferencia (⚠) si no. La columna "TOTAL ACUMULADO" de cada accionista es la suma de todos sus años; la última celda de SUMAN y de TOTAL ACUMULADO EMPRESA es ese mismo gran total, para que cuadre con la suma de todos los accionistas.</p>` : ''}
     </div>
 
     ${!accionistaDividendoSeleccionado ? `
