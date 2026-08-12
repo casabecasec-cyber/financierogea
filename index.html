@@ -900,6 +900,22 @@ async function guardarActaJunta(datos, id){
 }
 async function eliminarActaJunta(id){ await db.ref(`actas_juntas/${currentUser.uid}/${id}`).remove(); }
 
+/* --- Enlaces a actas de junta realizadas anteriormente (fuera de la app),
+   guardados por empresa --- */
+async function cargarEnlacesActasAnteriores(empresaId){
+  const snap = await db.ref(`enlaces_actas_juntas/${currentUser.uid}`).once("value");
+  const val = snap.val() || {};
+  const todos = Object.keys(val).map(id => ({id, ...val[id]}));
+  return (empresaId ? todos.filter(e=>e.empresaId===empresaId) : todos).sort((a,b)=>(a.creado||0)-(b.creado||0));
+}
+async function guardarEnlaceActaAnterior(datos, id){
+  const payload = {...datos, actualizado: Date.now()};
+  if(id){ await db.ref(`enlaces_actas_juntas/${currentUser.uid}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`enlaces_actas_juntas/${currentUser.uid}`).push(); await ref.set(payload); id = ref.key; }
+  return id;
+}
+async function eliminarEnlaceActaAnterior(id){ await db.ref(`enlaces_actas_juntas/${currentUser.uid}/${id}`).remove(); }
+
 /* --- Cesión de Acciones/Participaciones --- */
 async function cargarCesiones(empresaId){
   const snap = await db.ref(`cesiones_acciones/${currentUser.uid}`).once("value");
@@ -5510,8 +5526,56 @@ async function pintarListaSocietario(){
   cont.innerHTML = `
     <div class="card"><button class="btn primary" onclick="crearDocumentoSocietario()">+ Nuevo/a ${cfg.tituloSingular}</button></div>
     <div class="card" id="tablaSocietario"></div>
+    ${moduloSocietarioActual==="acta_junta" ? `
+    <div class="card">
+      <h3 style="margin-top:0;">🔗 Actas de junta realizadas anteriormente (enlaces)</h3>
+      <p class="helpNote">Guarda aquí los enlaces (OneDrive, Google Drive, etc.) de actas de junta que la empresa ya haya realizado antes de usar esta app, para tenerlas a mano — cada una con su propio enlace y descripción.</p>
+      <div id="listaEnlacesActasAnteriores">Cargando...</div>
+      <div class="grid2">
+        <div class="field" style="margin:0;"><label>Descripción (ej. "Junta ordinaria 2023")</label><input type="text" id="enlaceActaTitulo" placeholder="Descripción corta"></div>
+        <div class="field" style="margin:0;"><label>Enlace</label><input type="text" id="enlaceActaUrl" placeholder="https://..."></div>
+      </div>
+      <button class="btn small" onclick="agregarEnlaceActaAnterior()">+ Agregar enlace</button>
+    </div>` : ''}
   `;
   pintarTablaSocietario();
+  if(moduloSocietarioActual==="acta_junta") pintarListaEnlacesActasAnteriores(empresaId);
+}
+
+async function pintarListaEnlacesActasAnteriores(empresaId){
+  const cont = document.getElementById("listaEnlacesActasAnteriores");
+  if(!cont) return;
+  let lista;
+  try{
+    lista = await cargarEnlacesActasAnteriores(empresaId);
+  }catch(e){
+    cont.innerHTML = `<p style="color:var(--danger);font-size:13px;">No se pudo cargar. Si dice "permission_denied", agrega la ruta "enlaces_actas_juntas" a las reglas de Realtime Database.</p>`;
+    return;
+  }
+  if(!lista.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin enlaces guardados todavía.</p>`; return; }
+  cont.innerHTML = lista.map(e => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <div><b>${escapeHtml(e.titulo||'(sin descripción)')}</b><br><a href="${escapeHtml(e.url)}" target="_blank" rel="noopener" style="font-size:12px;word-break:break-all;">${escapeHtml(e.url)}</a></div>
+      <button class="btn small danger" onclick="eliminarEnlaceActaAnteriorClick('${e.id}','${empresaId}')">Eliminar</button>
+    </div>`).join("");
+}
+
+async function agregarEnlaceActaAnterior(){
+  const empresaId = empresaSocietariaSeleccionada[moduloSocietarioActual];
+  if(!empresaId){ alert("Selecciona una empresa primero."); return; }
+  const titulo = document.getElementById("enlaceActaTitulo").value.trim();
+  const url = document.getElementById("enlaceActaUrl").value.trim();
+  if(!url){ alert("Pega el enlace primero."); return; }
+  await guardarEnlaceActaAnterior({ empresaId, titulo, url }, null);
+  document.getElementById("enlaceActaTitulo").value = "";
+  document.getElementById("enlaceActaUrl").value = "";
+  pintarListaEnlacesActasAnteriores(empresaId);
+}
+
+async function eliminarEnlaceActaAnteriorClick(id, empresaId){
+  if(!confirm("¿Eliminar este enlace?")) return;
+  await eliminarEnlaceActaAnterior(id);
+  pintarListaEnlacesActasAnteriores(empresaId);
 }
 
 function pintarTablaSocietario(){

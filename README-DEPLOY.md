@@ -226,6 +226,15 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: enlaces a actas de junta realizadas anteriormente** — en "Actas de Junta", debajo de
+  la lista de actas generadas en la app, nueva sección "🔗 Actas de junta realizadas
+  anteriormente (enlaces)". Guarda ahí los enlaces (OneDrive, Google Drive, etc.) de actas que
+  la empresa ya haya hecho antes de usar esta app — cada una con su propia descripción y
+  enlace, para tenerlas a mano sin tener que buscarlas en otro lado. Es por empresa (cada
+  empresa ve solo sus propios enlaces).
+  ⚠️ **Requiere agregar la ruta `enlaces_actas_juntas` a las reglas de Firebase Realtime
+  Database** (mismo patrón que las demás rutas — lectura/escritura solo para `auth.uid === $uid`).
+
 - **Corregido: la IA "tardaba demasiado" al generar Actas de Junta (y otros documentos de texto
   largo)** — Netlify tiene un límite de ~27 segundos para funciones síncronas, y Sonnet a veces
   lo superaba en documentos largos. Se cambió el modelo usado para generar/revisar Actas de
