@@ -226,6 +226,19 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: informe de diferencias entre Comparativo SRI y Historial de Dividendos** — botón
+  "🔍 Ver informe de diferencias con Comparativo SRI" en "Trabajar con Resúmenes". Muestra, año
+  por año, la "Utilidad a Distribuir" del Comparativo SRI contra la fila SUMAN del Historial de
+  Dividendos, resalta en rojo los años que no cuadran, y suma la diferencia total al final.
+  Útil para detectar rápido dónde se desalinearon ambas tablas (normalmente porque se editó un
+  valor a mano después de la última vez que se usó "🔄 Recalcular").
+- **Nuevo: Imprimir, Descargar PDF y Descargar Excel en "Trabajar con Resúmenes"** — igual que
+  en el Comparativo SRI, genera un informe ejecutivo profesional con: resumen ejecutivo (capital
+  actual, utilidad acumulada, total distribuido histórico, diferencia total vs. Comparativo),
+  el Historial de Capital Social completo, el Historial de Dividendos completo, y la
+  Conciliación año por año con el Comparativo SRI (filas con diferencia resaltadas en rojo). El
+  Excel exporta todo en 3 hojas separadas: Capital Social, Historial Dividendos, y Conciliación.
+
 - **Corregido: faltaba el total en la columna "TOTAL ACUMULADO" de las filas SUMAN y TOTAL
   ACUMULADO EMPRESA** — esas celdas quedaban vacías; ahora muestran el gran total (suma de
   todos los años), que debe coincidir con la suma de la columna "TOTAL ACUMULADO" de todos los

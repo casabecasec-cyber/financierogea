@@ -6205,6 +6205,63 @@ async function recalcularHistorialDividendosDesdeComparativo(){
   pintarDetalleEmpresaDividendo();
 }
 
+function toggleInformeDiferenciasComparativo(){
+  const wrap = document.getElementById("wrapInformeDiferenciasComparativo");
+  if(!wrap) return;
+  if(!wrap.classList.contains("hidden")){ wrap.classList.add("hidden"); wrap.innerHTML=""; return; }
+  wrap.classList.remove("hidden");
+  const clave = empresaDividendoSeleccionada;
+  const nombreEmpresa = datosDividendosCache.porEmpresa[clave]?.nombreHoja || clave;
+  const { filas, totalDiferencia, totalComparativo, totalDividendos } = calcularConciliacionComparativoVsDividendos(clave);
+  if(!filas.length){ wrap.innerHTML = `<p style="color:var(--muted);font-size:13px;margin-top:8px;">No hay años con datos en Comparativo SRI ni en Historial de Dividendos para comparar.</p>`; return; }
+  const cuadraTodo = Math.abs(totalDiferencia) < 0.5;
+  wrap.innerHTML = `
+    <div class="card" style="margin-top:10px;">
+      <h4 style="margin-top:0;">🔍 Diferencias por año — ${escapeHtml(nombreEmpresa)}</h4>
+      <table style="font-size:12px;"><thead><tr><th>Año</th><th>Utilidad a Distribuir (Comparativo SRI)</th><th>SUMAN (Historial Dividendos)</th><th>Diferencia</th></tr></thead><tbody>
+        ${filas.map(f => `<tr style="${!f.cuadra?'background:rgba(239,90,90,.14);':''}">
+          <td>${f.anio}</td>
+          <td>$${f.utilidadDistribuirComparativo.toFixed(2)}</td>
+          <td>$${f.sumanDividendos.toFixed(2)}</td>
+          <td style="font-weight:600;color:${f.cuadra?'var(--accent2)':'var(--danger)'};">${f.cuadra?'✓ $0.00':'$'+f.diferencia.toFixed(2)}</td>
+        </tr>`).join("")}
+        <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);">
+          <td>TOTAL</td>
+          <td>$${totalComparativo.toFixed(2)}</td>
+          <td>$${totalDividendos.toFixed(2)}</td>
+          <td style="color:${cuadraTodo?'var(--accent2)':'var(--danger)'};">${cuadraTodo?'✓ Cuadra':'$'+totalDiferencia.toFixed(2)}</td>
+        </tr>
+      </tbody></table>
+      <p class="helpNote" style="margin-top:8px;">${cuadraTodo ? 'Todo cuadra: la suma de lo distribuido en el Historial de Dividendos coincide con la Utilidad a Distribuir del Comparativo SRI... en todos los años.' : 'Hay diferencia en el/los año(s) resaltado(s) en rojo — probablemente porque se editó un valor a mano en el Historial de Dividendos (o en el Comparativo) después de la última vez que se usó "Recalcular desde Comparativo SRI". Presiona "🔄 Recalcular" para que vuelvan a cuadrar, o revisa manualmente esos años.'}</p>
+    </div>
+  `;
+}
+
+// Concilia, año por año, la "Utilidad a Distribuir" del Comparativo SRI...
+// contra la fila SUMAN del Historial de Dividendos de esa misma empresa.
+// En teoría deberían coincidir siempre (el botón "Recalcular" reparte
+// exactamente la Utilidad a Distribuir entre los accionistas), pero si se
+// editaron valores a mano después, o no se ha recalculado, pueden diferir.
+function calcularConciliacionComparativoVsDividendos(clave){
+  const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
+  const filasComparativo = calcularFilasComparativo(clave);
+  const aniosDividendos = datosDividendosCache.resumenDividendos.anios || [];
+  const aniosUnion = Array.from(new Set([...filasComparativo.map(f=>f.anio), ...aniosDividendos])).sort((a,b)=>a-b);
+
+  const filas = aniosUnion.map(anio => {
+    const filaComp = filasComparativo.find(f=>f.anio===anio);
+    const utilidadDistribuirComparativo = filaComp ? (filaComp.utilidadMostrada||0) : 0;
+    const sumanDividendos = (datosResumen?.suman[anio])||0;
+    const diferencia = sumanDividendos - utilidadDistribuirComparativo;
+    return { anio, utilidadDistribuirComparativo, sumanDividendos, diferencia, cuadra: Math.abs(diferencia) < 0.5 };
+  }).filter(f => Math.abs(f.utilidadDistribuirComparativo) > 0.001 || Math.abs(f.sumanDividendos) > 0.001);
+
+  const totalDiferencia = filas.reduce((s,f)=>s+f.diferencia, 0);
+  const totalComparativo = filas.reduce((s,f)=>s+f.utilidadDistribuirComparativo, 0);
+  const totalDividendos = filas.reduce((s,f)=>s+f.sumanDividendos, 0);
+  return { filas, totalDiferencia, totalComparativo, totalDividendos };
+}
+
 function pintarDetalleEmpresaDividendo(){
   const cont = document.getElementById("detalleEmpresaDividendo");
   if(!empresaDividendoSeleccionada){ cont.innerHTML = `<div class="card emptyState">Selecciona una empresa.</div>`; return; }
@@ -6259,6 +6316,12 @@ function pintarDetalleEmpresaDividendo(){
           ${nombresAccionistas.map(n=>`<option value="${escapeHtml(n)}" ${accionistaDividendoSeleccionado===n?'selected':''}>${escapeHtml(n)}</option>`).join("")}
         </select>
       </div>
+      ${!accionistaDividendoSeleccionado ? `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn small" onclick="imprimirInformeResumenes()">🖨️ Imprimir / Informe ejecutivo</button>
+        <button class="btn small" onclick="descargarPDFInformeResumenes()">⬇️ Descargar PDF</button>
+        <button class="btn small" onclick="descargarExcelInformeResumenes()">⬇️ Descargar Excel</button>
+      </div>` : ''}
     </div>
 
     <div class="statRow">
@@ -6291,7 +6354,9 @@ function pintarDetalleEmpresaDividendo(){
       <p class="helpNote">Todos los valores son editables — cámbialos si hace falta corregir algo del archivo importado; se guardan solos al salir de la celda.</p>
       ${!accionistaDividendoSeleccionado ? `
       <button class="btn small" onclick="recalcularHistorialDividendosDesdeComparativo()">🔄 Recalcular desde Comparativo SRI + % de Capital</button>
+      <button class="btn small" onclick="toggleInformeDiferenciasComparativo()">🔍 Ver informe de diferencias con Comparativo SRI</button>
       <p class="helpNote" style="margin-top:4px;">Para cada año, toma la "Utilidad a Distribuir" del Comparativo SRI/Súper Cías/Contable y la reparte entre los accionistas según su % real de participación ese año (según el Historial de capital social de arriba) — reemplaza los valores por año de cada accionista abajo para que cuadren con esas dos fuentes. Los montos de IMP. RENTA y A PAGAR no se tocan (ajústalos a mano según corresponda).</p>
+      <div id="wrapInformeDiferenciasComparativo" class="hidden"></div>
       ` : ''}
       <table style="font-size:12px;"><thead><tr><th>Accionista</th>${anios.map(a=>`<th>${a}</th>`).join("")}<th>TOTAL ACUMULADO</th></tr></thead><tbody>
         ${filasDividendoMostrar.map(f => `<tr>
@@ -7845,6 +7910,178 @@ function descargarExcelComparativoSri(){
   XLSX.utils.book_append_sheet(wb, ws, "Comparativo");
   XLSX.writeFile(wb, `Comparativo_SRI_${nombreEmpresa}`.replace(/\s+/g,"_")+".xlsx");
 }
+
+// Construye el HTML del informe ejecutivo profesional de "Trabajar con
+// Resúmenes": Capital Social + Historial de Dividendos + Conciliación con el
+// Comparativo SRI, todo para la empresa seleccionada (vista completa, no
+// filtrada por accionista). Se usa tanto para Imprimir como para Descargar PDF.
+function construirHtmlInformeResumenes(){
+  const clave = empresaDividendoSeleccionada;
+  const nombreEmpresa = datosDividendosCache.porEmpresa[clave]?.nombreHoja || clave;
+  const datosCapital = datosDividendosCache.resumenCapital.empresas[clave];
+  const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
+  const aniosCapital = datosDividendosCache.resumenCapital.anios;
+  const aniosDividendos = datosDividendosCache.resumenDividendos.anios;
+  const fmtMoneda = v => (v===null||v===undefined) ? "—" : "$"+Number(v).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const { filas: filasConciliacion, totalDiferencia, totalComparativo, totalDividendos } = calcularConciliacionComparativoVsDividendos(clave);
+  const cuadraTodo = Math.abs(totalDiferencia) < 0.5;
+
+  const ultimoAnioCap = aniosCapital[aniosCapital.length-1];
+  const capitalTotalActual = datosCapital ? (datosCapital.suman[ultimoAnioCap]||0) : 0;
+  const filasComp = calcularFilasComparativo(clave).filter(f=>f.valorReal!==null&&f.valorReal!==undefined);
+  const utilidadAcumuladaActual = filasComp.length ? (filasComp[filasComp.length-1].acumuladoMostrado||0) : 0;
+
+  const filasCapitalHtml = (datosCapital?.filas||[]).map(f => `<tr>
+      <td>${escapeHtml(f.accionista)}</td>
+      ${aniosCapital.map(a=>`<td class="num">${fmtMoneda(f.valores[a]||0)}</td>`).join("")}
+    </tr>`).join("");
+  const filaSumanCapitalHtml = `<tr style="font-weight:700;background:#eef2f6;"><td>SUMAN</td>${aniosCapital.map(a=>`<td class="num">${fmtMoneda(datosCapital?.suman[a]||0)}</td>`).join("")}</tr>`;
+
+  const filasDividendoHtml = (datosResumen?.filas||[]).map(f => `<tr>
+      <td>${escapeHtml(f.accionista)}</td>
+      ${aniosDividendos.map(a=>`<td class="num">${fmtMoneda(f.valores[a]||0)}</td>`).join("")}
+      <td class="num" style="font-weight:700;">${fmtMoneda(f.total||0)}</td>
+    </tr>`).join("");
+  const filaSumanDivHtml = `<tr style="font-weight:700;background:#eef2f6;"><td>SUMAN</td>${aniosDividendos.map(a=>`<td class="num">${fmtMoneda(datosResumen?.suman[a]||0)}</td>`).join("")}<td class="num">${fmtMoneda(aniosDividendos.reduce((s,a)=>s+(datosResumen?.suman[a]||0),0))}</td></tr>`;
+
+  const filasConciliacionHtml = filasConciliacion.map(f => `<tr class="${!f.cuadra?'celda-alerta-fila':''}">
+      <td>${f.anio}</td>
+      <td class="num">${fmtMoneda(f.utilidadDistribuirComparativo)}</td>
+      <td class="num">${fmtMoneda(f.sumanDividendos)}</td>
+      <td class="num" style="font-weight:700;">${f.cuadra?'✓ $0.00':fmtMoneda(f.diferencia)}</td>
+    </tr>`).join("");
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe Ejecutivo — ${escapeHtml(nombreEmpresa)}</title>
+    <style>
+      @page { size: A4 landscape; margin: 14mm; }
+      body{font-family:'Segoe UI',Arial,sans-serif;color:#1b2733;margin:0;padding:0;}
+      .portada-linea{height:5px;background:linear-gradient(90deg,#1a73c7,#178f5c);}
+      .encabezado{padding:18px 4px 10px;border-bottom:2px solid #1a73c7;margin-bottom:14px;}
+      .encabezado h1{font-size:19px;margin:0 0 2px;color:#1a2733;}
+      .encabezado .sub{font-size:12px;color:#5c6b7a;}
+      .encabezado .meta{font-size:11px;color:#8ea2b3;margin-top:4px;}
+      .resumen{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+      .tarjeta{flex:1;min-width:150px;background:#f4f6f9;border:1px solid #d7dee6;border-radius:8px;padding:10px 12px;}
+      .tarjeta .valor{font-size:16px;font-weight:700;color:#1a73c7;}
+      .tarjeta .valor.verde{color:#178f5c;}
+      .tarjeta .valor.rojo{color:#c8382c;}
+      .tarjeta .label{font-size:10px;color:#5c6b7a;text-transform:uppercase;letter-spacing:.03em;margin-top:2px;}
+      h2.seccion{font-size:13px;color:#1a2733;border-left:4px solid #1a73c7;padding-left:8px;margin:18px 0 8px;page-break-after:avoid;}
+      table{width:100%;border-collapse:collapse;font-size:9.5px;}
+      th{background:#1a2733;color:#fff;padding:5px 4px;text-align:left;white-space:nowrap;}
+      td{padding:4px;border-bottom:1px solid #e3e8ee;}
+      td.num{text-align:right;font-variant-numeric:tabular-nums;}
+      tbody tr:nth-child(even){background:#f9fafb;}
+      .celda-alerta-fila td{background:#fbdcdc!important;color:#c8382c;}
+      .parrafo-ia{font-size:11px;line-height:1.5;color:#33414d;background:#f4f6f9;border-radius:8px;padding:10px 12px;margin-bottom:14px;}
+      .pie{margin-top:20px;font-size:9px;color:#8ea2b3;border-top:1px solid #d7dee6;padding-top:8px;display:flex;justify-content:space-between;}
+    </style>
+    </head><body>
+    <div class="portada-linea"></div>
+    <div class="encabezado">
+      <h1>Informe Ejecutivo — Capital Social y Dividendos</h1>
+      <div class="sub">${escapeHtml(nombreEmpresa)}</div>
+      <div class="meta">Generado el ${fmtFecha(Date.now())}</div>
+    </div>
+
+    <h2 class="seccion">Resumen ejecutivo</h2>
+    <div class="resumen">
+      <div class="tarjeta"><div class="valor">${fmtMoneda(capitalTotalActual)}</div><div class="label">Capital social actual (${ultimoAnioCap})</div></div>
+      <div class="tarjeta"><div class="valor verde">${fmtMoneda(utilidadAcumuladaActual)}</div><div class="label">Utilidad Acumulada a la fecha (Comparativo SRI...)</div></div>
+      <div class="tarjeta"><div class="valor">${fmtMoneda(totalDividendos)}</div><div class="label">Total distribuido histórico (Historial de Dividendos)</div></div>
+      <div class="tarjeta"><div class="valor ${cuadraTodo?'verde':'rojo'}">${cuadraTodo?'✓ Cuadra':fmtMoneda(totalDiferencia)}</div><div class="label">Diferencia total vs. Comparativo SRI</div></div>
+    </div>
+
+    <h2 class="seccion">Historial de Capital Social por Accionista</h2>
+    <table><thead><tr><th>Accionista</th>${aniosCapital.map(a=>`<th>${a}</th>`).join("")}</tr></thead>
+    <tbody>${filasCapitalHtml}${filaSumanCapitalHtml}</tbody></table>
+
+    <h2 class="seccion">Historial de Dividendos por Accionista</h2>
+    <table><thead><tr><th>Accionista</th>${aniosDividendos.map(a=>`<th>${a}</th>`).join("")}<th>TOTAL ACUMULADO</th></tr></thead>
+    <tbody>${filasDividendoHtml}${filaSumanDivHtml}</tbody></table>
+
+    <h2 class="seccion">Conciliación: Comparativo SRI vs. Historial de Dividendos</h2>
+    <p class="parrafo-ia">Compara, año por año, la "Utilidad a Distribuir" del Comparativo SRI/Súper Cías/Contable contra lo efectivamente repartido en el Historial de Dividendos. En teoría deben coincidir siempre; las filas resaltadas en rojo muestran una diferencia — usa "🔄 Recalcular desde Comparativo SRI + % de Capital" en la app para volver a alinearlas, o revisa esos años manualmente.</p>
+    ${filasConciliacion.length ? `<table><thead><tr><th>Año</th><th>Utilidad a Distribuir (Comparativo SRI)</th><th>SUMAN (Historial Dividendos)</th><th>Diferencia</th></tr></thead>
+    <tbody>${filasConciliacionHtml}
+      <tr style="font-weight:700;background:#eef2f6;"><td>TOTAL</td><td class="num">${fmtMoneda(totalComparativo)}</td><td class="num">${fmtMoneda(totalDividendos)}</td><td class="num">${cuadraTodo?'✓ Cuadra':fmtMoneda(totalDiferencia)}</td></tr>
+    </tbody></table>` : `<p style="color:#8ea2b3;">Sin años para comparar.</p>`}
+
+    <div class="pie">
+      <span>${escapeHtml(nombreEmpresa)} — Informe generado automáticamente por Control Documental</span>
+      <span>Página <span class="pageNumber"></span></span>
+    </div>
+    </body></html>`;
+}
+
+function imprimirInformeResumenes(){
+  if(!empresaDividendoSeleccionada){ alert("Selecciona una empresa primero."); return; }
+  const win = window.open("", "_blank");
+  win.document.write(construirHtmlInformeResumenes());
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+function descargarPDFInformeResumenes(){
+  if(!empresaDividendoSeleccionada){ alert("Selecciona una empresa primero."); return; }
+  const win = window.open("", "_blank");
+  win.document.write(construirHtmlInformeResumenes().replace(
+    "</body></html>",
+    `<script>window.onload = () => setTimeout(() => window.print(), 250);<\/script></body></html>`
+  ));
+  win.document.close();
+  win.focus();
+}
+
+function descargarExcelInformeResumenes(){
+  if(!empresaDividendoSeleccionada){ alert("Selecciona una empresa primero."); return; }
+  const clave = empresaDividendoSeleccionada;
+  const nombreEmpresa = datosDividendosCache.porEmpresa[clave]?.nombreHoja || clave;
+  const datosCapital = datosDividendosCache.resumenCapital.empresas[clave];
+  const datosResumen = datosDividendosCache.resumenDividendos.empresas[clave];
+  const aniosCapital = datosDividendosCache.resumenCapital.anios;
+  const aniosDividendos = datosDividendosCache.resumenDividendos.anios;
+  const { filas: filasConciliacion, totalDiferencia, totalComparativo, totalDividendos } = calcularConciliacionComparativoVsDividendos(clave);
+
+  // Hoja 1: Capital Social
+  const encCapital = ["Accionista", ...aniosCapital.map(String)];
+  const filasCapital = (datosCapital?.filas||[]).map(f => [f.accionista, ...aniosCapital.map(a=>f.valores[a]||0)]);
+  filasCapital.push(["SUMAN", ...aniosCapital.map(a=>datosCapital?.suman[a]||0)]);
+  const wsCapital = XLSX.utils.aoa_to_sheet([
+    [`Historial de Capital Social — ${nombreEmpresa}`], [`Generado el ${fmtFecha(Date.now())}`], [],
+    encCapital, ...filasCapital
+  ]);
+  wsCapital["!cols"] = encCapital.map(()=>({wch:16}));
+
+  // Hoja 2: Historial de Dividendos
+  const encDiv = ["Accionista", ...aniosDividendos.map(String), "TOTAL ACUMULADO"];
+  const filasDiv = (datosResumen?.filas||[]).map(f => [f.accionista, ...aniosDividendos.map(a=>f.valores[a]||0), f.total||0]);
+  filasDiv.push(["SUMAN", ...aniosDividendos.map(a=>datosResumen?.suman[a]||0), aniosDividendos.reduce((s,a)=>s+(datosResumen?.suman[a]||0),0)]);
+  const wsDiv = XLSX.utils.aoa_to_sheet([
+    [`Historial de Dividendos por Accionista — ${nombreEmpresa}`], [`Generado el ${fmtFecha(Date.now())}`], [],
+    encDiv, ...filasDiv
+  ]);
+  wsDiv["!cols"] = encDiv.map(()=>({wch:16}));
+
+  // Hoja 3: Conciliación
+  const encConc = ["Año", "Utilidad a Distribuir (Comparativo SRI)", "SUMAN (Historial Dividendos)", "Diferencia", "¿Cuadra?"];
+  const filasConc = filasConciliacion.map(f => [f.anio, f.utilidadDistribuirComparativo, f.sumanDividendos, f.diferencia, f.cuadra?"Sí":"No"]);
+  filasConc.push(["TOTAL", totalComparativo, totalDividendos, totalDiferencia, Math.abs(totalDiferencia)<0.5?"Sí":"No"]);
+  const wsConc = XLSX.utils.aoa_to_sheet([
+    [`Conciliación Comparativo SRI vs. Historial de Dividendos — ${nombreEmpresa}`], [`Generado el ${fmtFecha(Date.now())}`], [],
+    encConc, ...filasConc
+  ]);
+  wsConc["!cols"] = encConc.map(()=>({wch:20}));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsCapital, "Capital Social");
+  XLSX.utils.book_append_sheet(wb, wsDiv, "Historial Dividendos");
+  XLSX.utils.book_append_sheet(wb, wsConc, "Conciliación");
+  XLSX.writeFile(wb, `Informe_Resumenes_${nombreEmpresa}`.replace(/\s+/g,"_")+".xlsx");
+}
+
 
 </script>
 </body>
