@@ -5676,6 +5676,7 @@ async function renderCumpleanos(){
       <button class="btn primary" onclick="abrirFormularioColaborador()">+ Nuevo colaborador</button></div>
     <div class="card" id="alertasCumpleanos"></div>
     <div class="card" id="tablaColaboradores">Cargando...</div>
+    <div class="card" id="festejosCumpleanos"></div>
     <div id="modalColaboradorHost"></div>
   `;
   try{
@@ -5687,6 +5688,7 @@ async function renderCumpleanos(){
   }
   pintarAlertasCumpleanos();
   pintarTablaColaboradores();
+  pintarFestejosCumpleanos();
 }
 
 function pintarAlertasCumpleanos(){
@@ -5717,12 +5719,75 @@ function pintarTablaColaboradores(){
   </tbody></table>`;
 }
 
+// Devuelve los ids de colaboradores que cumplen años en los próximos 30 días
+// (mismo criterio que las alertas) — quedan excluidos del sorteo de festejos,
+// ya que no pueden ser responsables de organizar su propio festejo.
+function idsProximosCumpleanos(){
+  return colaboradoresCache
+    .filter(c=>c.fechaNacimiento)
+    .map(c=>({...c, dias: diasHastaProximoCumpleanos(c.fechaNacimiento)}))
+    .filter(c=>c.dias<=30)
+    .map(c=>c.id);
+}
+
+function pintarFestejosCumpleanos(){
+  const cont = document.getElementById("festejosCumpleanos");
+  if(!cont) return;
+  if(!colaboradoresCache.length){ cont.innerHTML = ""; return; }
+  const proximosIds = idsProximosCumpleanos();
+  cont.innerHTML = `
+    <h3 style="margin-top:0;">🎉 Festejos — Responsables del sorteo</h3>
+    <p class="helpNote">Marca qué colaboradores participan en el sorteo de responsables de organizar los festejos — si le quitas el check, no se le toma en cuenta. Quien cumple años en los próximos 30 días queda excluido automáticamente del sorteo (no puede organizar su propio festejo).</p>
+    <table style="font-size:13px;"><thead><tr><th>Colaborador</th><th>Participa</th></tr></thead><tbody>
+      ${colaboradoresCache.map(c => `<tr ${proximosIds.includes(c.id)?'style="opacity:.6;"':''}>
+        <td>${escapeHtml(c.nombre)} ${proximosIds.includes(c.id)?'<span class="pill warn" style="margin-left:6px;">🎂 Cumple pronto</span>':''}</td>
+        <td><input type="checkbox" ${c.participaFestejo!==false?'checked':''} onchange="toggleParticipaFestejo('${c.id}', this.checked)"></td>
+      </tr>`).join("")}
+    </tbody></table>
+    <button class="btn primary" style="margin-top:10px;" onclick="sortearResponsablesFestejo()">🎲 Sortear 2 responsables</button>
+    <div id="resultadoSorteoFestejo" style="margin-top:12px;"></div>
+  `;
+}
+
+async function toggleParticipaFestejo(id, checked){
+  const c = colaboradoresCache.find(x=>x.id===id);
+  if(!c) return;
+  c.participaFestejo = checked;
+  await guardarColaborador({ participaFestejo: checked }, id);
+}
+
+function sortearResponsablesFestejo(){
+  const proximosIds = idsProximosCumpleanos();
+  const elegibles = colaboradoresCache.filter(c => c.participaFestejo!==false && !proximosIds.includes(c.id));
+  const cont = document.getElementById("resultadoSorteoFestejo");
+  if(elegibles.length < 2){
+    cont.innerHTML = `<p style="color:var(--danger);">No hay suficientes colaboradores elegibles para sortear — se necesitan al menos 2 que tengan el check de "Participa" marcado y que no cumplan años en los próximos 30 días.</p>`;
+    return;
+  }
+  // Baraja (Fisher-Yates) y toma los 2 primeros — sorteo justo, sin sesgo.
+  const barajados = [...elegibles];
+  for(let i=barajados.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [barajados[i], barajados[j]] = [barajados[j], barajados[i]];
+  }
+  const elegidos = barajados.slice(0,2);
+  cont.innerHTML = `
+    <div style="background:var(--panel2);border-radius:8px;padding:14px;border:1px solid var(--accent2);">
+      <b>🎉 Responsables sorteados:</b>
+      <ul style="margin:8px 0 0;padding-left:20px;">
+        ${elegidos.map(c=>`<li><b>${escapeHtml(c.nombre)}</b>${c.cargo?` (${escapeHtml(c.cargo)})`:''}</li>`).join("")}
+      </ul>
+      <button class="btn small" style="margin-top:8px;" onclick="sortearResponsablesFestejo()">🔄 Volver a sortear</button>
+    </div>`;
+}
+
 async function confirmarEliminarColaborador(id){
   if(!confirm("¿Eliminar este colaborador?")) return;
   await eliminarColaborador(id);
   colaboradoresCache = await cargarColaboradores();
   pintarAlertasCumpleanos();
   pintarTablaColaboradores();
+  pintarFestejosCumpleanos();
 }
 
 function abrirFormularioColaborador(id){
@@ -5754,6 +5819,7 @@ async function guardarColaboradorForm(id){
   colaboradoresCache = await cargarColaboradores();
   pintarAlertasCumpleanos();
   pintarTablaColaboradores();
+  pintarFestejosCumpleanos();
 }
 
 /* =========================================================================

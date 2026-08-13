@@ -226,6 +226,13 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: "🎉 Festejos — Responsables del sorteo"** en el módulo de Cumpleaños — debajo de la
+  tabla de colaboradores, una lista con un checkbox "Participa" por cada persona (marcado por
+  defecto; si le quitas el check, no se le toma en cuenta en el sorteo). Botón "🎲 Sortear 2
+  responsables" que elige al azar 2 personas entre las que tienen el check marcado — **quien
+  cumple años en los próximos 30 días queda excluido automáticamente** del sorteo (no puede
+  organizar su propio festejo). Se puede volver a sortear las veces que quieras.
+
 - **🔴 Reemplazado por completo: módulo "Documentos Legales"** — se quitó el sistema de
   plantillas simples que tenía antes y se reemplazó por el módulo profesional adaptado desde
   FinanceOS Ecuador, con:
