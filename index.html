@@ -6918,7 +6918,7 @@ function pintarListaPagosACuenta(){
   if(!cont) return;
   const clave = empresaDistribActualSeleccionada;
   const pagos = (datosDividendosCache.pagosACuenta||{})[clave] || [];
-  if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta registrados.</p>`; pintarSaldoCreditoTributario(); return; }
+  if(!pagos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin pagos a cuenta registrados.</p>`; pintarBloqueExcesoPagoACuenta(); pintarSaldoCreditoTributario(); return; }
   const hoyAnio = new Date().getFullYear();
   cont.innerHTML = `<table><thead><tr><th>Origen</th><th>Año del pago</th><th>Monto</th><th>Compensado/usado</th><th>Saldo disponible</th><th>Plazo (hasta cierre de)</th><th>Estado</th><th>Observación</th><th>Forma de pago</th><th></th></tr></thead><tbody>
     ${pagos.map((p, idx) => {
@@ -6938,15 +6938,15 @@ function pintarListaPagosACuenta(){
         <td>Ejercicio ${anioLimite}</td>
         <td>${vencido?'<span class="pill danger">Crédito perdido</span>':(porVencer?'<span class="pill warn">Por vencer</span>':'<span class="pill ok">Vigente</span>')}</td>
         <td><input type="text" style="width:160px;" value="${escapeHtml(p.observacion||'')}" ${esAuto?'disabled':''} onchange="editarPagoACuenta(${idx},'observacion',this.value)"></td>
-        <td>${badgeFormaPagoACuenta(p)}</td>
+        <td>${esAuto ? badgeFormaPagoResumenRetenciones(p) : badgeFormaPagoACuenta(p)}</td>
         <td>
-          <button class="btn small" onclick="toggleFormaPagoACuenta(${idx})">💳 Pago</button>
-          ${esAuto ? '<span style="font-size:11px;color:var(--muted);display:block;">Edítala en Anticipos/Retenciones (Escenarios)</span>' : `<button class="btn small danger" onclick="eliminarPagoACuenta(${idx})">Eliminar</button>`}
+          ${esAuto ? '<span style="font-size:11px;color:var(--muted);">Gestiónala en la retención (Escenarios)</span>' : `<button class="btn small" onclick="toggleFormaPagoACuenta(${idx})">💳 Pago</button><button class="btn small danger" onclick="eliminarPagoACuenta(${idx})">Eliminar</button>`}
         </td>
       </tr>
       <tr id="filaFormaPagoACuenta_${idx}" class="hidden"><td colspan="10"></td></tr>`;
     }).join("")}
   </tbody></table>`;
+  pintarBloqueExcesoPagoACuenta();
   pintarSaldoCreditoTributario();
 }
 
@@ -7016,6 +7016,56 @@ function badgeFormaPagoACuenta(p){
     return `<span class="pill warn">Cuentas x pagar: $${(p.cuentasPorPagarAcumulado||0).toFixed(2)}</span>`;
   }
   return `<span class="pill muted">Sin registrar</span>`;
+}
+
+// Para filas automáticas (por año, desde Anticipos+Retenciones): muestra el
+// resumen de la forma de pago ya registrada en las retenciones de ese año,
+// en vez de pedirla de nuevo aquí — se gestiona en la retención misma
+// (Escenarios → 💳 Pago), para no duplicar el dato en dos lugares.
+function badgeFormaPagoResumenRetenciones(p){
+  const r = p.formaPagoRetencionesResumen || { banco:0, cuentasPorPagar:0 };
+  if(!r.banco && !r.cuentasPorPagar) return `<span class="pill muted">Sin registrar (ver retención)</span>`;
+  const partes = [];
+  if(r.banco) partes.push(`Banco: $${r.banco.toFixed(2)}`);
+  if(r.cuentasPorPagar) partes.push(`Cuentas x pagar: $${r.cuentasPorPagar.toFixed(2)}`);
+  return `<span class="pill ok">${partes.join(' + ')}</span>`;
+}
+
+// Muestra (y permite documentar) el excedente de retenciones que superó el
+// total de anticipos registrados en TODOS los años — ese excedente ya se
+// pagó, así que NO se traslada a un año futuro como si fuera un crédito
+// pendiente; en vez de eso, se pide cómo se pagó y en qué formulario.
+function pintarBloqueExcesoPagoACuenta(){
+  const cont = document.getElementById("bloqueExcesoPagoACuenta");
+  if(!cont) return;
+  const clave = empresaDistribActualSeleccionada;
+  const exc = (datosDividendosCache.excesoPagoACuenta||{})[clave];
+  if(!exc || exc.monto<=0.5){ cont.innerHTML = ""; return; }
+  cont.innerHTML = `
+    <div class="card" style="border:1px solid var(--warn);">
+      <h4 style="margin-top:0;color:var(--warn);">⚠️ Retenciones que superan los anticipos registrados</h4>
+      <p class="helpNote">El total de retenciones formales realizadas supera lo registrado como anticipos en todos los años — hay <b>$${exc.monto.toFixed(2)}</b> que ya se pagaron/retuvieron pero no tienen un anticipo asociado. Este monto <b>no se traslada a un año futuro</b> (ya se pagó, no es un crédito pendiente) — documenta cómo se pagó.</p>
+      <div class="grid3">
+        <div class="field" style="margin:0;"><label>¿Cómo se pagó?</label>
+          <select onchange="actualizarExcesoPagoACuenta('comoSePago',this.value)">
+            <option value="">-- selecciona --</option>
+            <option value="transferencia" ${exc.comoSePago==='transferencia'?'selected':''}>Transferencia</option>
+            <option value="cheque" ${exc.comoSePago==='cheque'?'selected':''}>Cheque</option>
+            <option value="cuentasPorPagar" ${exc.comoSePago==='cuentasPorPagar'?'selected':''}>Cuentas por pagar</option>
+            <option value="efectivo" ${exc.comoSePago==='efectivo'?'selected':''}>Efectivo</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0;"><label>N° de formulario / documento</label><input type="text" value="${escapeHtml(exc.numeroFormulario||'')}" onchange="actualizarExcesoPagoACuenta('numeroFormulario',this.value)" placeholder="Ej. Formulario 103, N° transferencia..."></div>
+        <div class="field" style="margin:0;"><label>Observación</label><input type="text" value="${escapeHtml(exc.observacion||'')}" onchange="actualizarExcesoPagoACuenta('observacion',this.value)"></div>
+      </div>
+    </div>`;
+}
+
+async function actualizarExcesoPagoACuenta(campo, valor){
+  const clave = empresaDistribActualSeleccionada;
+  if(!datosDividendosCache.excesoPagoACuenta || !datosDividendosCache.excesoPagoACuenta[clave]) return;
+  datosDividendosCache.excesoPagoACuenta[clave][campo] = valor;
+  await guardarDatosDividendos(datosDividendosCache);
 }
 
 function toggleFormaPagoACuenta(idx){
@@ -7563,29 +7613,51 @@ function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
   const listaActual = datosDividendosCache.pagosACuenta[clave];
   const anticipos = (datosDividendosCache.anticiposDividendos||{})[clave] || [];
   const aniosConAnticipo = [...new Set(anticipos.map(a=>a.anio))].sort((a,b)=>a-b);
+  const retenciones = (datosDividendosCache.retenciones||{})[clave] || [];
 
   const filasManuales = listaActual.filter(p => !p.autoDesdeAnticipos);
   const autoPorAnioViejo = {};
   listaActual.filter(p => p.autoDesdeAnticipos).forEach(p => { autoPorAnioViejo[p.anio] = p; });
 
-  let poolRetenciones = ((datosDividendosCache.retenciones||{})[clave]||[]).reduce((s,r)=>s+(r.totalRetencion||0), 0);
+  let poolRetenciones = retenciones.reduce((s,r)=>s+(r.totalRetencion||0), 0);
 
   const nuevasFilasAuto = aniosConAnticipo.map(anio => {
     const montoAnio = calcularAnticiposDelAnio(clave, anio);
     const compensarAqui = Math.min(poolRetenciones, montoAnio);
     poolRetenciones -= compensarAqui;
     const previa = autoPorAnioViejo[anio] || {};
+    // Resumen (de solo lectura) de la forma de pago ya registrada en las
+    // retenciones de ese año — la forma de pago se gestiona en la retención
+    // misma (Escenarios), no aquí, para no duplicar el dato.
+    const retencionesDelAnio = retenciones.filter(r=>r.anio===anio);
+    const totalBancoRet = retencionesDelAnio.reduce((s,r)=>s+((r.pagosBanco||[]).reduce((s2,x)=>s2+(x.monto||0),0)),0);
+    const totalCxPRet = retencionesDelAnio.reduce((s,r)=>s+(r.cuentasPorPagarAcumulado||0),0);
     return {
       anio, monto: montoAnio, montoCompensado: compensarAqui,
       observacion: `Anticipos de dividendos del año ${anio} — compensado con el total de retenciones formales ya realizadas, aplicado del año más antiguo al más reciente — generado automáticamente`,
       metodoPago: previa.metodoPago || null,
       pagosBanco: previa.pagosBanco || [],
       cuentasPorPagarAcumulado: previa.cuentasPorPagarAcumulado || 0,
+      formaPagoRetencionesResumen: { banco: totalBancoRet, cuentasPorPagar: totalCxPRet },
       autoDesdeAnticipos: true,
     };
   });
 
   datosDividendosCache.pagosACuenta[clave] = [...filasManuales, ...nuevasFilasAuto];
+
+  // Si después de repartir por todos los años con anticipo todavía sobra
+  // retención sin aplicar, es porque se retuvo/pagó MÁS de lo que hay
+  // registrado como anticipo total — ese excedente NO se traslada a un año
+  // futuro (ya se pagó, no es un crédito pendiente): se deja aparte para
+  // documentar cómo y en qué formulario se pagó.
+  if(!datosDividendosCache.excesoPagoACuenta) datosDividendosCache.excesoPagoACuenta = {};
+  const excesoPrevio = datosDividendosCache.excesoPagoACuenta[clave] || {};
+  datosDividendosCache.excesoPagoACuenta[clave] = {
+    monto: poolRetenciones,
+    comoSePago: excesoPrevio.comoSePago || "",
+    numeroFormulario: excesoPrevio.numeroFormulario || "",
+    observacion: excesoPrevio.observacion || "",
+  };
 }
 
 // Una retención ya calculada/formal NO es un "anticipo" — es la retención en
@@ -8069,6 +8141,7 @@ function pintarDetalleDistribActual(){
         <div class="field"><label>Observación (opcional)</label><input type="text" id="pacObs"></div>
       </div>
       <button class="btn small" onclick="agregarPagoACuenta()">+ Registrar pago a cuenta</button>
+      <div id="bloqueExcesoPagoACuenta" style="margin-top:12px;"></div>
     </div>
 
     <div class="card" style="overflow-x:auto;">

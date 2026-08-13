@@ -226,6 +226,19 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: la forma de pago de las filas automáticas de "Pago a cuenta" viene sola desde las
+  retenciones** — antes cada fila auto tenía su propio botón "💳 Pago" independiente. Ahora esas
+  filas muestran un resumen de solo lectura de la forma de pago que ya registraste en la(s)
+  retención(es) de ese año (Escenarios → 💳 Pago en cada retención) — no hay que registrarla dos
+  veces; se gestiona en un solo lugar (la retención) y se refleja aquí automáticamente.
+- **Nuevo: excedente de retenciones que supera los anticipos, sin trasladarse a otro año** — si
+  el total de retenciones formales realizadas supera lo registrado como anticipos en TODOS los
+  años (después de aplicar la compensación FIFO), ese excedente ya se pagó y **no se traslada a
+  un año futuro** como si fuera un crédito pendiente. En vez de eso, aparece un aviso "⚠️
+  Retenciones que superan los anticipos registrados" en Pago a Cuenta, con campos para
+  documentar cómo se pagó (transferencia/cheque/cuentas por pagar/efectivo) y el N° de
+  formulario o documento correspondiente.
+
 - **Rediseñado: "Pago a cuenta" ahora tiene una fila por AÑO de anticipos (no por retención), con
   compensación FIFO** — antes, cada retención guardada creaba su propia fila (vinculada 1 a 1).
   Ahora:
