@@ -226,6 +226,30 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **🔴 Reemplazado por completo: módulo "Documentos Legales"** — se quitó el sistema de
+  plantillas simples que tenía antes y se reemplazó por el módulo profesional adaptado desde
+  FinanceOS Ecuador, con:
+  - **8 tipos de documento**: Pagaré, Letra de Cambio, Recibo, Contrato de Servicios, Contrato
+    de Alquiler, Contrato de Trabajo, Mutuo entre Empresas, Mutuo entre Personas.
+  - **Validación real de cédula/RUC ecuatoriano** (algoritmo módulo 10/11 del SRI, en vivo
+    mientras escribes, para persona natural, sociedad pública y sociedad privada).
+  - **Cláusulas condicionales según el caso**: firma de cónyuge si el deudor es casado/unión de
+    hecho, endosos (con espacio en blanco listo para usar), cláusula de mediación previa,
+    dispensa de protesto en letra de cambio, período de prueba laboral, 7 modalidades de
+    contrato de trabajo (indefinido, plazo fijo, obra, eventual, temporada, tiempo parcial,
+    doméstico) cada una con su cláusula legal correspondiente.
+  - **Cálculo automático de beneficios laborales** (IESS, décimos, fondos de reserva, costo
+    total anual) en el contrato de trabajo.
+  - **Notificaciones flotantes** en vez de alertas emergentes para los avisos de validación.
+  - Los documentos generados se **guardan en tu Firebase existente** (misma ruta
+    `documentos_legales` de antes — no necesitas ninguna regla nueva), organizados por tipo, con
+    opción de volver a verlos/reimprimirlos o eliminarlos.
+  - Se reutilizó tu función `montoEnLetrasUSD` ya existente para el monto en letras (evitando
+    duplicar una función parecida), y se corrigió una función duplicada (`showDocTab`) que
+    quedó de la adaptación.
+  - ⚠️ Son plantillas profesionales con referencia legal general — para operaciones de monto
+    alto o casos particulares, sigue siendo recomendable la revisión de un abogado.
+
 - **Corregido definitivamente: el total retenido compensa SOLO el año más bajo, nunca se
   reparte entre años** — los intentos anteriores repartían (FIFO) o igualaban por año propio;
   ambos estaban mal. El comportamiento correcto: el total de todas las retenciones formales

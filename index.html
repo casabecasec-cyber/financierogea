@@ -132,9 +132,53 @@ tr:hover td{background:var(--panel2);}
   #sidebar{flex-direction:row;overflow-x:auto;}
   .grid2,.grid3{grid-template-columns:1fr;}
 }
+
+/* ══ MÓDULO DOCUMENTOS LEGALES (pagaré, letra, contratos) ══ */
+#legalesRoot{ --gold:var(--accent); --gold-dim:var(--accent); --emerald:var(--accent2); --red:var(--danger); }
+.doc-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+.doc-tab{padding:8px 16px;background:var(--panel);border:1px solid var(--border);color:var(--muted);border-radius:20px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;}
+.doc-tab.active{background:var(--accent);color:#0f1720;border-color:var(--accent);}
+.doc-content{display:none;}
+.doc-content.active{display:block;}
+.doc-literatura{background:rgba(59,167,255,.08);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--muted);line-height:1.6;}
+.doc-literatura strong{color:var(--text);}
+.doc-form-preview{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media(max-width:900px){.doc-form-preview{grid-template-columns:1fr;}}
+.doc-form{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px;}
+.doc-form h3{font-size:14px;font-weight:700;color:var(--accent);margin:0 0 14px;}
+.doc-form h3:not(:first-child){margin-top:16px;}
+.form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:11px;}
+.form-group label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.form-group input,.form-group select,.form-group textarea{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;width:100%;}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--accent);}
+.doc-preview{background:#fff;color:#111;border-radius:var(--radius);padding:28px;min-height:400px;font-family:'Times New Roman',serif;font-size:13px;line-height:1.7;overflow-y:auto;box-shadow:0 4px 30px rgba(0,0,0,.4);}
+.doc-btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.btn-calc{padding:9px 20px;background:linear-gradient(135deg,var(--accent),#2a8ae0);color:#0f1720;font-weight:700;font-size:13px;border:none;border-radius:6px;cursor:pointer;}
+.btn-calc:hover{filter:brightness(1.1);}
+.btn-secondary{padding:9px 18px;background:var(--panel2);color:var(--muted);font-weight:600;font-size:13px;border:1px solid var(--border);border-radius:6px;cursor:pointer;}
+.btn-secondary:hover{border-color:var(--accent);color:var(--text);}
+.doc-placeholder{color:#999;text-align:center;margin-top:100px;font-family:sans-serif;}
+.doc-header{text-align:center;margin-bottom:24px;}
+.doc-title{font-size:17px;font-weight:900;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px;}
+.doc-subtitle{font-size:12px;color:#555;}
+.doc-body{margin-bottom:24px;text-align:justify;font-family:Georgia,'Times New Roman',serif;}
+.doc-body p{margin-bottom:9px;}
+.doc-firma-row{display:flex;justify-content:space-between;margin-top:50px;flex-wrap:wrap;gap:16px;}
+.doc-firma{text-align:center;width:45%;}
+.doc-firma-line{border-top:1px solid #333;padding-top:6px;font-size:12px;}
+.doc-monto-box{border:2px solid #333;padding:11px;text-align:center;font-size:14px;font-weight:700;margin:18px 0;}
+.doc-footer{border-top:1px solid #ccc;padding-top:9px;font-size:10px;color:#777;margin-top:26px;}
+
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:99999;display:flex;flex-direction:column;gap:8px;}
+.toast{padding:12px 18px;border-radius:8px;background:var(--panel);border:1px solid var(--border);color:var(--text);font-size:13px;max-width:320px;box-shadow:0 8px 30px rgba(0,0,0,.5);opacity:0;transform:translateX(30px);transition:all .3s ease;display:flex;align-items:center;gap:8px;}
+.toast.show{opacity:1;transform:translateX(0);}
+.toast-success{border-color:var(--accent2);}
+.toast-error{border-color:var(--danger);}
+.toast-warning{border-color:var(--warn);}
 </style>
 </head>
 <body>
+<div id="toast-container" class="toast-container"></div>
 
 <!-- LOGIN -->
 <div id="loginScreen">
@@ -1071,293 +1115,6 @@ function montoEnLetrasUSD(monto){
   return `${numeroALetras(entero)} DÓLARES DE LOS ESTADOS UNIDOS DE AMÉRICA${centavos>0? ' CON '+String(centavos).padStart(2,'0')+'/100':''}`;
 }
 
-/* --- Cláusula estándar de mediación (Ley de Arbitraje y Mediación) --- */
-function clausulaMediacion(ciudad){
-  return `CLÁUSULA DE MEDIACIÓN.- Las partes declaran que, en caso de suscitarse alguna diferencia, controversia o reclamo relacionado con este contrato, su interpretación, ejecución, incumplimiento, resolución o nulidad, tratarán en primer lugar de resolverlo mediante negociación directa. De no llegar a un acuerdo dentro de un plazo razonable, se someterán a un procedimiento de mediación ante un Centro de Mediación legalmente constituido en ${ciudad||'la ciudad correspondiente'}, de conformidad con la Ley de Arbitraje y Mediación (Art. 43 y siguientes). El acta de mediación que se suscriba tendrá efecto de sentencia ejecutoriada y cosa juzgada, y su ejecución será de competencia de los jueces ordinarios. Solo en caso de no resolverse la controversia en mediación, las partes podrán acudir a la justicia ordinaria.`;
-}
-
-function bloqueFirmas(campos){
-  return `
-
-
-_____________________________          _____________________________
-${campos.firmante1||'PARTE 1'}                         ${campos.firmante2||'PARTE 2'}
-${campos.firmante1Doc?('C.C./RUC: '+campos.firmante1Doc):''}${campos.firmante1Doc && campos.firmante2Doc ? '                    ' : ''}${campos.firmante2Doc?('C.C./RUC: '+campos.firmante2Doc):''}`;
-}
-
-/* =========================================================================
-   PLANTILLAS DE DOCUMENTOS LEGALES (Ecuador)
-   Cada plantilla define: nombre, categoria ('titulo_valor'|'contrato'),
-   campos (para el formulario dinámico) y generar(datos)=>texto completo.
-   Son plantillas base con respaldo legal referencial; se recomienda revisión
-   de un abogado para casos particulares o de mayor cuantía/complejidad.
-   ========================================================================= */
-const PLANTILLAS_DOC_LEGAL = {
-
-  pagare: {
-    nombre: "Pagaré a la Orden",
-    categoria: "titulo_valor",
-    campos: [
-      {id:"lugarEmision", label:"Lugar de emisión", tipo:"text"},
-      {id:"fechaEmision", label:"Fecha de emisión", tipo:"date"},
-      {id:"acreedorNombre", label:"Nombre del acreedor (a cuya orden se paga)", tipo:"text"},
-      {id:"acreedorDoc", label:"Cédula/RUC del acreedor", tipo:"text"},
-      {id:"deudorNombre", label:"Nombre del deudor", tipo:"text"},
-      {id:"deudorDoc", label:"Cédula/RUC del deudor", tipo:"text"},
-      {id:"deudorDomicilio", label:"Domicilio del deudor", tipo:"text"},
-      {id:"monto", label:"Monto (USD)", tipo:"number"},
-      {id:"tipoVencimiento", label:"Vencimiento", tipo:"select", opciones:["A día fijo","A la vista","A cierto plazo desde la vista"]},
-      {id:"fechaVencimiento", label:"Fecha de vencimiento (si es a día fijo)", tipo:"date"},
-      {id:"lugarPago", label:"Lugar de pago", tipo:"text"},
-    ],
-    generar(c){
-      const venc = c.tipoVencimiento==="A la vista" ? "A LA VISTA" : (c.tipoVencimiento==="A cierto plazo desde la vista" ? `A cierto plazo desde la vista` : `el día ${fmtFecha(new Date(c.fechaVencimiento+"T00:00:00"))}`);
-      return `PAGARÉ A LA ORDEN
-
-${c.lugarEmision||'____________'}, ${fmtFecha(new Date((c.fechaEmision||new Date().toISOString().slice(0,10))+"T00:00:00"))}
-
-Debo y pagaré incondicionalmente a la orden de ${c.acreedorNombre||'____________'}, portador(a) de C.C./RUC N° ${c.acreedorDoc||'____________'}, la cantidad de ${montoEnLetrasUSD(c.monto)} (USD $${Number(c.monto||0).toFixed(2)}), valor recibido a mi entera satisfacción.
-
-Me obligo a pagar esta suma en ${c.lugarPago||'____________'}, ${venc}.
-
-En caso de mora en el pago, me obligo a cancelar sobre el saldo no pagado la máxima tasa de interés de mora legalmente permitida por la Junta de Política y Regulación Monetaria y Financiera del Ecuador, sin perjuicio de las acciones legales a que hubiere lugar.
-
-Este pagaré se sujeta a lo dispuesto en el Art. 486 y siguientes del Código de Comercio del Ecuador (Registro Oficial Suplemento 497 de 29-05-2019).
-
-DEUDOR (SUSCRIPTOR):
-Nombre: ${c.deudorNombre||'____________'}
-C.C./RUC: ${c.deudorDoc||'____________'}
-Domicilio: ${c.deudorDomicilio||'____________'}
-
-
-_____________________________
-Firma del deudor`;
-    }
-  },
-
-  letra_cambio: {
-    nombre: "Letra de Cambio",
-    categoria: "titulo_valor",
-    campos: [
-      {id:"lugarGiro", label:"Lugar de giro", tipo:"text"},
-      {id:"fechaGiro", label:"Fecha de giro", tipo:"date"},
-      {id:"giradorNombre", label:"Nombre del girador (quien emite)", tipo:"text"},
-      {id:"giradorDoc", label:"Cédula/RUC del girador", tipo:"text"},
-      {id:"giradoNombre", label:"Nombre del girado (quien debe pagar)", tipo:"text"},
-      {id:"giradoDoc", label:"Cédula/RUC del girado", tipo:"text"},
-      {id:"giradoDomicilio", label:"Domicilio del girado", tipo:"text"},
-      {id:"beneficiarioNombre", label:"Beneficiario (a cuya orden se paga)", tipo:"text"},
-      {id:"beneficiarioDoc", label:"Cédula/RUC del beneficiario", tipo:"text"},
-      {id:"monto", label:"Monto (USD)", tipo:"number"},
-      {id:"tipoVencimiento", label:"Vencimiento", tipo:"select", opciones:["A día fijo","A la vista","A cierto plazo desde la vista"]},
-      {id:"fechaVencimiento", label:"Fecha de vencimiento (si es a día fijo)", tipo:"date"},
-      {id:"lugarPago", label:"Lugar de pago", tipo:"text"},
-    ],
-    generar(c){
-      const venc = c.tipoVencimiento==="A la vista" ? "A LA VISTA" : (c.tipoVencimiento==="A cierto plazo desde la vista" ? `a cierto plazo desde la vista` : `el día ${fmtFecha(new Date(c.fechaVencimiento+"T00:00:00"))}`);
-      return `LETRA DE CAMBIO
-
-${c.lugarGiro||'____________'}, ${fmtFecha(new Date((c.fechaGiro||new Date().toISOString().slice(0,10))+"T00:00:00"))}
-
-Por: USD $${Number(c.monto||0).toFixed(2)} (${montoEnLetrasUSD(c.monto)})
-
-${venc.toUpperCase()} SÍRVASE(N) UD(S). MANDAR PAGAR POR ESTA LETRA DE CAMBIO A LA ORDEN DE ${c.beneficiarioNombre||'____________'}, portador(a) de C.C./RUC N° ${c.beneficiarioDoc||'____________'}, la cantidad de ${montoEnLetrasUSD(c.monto)}, valor recibido a su entera satisfacción.
-
-GIRADO (quien debe pagar):
-Nombre: ${c.giradoNombre||'____________'}
-C.C./RUC: ${c.giradoDoc||'____________'}
-Domicilio: ${c.giradoDomicilio||'____________'}
-
-Lugar de pago: ${c.lugarPago||'____________'}
-
-Esta letra de cambio se sujeta a los Arts. 113 al 127 y concordantes del Código de Comercio del Ecuador.
-
-GIRADOR:
-Nombre: ${c.giradorNombre||'____________'}
-C.C./RUC: ${c.giradorDoc||'____________'}
-
-_____________________________
-Firma del girador
-
-
-ACEPTACIÓN (a suscribirse por el girado)
-Acepto pagar esta letra de cambio en los términos aquí señalados.
-
-_____________________________
-Firma del girado (aceptante)`;
-    }
-  },
-
-  contrato_mutuo: {
-    nombre: "Contrato de Mutuo (Préstamo de Dinero)",
-    categoria: "contrato",
-    campos: [
-      {id:"ciudad", label:"Ciudad", tipo:"text"},
-      {id:"fecha", label:"Fecha del contrato", tipo:"date"},
-      {id:"mutuanteNombre", label:"Nombre del mutuante (quien presta)", tipo:"text"},
-      {id:"mutuanteDoc", label:"Cédula/RUC del mutuante", tipo:"text"},
-      {id:"mutuanteDomicilio", label:"Domicilio del mutuante", tipo:"text"},
-      {id:"mutuarioNombre", label:"Nombre del mutuario (quien recibe el préstamo)", tipo:"text"},
-      {id:"mutuarioDoc", label:"Cédula/RUC del mutuario", tipo:"text"},
-      {id:"mutuarioDomicilio", label:"Domicilio del mutuario", tipo:"text"},
-      {id:"monto", label:"Monto del préstamo (USD)", tipo:"number"},
-      {id:"interes", label:"Tasa de interés mensual (%, dejar 0 si no hay interés)", tipo:"number"},
-      {id:"plazoDevolucion", label:"Plazo para devolución", tipo:"text"},
-      {id:"formaPago", label:"Forma de pago", tipo:"text"},
-      {id:"garantia", label:"Garantía (opcional)", tipo:"text"},
-    ],
-    generar(c){
-      return `CONTRATO DE MUTUO (PRÉSTAMO DE DINERO)
-
-En ${c.ciudad||'____________'}, a ${fmtFecha(new Date((c.fecha||new Date().toISOString().slice(0,10))+"T00:00:00"))}, comparecen por una parte ${c.mutuanteNombre||'____________'}, portador(a) de C.C./RUC N° ${c.mutuanteDoc||'____________'}, domiciliado(a) en ${c.mutuanteDomicilio||'____________'} (en adelante "EL MUTUANTE"); y, por otra parte, ${c.mutuarioNombre||'____________'}, portador(a) de C.C./RUC N° ${c.mutuarioDoc||'____________'}, domiciliado(a) en ${c.mutuarioDomicilio||'____________'} (en adelante "EL MUTUARIO"); quienes libre y voluntariamente acuerdan celebrar el presente contrato de mutuo, al tenor de las siguientes cláusulas:
-
-PRIMERA.- ANTECEDENTES Y OBJETO.- EL MUTUANTE entrega en calidad de préstamo de dinero (mutuo) a EL MUTUARIO la cantidad de ${montoEnLetrasUSD(c.monto)} (USD $${Number(c.monto||0).toFixed(2)}), cantidad que EL MUTUARIO declara recibir en este acto a su entera satisfacción, de conformidad con el Art. 2099 y siguientes del Código Civil del Ecuador.
-
-SEGUNDA.- INTERÉS.- ${Number(c.interes||0)>0 ? `Las partes acuerdan que la suma prestada devengará un interés del ${c.interes}% mensual, de conformidad con el Art. 2107 del Código Civil, sin exceder la tasa máxima convencional fijada por el Banco Central del Ecuador.` : "Las partes acuerdan que este préstamo se realiza sin generar intereses."}
-
-TERCERA.- PLAZO Y FORMA DE PAGO.- EL MUTUARIO se obliga a devolver la totalidad de la suma recibida en el plazo de ${c.plazoDevolucion||'____________'}, mediante ${c.formaPago||'____________'}.
-
-CUARTA.- GARANTÍA.- ${c.garantia ? c.garantia : "Las partes no constituyen garantía específica adicional para el cumplimiento de esta obligación."}
-
-QUINTA.- MORA.- En caso de retraso en el pago, EL MUTUARIO reconocerá el interés máximo por mora legalmente permitido, sin perjuicio de las acciones legales que correspondan a EL MUTUANTE.
-
-SEXTA.- ${clausulaMediacion(c.ciudad)}
-
-SÉPTIMA.- ACEPTACIÓN.- Las partes se ratifican en todas y cada una de las cláusulas de este contrato y lo suscriben en dos ejemplares de igual tenor y efecto.
-${bloqueFirmas({firmante1:'EL MUTUANTE', firmante1Doc:c.mutuanteDoc, firmante2:'EL MUTUARIO', firmante2Doc:c.mutuarioDoc})}`;
-    }
-  },
-
-  contrato_trabajo: {
-    nombre: "Contrato Individual de Trabajo",
-    categoria: "contrato",
-    campos: [
-      {id:"tipoContrato", label:"Tipo de contrato", tipo:"select", opciones:["Plazo Indefinido","Plazo Fijo","Por Obra o Servicio Determinado","Ocasional"]},
-      {id:"ciudad", label:"Ciudad", tipo:"text"},
-      {id:"fecha", label:"Fecha del contrato", tipo:"date"},
-      {id:"empleadorNombre", label:"Nombre/Razón social del empleador", tipo:"text"},
-      {id:"empleadorRuc", label:"RUC del empleador", tipo:"text"},
-      {id:"empleadorRepresentante", label:"Representante legal (si es empresa)", tipo:"text"},
-      {id:"empleadorDomicilio", label:"Domicilio del empleador", tipo:"text"},
-      {id:"trabajadorNombre", label:"Nombre del trabajador", tipo:"text"},
-      {id:"trabajadorCedula", label:"Cédula del trabajador", tipo:"text"},
-      {id:"trabajadorDomicilio", label:"Domicilio del trabajador", tipo:"text"},
-      {id:"cargo", label:"Cargo / puesto", tipo:"text"},
-      {id:"funciones", label:"Funciones principales", tipo:"textarea"},
-      {id:"remuneracion", label:"Remuneración mensual (USD)", tipo:"number"},
-      {id:"jornada", label:"Jornada de trabajo", tipo:"text"},
-      {id:"lugarTrabajo", label:"Lugar de trabajo", tipo:"text"},
-      {id:"fechaInicio", label:"Fecha de inicio", tipo:"date"},
-      {id:"fechaFin", label:"Fecha de finalización (si es plazo fijo/obra)", tipo:"date"},
-      {id:"periodoPrueba", label:"¿Incluye período de prueba (máx. 90 días)?", tipo:"select", opciones:["Sí","No"]},
-    ],
-    generar(c){
-      return `CONTRATO INDIVIDUAL DE TRABAJO
-(${c.tipoContrato||'Plazo Indefinido'})
-
-En ${c.ciudad||'____________'}, a ${fmtFecha(new Date((c.fecha||new Date().toISOString().slice(0,10))+"T00:00:00"))}, comparecen por una parte ${c.empleadorNombre||'____________'}, RUC N° ${c.empleadorRuc||'____________'}${c.empleadorRepresentante?`, representado(a) legalmente por ${c.empleadorRepresentante}`:''}, con domicilio en ${c.empleadorDomicilio||'____________'} (en adelante "EL EMPLEADOR"); y, por otra parte, ${c.trabajadorNombre||'____________'}, portador(a) de cédula de ciudadanía N° ${c.trabajadorCedula||'____________'}, domiciliado(a) en ${c.trabajadorDomicilio||'____________'} (en adelante "EL TRABAJADOR"); quienes convienen en celebrar el presente Contrato Individual de Trabajo, de conformidad con el Código del Trabajo del Ecuador, al tenor de las siguientes cláusulas:
-
-PRIMERA.- OBJETO.- EL TRABAJADOR se compromete a prestar sus servicios lícitos y personales, bajo dependencia de EL EMPLEADOR, en el cargo de ${c.cargo||'____________'}, cumpliendo principalmente las siguientes funciones: ${c.funciones||'____________'}. Este contrato se sujeta a la definición de contrato individual de trabajo prevista en el Art. 8 del Código del Trabajo.
-
-SEGUNDA.- REMUNERACIÓN.- EL EMPLEADOR pagará a EL TRABAJADOR una remuneración mensual de USD $${Number(c.remuneracion||0).toFixed(2)} (${montoEnLetrasUSD(c.remuneracion)}), no inferior al Salario Básico Unificado vigente, más los beneficios de ley (décimo tercero, décimo cuarto, fondos de reserva, vacaciones y demás que correspondan), sujeto a las retenciones de aportes al IESS y de impuesto a la renta que apliquen.
-
-TERCERA.- JORNADA Y LUGAR DE TRABAJO.- La jornada de trabajo será: ${c.jornada||'____________'}, conforme a los límites legales de jornada máxima de trabajo. El lugar habitual de trabajo será: ${c.lugarTrabajo||'____________'}.
-
-CUARTA.- PLAZO.- Este contrato tendrá vigencia a partir del ${fmtFecha(new Date((c.fechaInicio||c.fecha||new Date().toISOString().slice(0,10))+"T00:00:00"))}${c.tipoContrato!=="Plazo Indefinido" && c.fechaFin ? `, hasta el ${fmtFecha(new Date(c.fechaFin+"T00:00:00"))}` : ", con carácter de plazo indefinido"}. ${c.periodoPrueba==="Sí" ? "Se establece un período de prueba de hasta noventa (90) días, dentro del cual cualquiera de las partes podrá darlo por terminado libremente, de conformidad con la ley." : ""}
-
-QUINTA.- OBLIGACIONES DE LAS PARTES.- Ambas partes se sujetan a los derechos y obligaciones establecidos en el Código del Trabajo del Ecuador y demás normativa laboral y de seguridad social aplicable, incluyendo la afiliación al IESS desde el primer día de labores.
-
-SEXTA.- TERMINACIÓN.- El contrato podrá terminar por las causales previstas en el Código del Trabajo del Ecuador (mutuo acuerdo, visto bueno, desahucio, causales legales, entre otras), reconociéndose las indemnizaciones a que hubiere lugar conforme a la ley.
-
-SÉPTIMA.- ${clausulaMediacion(c.ciudad)} Esta cláusula no menoscaba los derechos irrenunciables del trabajador ni impide acudir a la vía judicial laboral cuando corresponda.
-
-OCTAVA.- ACEPTACIÓN.- Las partes se ratifican en el contenido de este contrato y lo suscriben en dos ejemplares de igual tenor y efecto.
-${bloqueFirmas({firmante1:'EL EMPLEADOR', firmante1Doc:c.empleadorRuc, firmante2:'EL TRABAJADOR', firmante2Doc:c.trabajadorCedula})}`;
-    }
-  },
-
-  contrato_servicios: {
-    nombre: "Contrato de Prestación de Servicios Profesionales",
-    categoria: "contrato",
-    campos: [
-      {id:"ciudad", label:"Ciudad", tipo:"text"},
-      {id:"fecha", label:"Fecha del contrato", tipo:"date"},
-      {id:"contratanteNombre", label:"Nombre/Razón social del contratante", tipo:"text"},
-      {id:"contratanteDoc", label:"Cédula/RUC del contratante", tipo:"text"},
-      {id:"contratanteDomicilio", label:"Domicilio del contratante", tipo:"text"},
-      {id:"contratistaNombre", label:"Nombre del contratista/profesional", tipo:"text"},
-      {id:"contratistaDoc", label:"Cédula/RUC del contratista", tipo:"text"},
-      {id:"contratistaDomicilio", label:"Domicilio del contratista", tipo:"text"},
-      {id:"objetoServicio", label:"Descripción del servicio a prestar", tipo:"textarea"},
-      {id:"honorarios", label:"Honorarios totales (USD)", tipo:"number"},
-      {id:"formaPago", label:"Forma y plazos de pago", tipo:"text"},
-      {id:"plazo", label:"Plazo de ejecución", tipo:"text"},
-      {id:"lugarPrestacion", label:"Lugar de prestación del servicio", tipo:"text"},
-    ],
-    generar(c){
-      return `CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES
-
-En ${c.ciudad||'____________'}, a ${fmtFecha(new Date((c.fecha||new Date().toISOString().slice(0,10))+"T00:00:00"))}, comparecen por una parte ${c.contratanteNombre||'____________'}, portador(a) de C.C./RUC N° ${c.contratanteDoc||'____________'}, domiciliado(a) en ${c.contratanteDomicilio||'____________'} (en adelante "EL CONTRATANTE"); y, por otra parte, ${c.contratistaNombre||'____________'}, portador(a) de C.C./RUC N° ${c.contratistaDoc||'____________'}, domiciliado(a) en ${c.contratistaDomicilio||'____________'} (en adelante "EL CONTRATISTA"), quienes acuerdan celebrar el presente contrato de prestación de servicios profesionales, de naturaleza civil y no laboral, al tenor de las siguientes cláusulas:
-
-PRIMERA.- OBJETO.- EL CONTRATISTA se obliga a prestar en favor de EL CONTRATANTE el siguiente servicio profesional: ${c.objetoServicio||'____________'}, actuando con plena autonomía técnica y sin relación de dependencia laboral, de conformidad con las normas del Código Civil sobre arrendamiento de servicios inmateriales.
-
-SEGUNDA.- HONORARIOS.- EL CONTRATANTE pagará a EL CONTRATISTA por sus servicios la suma de USD $${Number(c.honorarios||0).toFixed(2)} (${montoEnLetrasUSD(c.honorarios)}), bajo la siguiente forma de pago: ${c.formaPago||'____________'}.
-
-TERCERA.- PLAZO Y LUGAR.- El servicio se prestará en el plazo de ${c.plazo||'____________'}, en ${c.lugarPrestacion||'____________'}.
-
-CUARTA.- NATURALEZA CIVIL.- Las partes declaran expresamente que este contrato no genera relación de dependencia laboral entre ellas, por lo que no le son aplicables las disposiciones del Código del Trabajo, sujetándose EL CONTRATISTA a sus propias obligaciones tributarias y de seguridad social conforme a su régimen (afiliación voluntaria o RISE/RIMPE, según corresponda).
-
-QUINTA.- CONFIDENCIALIDAD.- EL CONTRATISTA se compromete a mantener confidencialidad sobre la información a la que tenga acceso con ocasión de este contrato, tanto durante su vigencia como con posterioridad a su terminación.
-
-SEXTA.- ${clausulaMediacion(c.ciudad)}
-
-SÉPTIMA.- ACEPTACIÓN.- Las partes se ratifican en el contenido de este contrato y lo suscriben en dos ejemplares de igual tenor y efecto.
-${bloqueFirmas({firmante1:'EL CONTRATANTE', firmante1Doc:c.contratanteDoc, firmante2:'EL CONTRATISTA', firmante2Doc:c.contratistaDoc})}`;
-    }
-  },
-
-  contrato_arrendamiento: {
-    nombre: "Contrato de Arrendamiento de Inmueble",
-    categoria: "contrato",
-    campos: [
-      {id:"ciudad", label:"Ciudad", tipo:"text"},
-      {id:"fecha", label:"Fecha del contrato", tipo:"date"},
-      {id:"arrendadorNombre", label:"Nombre del arrendador (propietario)", tipo:"text"},
-      {id:"arrendadorDoc", label:"Cédula/RUC del arrendador", tipo:"text"},
-      {id:"arrendatarioNombre", label:"Nombre del arrendatario (inquilino)", tipo:"text"},
-      {id:"arrendatarioDoc", label:"Cédula/RUC del arrendatario", tipo:"text"},
-      {id:"direccionInmueble", label:"Dirección del inmueble", tipo:"text"},
-      {id:"destinoUso", label:"Destino del inmueble", tipo:"select", opciones:["Vivienda","Comercial","Oficina","Otro"]},
-      {id:"canonMensual", label:"Canon de arrendamiento mensual (USD)", tipo:"number"},
-      {id:"formaPago", label:"Forma y fecha de pago mensual", tipo:"text"},
-      {id:"garantiaDeposito", label:"Garantía / depósito (USD, opcional)", tipo:"number"},
-      {id:"plazoContrato", label:"Plazo del contrato", tipo:"text"},
-      {id:"fechaInicio", label:"Fecha de inicio", tipo:"date"},
-    ],
-    generar(c){
-      return `CONTRATO DE ARRENDAMIENTO DE INMUEBLE
-
-En ${c.ciudad||'____________'}, a ${fmtFecha(new Date((c.fecha||new Date().toISOString().slice(0,10))+"T00:00:00"))}, comparecen por una parte ${c.arrendadorNombre||'____________'}, portador(a) de C.C./RUC N° ${c.arrendadorDoc||'____________'} (en adelante "EL ARRENDADOR"); y, por otra parte, ${c.arrendatarioNombre||'____________'}, portador(a) de C.C./RUC N° ${c.arrendatarioDoc||'____________'} (en adelante "EL ARRENDATARIO"), quienes acuerdan celebrar el presente contrato de arrendamiento, sujeto a las disposiciones del Título XXV del Libro IV del Código Civil del Ecuador (Art. 1856 y siguientes) y, de ser aplicable por la naturaleza y ubicación del inmueble, a la Ley de Inquilinato, al tenor de las siguientes cláusulas:
-
-PRIMERA.- OBJETO.- EL ARRENDADOR entrega en arrendamiento a EL ARRENDATARIO el inmueble ubicado en ${c.direccionInmueble||'____________'}, destinado exclusivamente a uso de ${c.destinoUso||'____________'}.
-
-SEGUNDA.- CANON DE ARRENDAMIENTO.- EL ARRENDATARIO pagará a EL ARRENDADOR un canon mensual de USD $${Number(c.canonMensual||0).toFixed(2)} (${montoEnLetrasUSD(c.canonMensual)}), mediante ${c.formaPago||'____________'}.
-
-TERCERA.- GARANTÍA.- ${Number(c.garantiaDeposito||0)>0 ? `EL ARRENDATARIO entrega en este acto la suma de USD $${Number(c.garantiaDeposito).toFixed(2)} en calidad de garantía, la cual será devuelta al finalizar el contrato, previa verificación del estado del inmueble y del cumplimiento de las obligaciones aquí contenidas.` : "No se pacta garantía o depósito adicional para este contrato."}
-
-CUARTA.- PLAZO.- El plazo del presente contrato es de ${c.plazoContrato||'____________'}, contado a partir del ${fmtFecha(new Date((c.fechaInicio||c.fecha||new Date().toISOString().slice(0,10))+"T00:00:00"))}.
-
-QUINTA.- OBLIGACIONES DEL ARRENDATARIO.- EL ARRENDATARIO se obliga a: a) usar el inmueble exclusivamente para el destino pactado; b) pagar puntualmente el canon de arrendamiento; c) cuidar el inmueble como buen padre de familia; d) no subarrendar sin autorización escrita de EL ARRENDADOR; y, e) restituir el inmueble en el estado en que lo recibió, salvo el deterioro natural por el uso legítimo.
-
-SEXTA.- OBLIGACIONES DEL ARRENDADOR.- EL ARRENDADOR se obliga a entregar el inmueble en buen estado y a garantizar su uso y goce pacífico durante la vigencia del contrato.
-
-SÉPTIMA.- ${clausulaMediacion(c.ciudad)}
-
-OCTAVA.- ACEPTACIÓN.- Las partes se ratifican en el contenido de este contrato y lo suscriben en dos ejemplares de igual tenor y efecto.
-${bloqueFirmas({firmante1:'EL ARRENDADOR', firmante1Doc:c.arrendadorDoc, firmante2:'EL ARRENDATARIO', firmante2Doc:c.arrendatarioDoc})}`;
-    }
-  },
-};
 
 /* =========================================================================
    EXTRACCIÓN DE TEXTO (PDF con pdf.js; texto plano directo)
@@ -1542,6 +1299,20 @@ function fmtFecha(d){
 }
 function diasEntre(a,b){ return Math.round((b-a)/86400000); }
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+// Notificación flotante (usada sobre todo por el módulo de Documentos Legales,
+// para validaciones y confirmaciones sin interrumpir con un alert()).
+function toast(msg, type="info", duration=3500){
+  const container = document.getElementById("toast-container");
+  if(!container) return;
+  const t = document.createElement("div");
+  t.className = `toast toast-${type}`;
+  const icons = { success:"✅", error:"❌", warning:"⚠️", info:"ℹ️" };
+  t.innerHTML = `<span>${icons[type]||"ℹ️"}</span><span>${escapeHtml(msg)}</span>`;
+  container.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("show"));
+  setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 400); }, duration);
+}
 
 /* =========================================================================
    DASHBOARD
@@ -3347,293 +3118,1404 @@ async function descargarWordElaboracion(categoria, id){
   descargarWord(nombreArchivo, encabezadoHtml + cuerpoHtml);
 }
 
+
 /* =========================================================================
-   MÓDULO: DOCUMENTOS LEGALES (pagarés, letras de cambio, contratos)
+   MÓDULO: DOCUMENTOS LEGALES (pagaré, letra de cambio, recibo, contratos)
+   Formularios detallados con validación real de cédula/RUC ecuatoriano
+   (algoritmo módulo 10/11 SRI), cláusulas condicionales (cónyuge, endosos,
+   mediación, protesto) y cálculo de beneficios laborales. Los documentos
+   generados se pueden guardar en el historial (por tipo), ver de nuevo,
+   reimprimir y eliminar — usando el mismo almacenamiento de Firebase que ya
+   tenía Documentos Legales ("documentos_legales").
    ========================================================================= */
-let documentosLegalesCache = {};
-let tipoDocLegalActual = "pagare";
+const DOC_LEGAL_TIPOS = {
+  pagare: "📜 Pagaré", letra: "📋 Letra de Cambio", recibo: "🧾 Recibo",
+  servicios: "💼 Contrato Servicios", alquiler: "🏠 Contrato Alquiler",
+  trabajo: "👷 Contrato Trabajo", mutuoempresas: "🏢 Mutuo entre Empresas",
+  mutuopersonas: "🤝 Mutuo entre Personas",
+};
+let documentosLegalesGuardados = {};
 
 async function renderDocumentosLegales(){
   const main = document.getElementById("main");
   main.innerHTML = `
-    <div class="pageTitle"><div><h2>Documentos Legales</h2><p>Genera pagarés, letras de cambio y contratos con respaldo legal ecuatoriano, editables e imprimibles</p></div></div>
-    <p class="helpNote">⚠️ Son plantillas base con referencia legal general (Código de Comercio, Código Civil, Código del Trabajo, Ley de Arbitraje y Mediación). Para operaciones de monto alto o casos particulares, se recomienda revisión de un abogado antes de firmar.</p>
-    <div class="tabs" id="legalesTabs"></div>
-    <div id="legalesContenido"></div>
+    <div class="pageTitle"><div><h2>Documentos Legales</h2><p>Pagarés, letras de cambio, recibos y contratos con validación de cédula/RUC y formato legal ecuatoriano</p></div></div>
+    <p class="helpNote">⚠️ Son plantillas profesionales con referencia legal (Código de Comercio, Código Civil, Código del Trabajo, Ley de Arbitraje y Mediación). Para operaciones de monto alto o casos particulares, se recomienda revisión de un abogado antes de firmar.</p>
+    <div id="legalesRoot">
+      <div class="doc-tabs" id="docTabsBar"></div>
+<!-- PAGARÉ -->
+      <div class="doc-content active" id="doc-pagare">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> Arts. 486–527 del Código de Comercio del Ecuador y Ley de Cheques aplicable supletoriamente. El pagaré es un título valor que contiene la promesa incondicional de pagar una suma determinada de dinero, ejecutivo por su sola presentación conforme al Art. 487. Puede ser <em>endosable</em> (transferible mediante endoso al dorso, Art. 491) o <em>no a la orden</em> (solo cobra el beneficiario original). La tasa de interés pactada no podrá exceder la tasa máxima convencional fijada periódicamente por el Banco Central del Ecuador, conforme a la Ley de Régimen Monetario.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Datos del Pagaré</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="pag-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha de Emisión</label><input type="date" id="pag-fecha"></div>
+            <div class="form-group"><label>Monto (USD)</label><input type="number" id="pag-monto" value="5000" step="0.01"></div>
+            <div class="form-group"><label>Fecha de Vencimiento</label><input type="date" id="pag-vencimiento"></div>
+            <div class="form-group"><label>Tasa de Interés Anual (%)</label><input type="number" id="pag-tasa" value="12" step="0.01"></div>
+            <div class="form-group">
+              <label>El interés se genera desde...</label>
+              <select id="pag-interes-desde">
+                <option value="vencimiento">La fecha de vencimiento (si hay mora)</option>
+                <option value="emision">La fecha de emisión del documento</option>
+              </select>
+            </div>
+
+            <h3 style="margin-top:18px;font-size:.82rem">👤 Datos del Deudor</h3>
+            <div class="form-group">
+              <label>Tipo de Deudor</label>
+              <select id="pag-deudor-tipo" onchange="toggleTipoPersonaPagare('deudor')">
+                <option value="natural">Persona Natural</option>
+                <option value="juridica">Persona Jurídica (Empresa)</option>
+              </select>
+            </div>
+            <div class="form-group" id="pag-deudor-nombre-box">
+              <label>Nombre Completo / Razón Social</label>
+              <input type="text" id="pag-deudor" placeholder="Nombre del deudor">
+            </div>
+            <div class="form-group"><label>C.I. / RUC Deudor</label><input type="text" id="pag-ci-deudor" class="ci-validar" placeholder="10 dígitos (cédula) o 13 (RUC)"></div>
+            <div id="pag-deudor-juridica-box" style="display:none">
+              <div class="form-group"><label>Representante Legal</label><input type="text" id="pag-deudor-repleg" placeholder="Nombre del representante legal"></div>
+              <div class="form-group"><label>C.I. Representante Legal</label><input type="text" id="pag-deudor-repleg-ci" class="ci-validar" placeholder="10 dígitos"></div>
+            </div>
+            <div class="form-group" id="pag-deudor-civil-box">
+              <label>Estado Civil del Deudor</label>
+              <select id="pag-deudor-civil" onchange="toggleConyugePagare('deudor')">
+                <option value="soltero">Soltero/a</option>
+                <option value="casado">Casado/a</option>
+                <option value="union">Unión de Hecho</option>
+                <option value="divorciado">Divorciado/a</option>
+                <option value="viudo">Viudo/a</option>
+              </select>
+            </div>
+            <div class="form-group" id="pag-deudor-conyuge-pregunta-box" style="display:none">
+              <label>¿Solicitar firma del cónyuge?</label>
+              <select id="pag-deudor-conyuge-firma" onchange="toggleConyugeNombrePagare('deudor')">
+                <option value="no">No</option>
+                <option value="si">Sí</option>
+              </select>
+            </div>
+            <div class="form-group" id="pag-deudor-conyuge-nombre-box" style="display:none">
+              <label>Nombre del Cónyuge</label>
+              <input type="text" id="pag-deudor-conyuge" placeholder="Nombre completo del cónyuge">
+            </div>
+            <div class="form-group"><label>Domicilio del Deudor</label><input type="text" id="pag-domicilio" placeholder="Dirección completa"></div>
+
+            <h3 style="margin-top:18px;font-size:.82rem">👤 Datos del Acreedor</h3>
+            <div class="form-group">
+              <label>Tipo de Acreedor</label>
+              <select id="pag-acreedor-tipo" onchange="toggleTipoPersonaPagare('acreedor')">
+                <option value="natural">Persona Natural</option>
+                <option value="juridica">Persona Jurídica (Empresa)</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Nombre Completo / Razón Social</label><input type="text" id="pag-acreedor" placeholder="Nombre del acreedor"></div>
+            <div class="form-group"><label>C.I. / RUC Acreedor</label><input type="text" id="pag-ci-acreedor" class="ci-validar" placeholder="10 dígitos (cédula) o 13 (RUC)"></div>
+            <div id="pag-acreedor-juridica-box" style="display:none">
+              <div class="form-group"><label>Representante Legal</label><input type="text" id="pag-acreedor-repleg" placeholder="Nombre del representante legal"></div>
+              <div class="form-group"><label>C.I. Representante Legal</label><input type="text" id="pag-acreedor-repleg-ci" class="ci-validar" placeholder="10 dígitos"></div>
+            </div>
+            <div class="form-group"><label>Lugar de Pago</label><input type="text" id="pag-lugar-pago" value="Quito, Ecuador"></div>
+
+            <h3 style="margin-top:18px;font-size:.82rem">📝 Endoso</h3>
+            <div class="form-group">
+              <label>¿Es endosable?</label>
+              <select id="pag-endosable" onchange="toggleEndososPagare()">
+                <option value="si">Sí — A la orden (endosable)</option>
+                <option value="no">No — No a la orden</option>
+              </select>
+            </div>
+            <div id="pag-endosos-box" style="display:block">
+              <div class="form-group"><label>1er Endoso — Endosatario</label><input type="text" id="pag-endoso1" placeholder="Nombre del primer endosatario (opcional)"></div>
+              <div class="form-group"><label>2do Endoso — Endosatario</label><input type="text" id="pag-endoso2" placeholder="Nombre del segundo endosatario (opcional)"></div>
+              <div class="form-group"><label>3er Endoso — Endosatario</label><input type="text" id="pag-endoso3" placeholder="Nombre del tercer endosatario (opcional)"></div>
+            </div>
+
+            <div class="form-group">
+              <label>¿Incluir cláusula de mediación?</label>
+              <select id="pag-mediacion">
+                <option value="no">No</option>
+                <option value="si">Sí — Mediación previa obligatoria</option>
+              </select>
+            </div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarPagare()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('pagare-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('pagare')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('pagare','Pagaré')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="pagare-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- LETRA DE CAMBIO -->
+      <div class="doc-content" id="doc-letra">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> Arts. 410 al 485 del Código de Comercio del Ecuador. La letra de cambio es un título valor formal y completo, mediante el cual una persona (el <em>librador</em>) ordena incondicionalmente a otra (el <em>librado</em>) que pague a un tercero (el <em>beneficiario</em> o tomador) una suma determinada de dinero en una fecha y lugar establecidos. Conforme al Art. 410, debe contener: la denominación "letra de cambio", la orden incondicional de pago, el nombre del librado, la fecha de vencimiento, el lugar de pago, el nombre del beneficiario, la fecha y lugar de emisión, y la firma del librador. El librado adquiere obligación cambiaria únicamente al <em>aceptar</em> la letra mediante su firma (Art. 437). Es transferible por endoso salvo cláusula "no a la orden" (Art. 446). En caso de falta de pago, el tenedor debe levantar el <em>protesto</em> dentro de los dos días hábiles siguientes al vencimiento para conservar la acción cambiaria contra los endosantes y el librador (Arts. 458-459); dicho protesto puede dispensarse expresamente mediante cláusula "sin protesto" o "sin gastos" inserta en el documento.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Datos de la Letra de Cambio</h3>
+            <div class="form-group"><label>Ciudad de Emisión</label><input type="text" id="let-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha de Emisión</label><input type="date" id="let-fecha"></div>
+            <div class="form-group"><label>Monto (USD)</label><input type="number" id="let-monto" value="5000" step="0.01"></div>
+            <div class="form-group"><label>Fecha de Vencimiento</label><input type="date" id="let-vencimiento"></div>
+            <div class="form-group"><label>Librador (Quien emite)</label><input type="text" id="let-librador" placeholder="Nombre del librador"></div>
+            <div class="form-group"><label>C.I./RUC Librador</label><input type="text" id="let-ci-librador" class="ci-validar"></div>
+            <div class="form-group"><label>Librado (Quien paga)</label><input type="text" id="let-librado" placeholder="Nombre del librado"></div>
+            <div class="form-group"><label>C.I./RUC Librado</label><input type="text" id="let-ci-librado" class="ci-validar"></div>
+            <div class="form-group"><label>Beneficiario</label><input type="text" id="let-beneficiario" placeholder="A la orden de..."></div>
+            <div class="form-group"><label>C.I./RUC Beneficiario</label><input type="text" id="let-ci-beneficiario" class="ci-validar"></div>
+            <div class="form-group"><label>Domicilio de Pago</label><input type="text" id="let-domicilio" placeholder="Dirección"></div>
+            <div class="form-group">
+              <label>¿Es endosable?</label>
+              <select id="let-endosable">
+                <option value="si">Sí — A la orden (endosable)</option>
+                <option value="no">No — No a la orden</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>¿Dispensa de protesto?</label>
+              <select id="let-sin-protesto">
+                <option value="no">No — Protesto requerido conforme a ley</option>
+                <option value="si">Sí — Cláusula "sin protesto / sin gastos"</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>¿Incluir cláusula de mediación?</label>
+              <select id="let-mediacion">
+                <option value="no">No</option>
+                <option value="si">Sí — Mediación previa obligatoria</option>
+              </select>
+            </div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarLetra()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('letra-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('letra')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('letra','Letra de Cambio')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="letra-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- RECIBO -->
+      <div class="doc-content" id="doc-recibo">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> El recibo de dinero es un documento probatorio de pago. Según el Art. 1583 Código Civil, el pago es el modo de extinción de obligaciones. El recibo firmado por el acreedor constituye prueba suficiente de pago. Para montos superiores a $1.000 se recomienda legalizar ante notario o utilizar transferencia bancaria que genere constancia.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Datos del Recibo</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="rec-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha</label><input type="date" id="rec-fecha"></div>
+            <div class="form-group"><label>Recibí de</label><input type="text" id="rec-de" placeholder="Nombre del pagador"></div>
+            <div class="form-group"><label>C.I./RUC Pagador</label><input type="text" id="rec-ci-de" placeholder="1234567890"></div>
+            <div class="form-group"><label>Monto (USD)</label><input type="number" id="rec-monto" step="0.01"></div>
+            <div class="form-group"><label>Por concepto de</label><input type="text" id="rec-concepto" placeholder="Descripción del pago"></div>
+            <div class="form-group"><label>Forma de pago</label>
+              <select id="rec-forma"><option>Efectivo</option><option>Transferencia bancaria</option><option>Cheque</option><option>Tarjeta de crédito</option></select>
+            </div>
+            <div class="form-group"><label>Receptor</label><input type="text" id="rec-receptor" placeholder="Nombre de quien recibe"></div>
+            <div class="form-group"><label>C.I./RUC Receptor</label><input type="text" id="rec-ci-receptor" placeholder="0987654321"></div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarRecibo()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('recibo-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('recibo')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('recibo','Recibo de Dinero')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="recibo-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- CONTRATO SERVICIOS PROFESIONALES -->
+      <div class="doc-content" id="doc-servicios">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> Arts. 1561–1580 Código Civil y Ley Orgánica de Empresas Públicas. El contrato de servicios profesionales es un acuerdo de prestación de servicios de carácter civil o mercantil, sin relación de dependencia laboral. Debe diferenciarse del contrato de trabajo (no genera beneficios sociales). El prestador emite facturas con retención del <strong>8% o 10% en la fuente de IR</strong> (según aplique). Se recomienda especificar: objeto, plazo, honorarios, forma de pago, confidencialidad y propiedad intelectual.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Contrato de Servicios Profesionales</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="srv-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha</label><input type="date" id="srv-fecha"></div>
+            <div class="form-group"><label>Contratante (Empresa/Persona)</label><input type="text" id="srv-contratante" placeholder="Nombre del contratante"></div>
+            <div class="form-group"><label>RUC/C.I. Contratante</label><input type="text" id="srv-ruc-contratante" placeholder="RUC o cédula"></div>
+            <div class="form-group"><label>Representante Legal</label><input type="text" id="srv-rep-legal" placeholder="Nombre del representante"></div>
+            <div class="form-group"><label>Prestador de Servicios</label><input type="text" id="srv-prestador" placeholder="Nombre del profesional"></div>
+            <div class="form-group"><label>C.I./RUC Prestador</label><input type="text" id="srv-ci-prestador" placeholder="Cédula o RUC"></div>
+            <div class="form-group"><label>Profesión/Especialidad</label><input type="text" id="srv-profesion" placeholder="Ej: Ingeniero Financiero"></div>
+            <div class="form-group"><label>Objeto del contrato</label><textarea id="srv-objeto" rows="3" placeholder="Descripción detallada del servicio a prestar..."></textarea></div>
+            <div class="form-group"><label>Plazo (meses)</label><input type="number" id="srv-plazo" value="6" min="1"></div>
+            <div class="form-group"><label>Honorarios Mensuales (USD)</label><input type="number" id="srv-honorarios" value="1000" step="0.01"></div>
+            <div class="form-group"><label>Forma de Pago</label>
+              <select id="srv-forma-pago">
+                <option>Transferencia bancaria mensual</option>
+                <option>Cheque mensual</option>
+                <option>Pago al término del contrato</option>
+                <option>Pago por entregables</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Lugar de prestación</label><input type="text" id="srv-lugar" placeholder="Ej: Instalaciones del contratante / Remoto"></div>
+            <div class="form-group"><label>Confidencialidad</label>
+              <select id="srv-confidencialidad"><option value="si">Sí — Incluir cláusula de confidencialidad</option><option value="no">No requerida</option></select>
+            </div>
+            <div class="form-group"><label>¿Incluir cláusula de mediación?</label>
+              <select id="srv-mediacion"><option value="si">Sí — Mediación previa obligatoria</option><option value="no">No</option></select>
+            </div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarContratoServicios()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('servicios-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('servicios')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('servicios','Contrato de Servicios')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="servicios-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- CONTRATO DE ALQUILER -->
+      <div class="doc-content" id="doc-alquiler">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> Ley de Inquilinato y Arts. 1856–1922 Código Civil Ecuador. El arrendamiento de inmuebles urbanos se rige por la Ley de Inquilinato. El canon de arrendamiento no puede incrementarse más del porcentaje autorizado por el Ministerio de Vivienda. El arrendatario tiene derecho a recibir el inmueble en buen estado. El arrendador debe registrar el contrato en el SRI y emitir comprobante de retención (si aplica). El desahucio requiere notificación con <strong>30 días de anticipación</strong>. Se recomienda depósito de garantía equivalente a 1 mes de arriendo.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Contrato de Arrendamiento</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="alq-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha</label><input type="date" id="alq-fecha"></div>
+            <div class="form-group"><label>Arrendador (Dueño)</label><input type="text" id="alq-arrendador" placeholder="Nombre del propietario"></div>
+            <div class="form-group"><label>C.I./RUC Arrendador</label><input type="text" id="alq-ci-arrendador" placeholder="Cédula o RUC"></div>
+            <div class="form-group"><label>Arrendatario (Inquilino)</label><input type="text" id="alq-arrendatario" placeholder="Nombre del inquilino"></div>
+            <div class="form-group"><label>C.I./RUC Arrendatario</label><input type="text" id="alq-ci-arrendatario" placeholder="Cédula o RUC"></div>
+            <div class="form-group"><label>Dirección del Inmueble</label><input type="text" id="alq-direccion" placeholder="Dirección completa del inmueble"></div>
+            <div class="form-group"><label>Tipo de inmueble</label>
+              <select id="alq-tipo"><option>Casa</option><option>Departamento</option><option>Local comercial</option><option>Oficina</option><option>Bodega</option></select>
+            </div>
+            <div class="form-group"><label>Canon mensual (USD)</label><input type="number" id="alq-canon" value="500" step="0.01"></div>
+            <div class="form-group"><label>Depósito de garantía (USD)</label><input type="number" id="alq-deposito" value="500" step="0.01"></div>
+            <div class="form-group"><label>Plazo del contrato (meses)</label><input type="number" id="alq-plazo" value="12" min="1"></div>
+            <div class="form-group"><label>Fecha de inicio</label><input type="date" id="alq-inicio"></div>
+            <div class="form-group"><label>Servicios incluidos</label>
+              <select id="alq-servicios"><option value="no">No incluidos — inquilino paga</option><option value="si">Incluidos en el canon</option><option value="parcial">Parcialmente incluidos</option></select>
+            </div>
+            <div class="form-group"><label>Uso permitido</label>
+              <select id="alq-uso"><option>Vivienda familiar</option><option>Uso comercial</option><option>Uso mixto</option><option>Oficina profesional</option></select>
+            </div>
+            <div class="form-group"><label>¿Incluir cláusula de mediación?</label>
+              <select id="alq-mediacion"><option value="si">Sí — Mediación previa obligatoria</option><option value="no">No</option></select>
+            </div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarContratoAlquiler()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('alquiler-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('alquiler')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('alquiler','Contrato de Alquiler')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="alquiler-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- CONTRATO DE TRABAJO -->
+      <div class="doc-content" id="doc-trabajo">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> Código del Trabajo Ecuador (CT). Modalidades: <strong>Indefinido</strong> (Art. 14 CT — estabilidad plena, desahucio o visto bueno para terminación), <strong>A plazo fijo</strong> (máx. 1 año renovable una vez), <strong>Por obra/servicio específico</strong> (termina al concluir la obra). Beneficios obligatorios: Décimo tercero (diciembre), Décimo cuarto (agosto en Sierra, abril en Costa), Vacaciones (15 días/año), Fondos de Reserva (desde el 13° mes), Aporte IESS (9.45% trabajador, 12.15% empleador). Salario mínimo 2024: <strong>$460/mes</strong>. Jornada ordinaria: 8h/día, 40h/semana.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Contrato Individual de Trabajo</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="trab-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha</label><input type="date" id="trab-fecha"></div>
+            <div class="form-group"><label>Empresa Empleadora</label><input type="text" id="trab-empresa" placeholder="Razón social de la empresa"></div>
+            <div class="form-group"><label>RUC Empresa</label><input type="text" id="trab-ruc-empresa" placeholder="RUC de la empresa"></div>
+            <div class="form-group"><label>Representante Legal</label><input type="text" id="trab-rep" placeholder="Nombre del representante legal"></div>
+            <div class="form-group"><label>Trabajador</label><input type="text" id="trab-trabajador" placeholder="Nombre completo del trabajador"></div>
+            <div class="form-group"><label>C.I. Trabajador</label><input type="text" id="trab-ci" placeholder="Número de cédula"></div>
+            <div class="form-group"><label>Cargo / Función</label><input type="text" id="trab-cargo" placeholder="Ej: Asistente Contable"></div>
+            <div class="form-group"><label>Tipo de contrato</label>
+              <select id="trab-tipo" onchange="actualizarCamposTrabajo()">
+                <option value="indefinido">Indefinido (Art. 14 CT)</option>
+                <option value="plazo_fijo">Plazo Fijo (máx. 1 año)</option>
+                <option value="obra">Por obra o servicio específico</option>
+                <option value="eventual">Eventual / Ocasional (Art. 17 CT)</option>
+                <option value="temporada">Por Temporada (Art. 17 CT)</option>
+                <option value="parcial">Tiempo Parcial (Art. 82 CT)</option>
+                <option value="domestico">Servicio Doméstico (Ley Reformatoria)</option>
+              </select>
+            </div>
+            <div class="form-group" id="trab-prueba-box">
+              <label>¿Incluir período de prueba?</label>
+              <select id="trab-prueba" onchange="actualizarCamposTrabajo()">
+                <option value="no">No</option>
+                <option value="si">Sí — hasta 90 días (Art. 15 CT)</option>
+              </select>
+            </div>
+            <div class="form-group" id="trab-plazo-box"><label>Plazo (meses)</label><input type="number" id="trab-plazo" value="12" min="1" max="12"></div>
+            <div class="form-group"><label>Remuneración mensual (USD)</label><input type="number" id="trab-sueldo" value="460" step="0.01" oninput="calcularBeneficios()"></div>
+            <div class="form-group"><label>Jornada</label>
+              <select id="trab-jornada"><option>Completa — 8h/día, 40h/semana</option><option>Parcial — hasta 30h/semana</option><option>Nocturna — recargo 25%</option></select>
+            </div>
+            <div class="form-group"><label>Lugar de trabajo</label><input type="text" id="trab-lugar" placeholder="Ciudad y dirección de trabajo"></div>
+            <div id="trab-beneficios-box" style="margin:1rem 0;padding:1rem;background:var(--surface-3);border-radius:8px;font-size:.85rem"></div>
+            <div class="form-group"><label>¿Incluir cláusula de mediación?</label>
+              <select id="trab-mediacion"><option value="si">Sí — Mediación previa obligatoria</option><option value="no">No</option></select>
+            </div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarContratoTrabajo()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('trabajo-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('trabajo')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('trabajo','Contrato de Trabajo')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="trabajo-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- MUTUO ENTRE EMPRESAS -->
+      <div class="doc-content" id="doc-mutuoempresas">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> Arts. 2099–2128 Código Civil Ecuador (Contrato de Mutuo) y Ley de Compañías. El mutuo es un contrato por el cual una parte entrega a otra una cantidad de dinero, con cargo de restituir igual cantidad. Entre sociedades, debe registrarse contablemente como cuenta por cobrar/pagar a relacionadas y declararse al SRI si supera los montos establecidos en el Régimen de Precios de Transferencia (Art. innumerado LORTI). Los intereses pactados no pueden exceder la tasa máxima convencional fijada por el Banco Central del Ecuador.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Contrato de Mutuo entre Empresas</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="mue-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha</label><input type="date" id="mue-fecha"></div>
+            <div class="form-group"><label>Empresa Mutuante (quien presta)</label><input type="text" id="mue-mutuante" placeholder="Razón social"></div>
+            <div class="form-group"><label>RUC Mutuante</label><input type="text" id="mue-ruc-mutuante" class="ci-validar" placeholder="RUC 13 dígitos"></div>
+            <div class="form-group"><label>Rep. Legal Mutuante</label><input type="text" id="mue-rep-mutuante" placeholder="Nombre del representante"></div>
+            <div class="form-group"><label>Empresa Mutuaria (quien recibe)</label><input type="text" id="mue-mutuaria" placeholder="Razón social"></div>
+            <div class="form-group"><label>RUC Mutuaria</label><input type="text" id="mue-ruc-mutuaria" class="ci-validar" placeholder="RUC 13 dígitos"></div>
+            <div class="form-group"><label>Rep. Legal Mutuaria</label><input type="text" id="mue-rep-mutuaria" placeholder="Nombre del representante"></div>
+            <div class="form-group"><label>Monto del préstamo (USD)</label><input type="number" id="mue-monto" value="10000" step="0.01"></div>
+            <div class="form-group"><label>Tasa de interés anual (%)</label><input type="number" id="mue-tasa" value="10" step="0.01"></div>
+            <div class="form-group"><label>Plazo (meses)</label><input type="number" id="mue-plazo" value="12" min="1"></div>
+            <div class="form-group"><label>Fecha de desembolso</label><input type="date" id="mue-desembolso"></div>
+            <div class="form-group"><label>Forma de pago de intereses</label>
+              <select id="mue-forma-pago"><option>Mensual</option><option>Trimestral</option><option>Al vencimiento (junto con el capital)</option></select>
+            </div>
+            <div class="form-group"><label>¿Incluir cláusula de mediación?</label>
+              <select id="mue-mediacion"><option value="si">Sí — Mediación previa obligatoria</option><option value="no">No</option></select>
+            </div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarMutuoEmpresas()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('mutuoempresas-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('mutuoempresas')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('mutuoempresas','Mutuo Empresas')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="mutuoempresas-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- MUTUO ENTRE PERSONAS NATURALES -->
+      <div class="doc-content" id="doc-mutuopersonas">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> Arts. 2099–2128 Código Civil Ecuador. El mutuo o préstamo de consumo entre personas naturales transfiere el dominio del dinero prestado, obligándose el mutuario a restituir igual cantidad. Es recomendable elevarlo a escritura pública o al menos reconocer las firmas ante notario para que tenga mérito ejecutivo. Si se pactan intereses, estos no pueden exceder la tasa máxima convencional vigente fijada por el Banco Central del Ecuador (de lo contrario se configura usura, sancionada por el Código Orgánico Integral Penal).
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Contrato de Mutuo entre Personas Naturales</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="mup-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha</label><input type="date" id="mup-fecha"></div>
+            <div class="form-group"><label>Mutuante (quien presta)</label><input type="text" id="mup-mutuante" placeholder="Nombre completo"></div>
+            <div class="form-group"><label>Cédula Mutuante</label><input type="text" id="mup-ci-mutuante" class="ci-validar" placeholder="10 dígitos"></div>
+            <div class="form-group"><label>Mutuario (quien recibe)</label><input type="text" id="mup-mutuario" placeholder="Nombre completo"></div>
+            <div class="form-group"><label>Cédula Mutuario</label><input type="text" id="mup-ci-mutuario" class="ci-validar" placeholder="10 dígitos"></div>
+            <div class="form-group"><label>Monto del préstamo (USD)</label><input type="number" id="mup-monto" value="1000" step="0.01"></div>
+            <div class="form-group"><label>Tasa de interés anual (%)</label><input type="number" id="mup-tasa" value="0" step="0.01" placeholder="0 = sin intereses"></div>
+            <div class="form-group"><label>Plazo (meses)</label><input type="number" id="mup-plazo" value="6" min="1"></div>
+            <div class="form-group"><label>Forma de devolución</label>
+              <select id="mup-forma-pago"><option>Pago único al vencimiento</option><option>Cuotas mensuales iguales</option></select>
+            </div>
+            <div class="form-group"><label>¿Incluir cláusula de mediación?</label>
+              <select id="mup-mediacion"><option value="si">Sí — Mediación previa obligatoria</option><option value="no">No</option></select>
+            </div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarMutuoPersonas()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('mutuopersonas-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('mutuopersonas')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('mutuopersonas','Mutuo Personas Naturales')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="mutuopersonas-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+    
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0;">📋 Documentos guardados</h3>
+        <div class="doc-tabs" id="docHistTabsBar" style="margin-bottom:12px;"></div>
+        <div id="docHistLista"><div class="emptyState">Cargando...</div></div>
+      </div>
+    </div>
   `;
-  pintarTabsLegales();
-  await pintarListaLegales();
+  pintarTabsDocLegal();
+  pintarHistTabsDocLegal();
+  // Fecha de hoy por defecto en los campos de fecha principales
+  const hoy = new Date().toISOString().split("T")[0];
+  ["pag-fecha","let-fecha","rec-fecha"].forEach(id => { const el=document.getElementById(id); if(el) el.value = hoy; });
+  // Vincula validación en vivo de cédula/RUC a todos los campos .ci-validar
+  document.querySelectorAll("#legalesRoot input.ci-validar, #legalesRoot input[id*='-ci-'], #legalesRoot input[id*='ci-deudor'], #legalesRoot input[id*='ci-acreedor']").forEach(inp => bindValidacionCI(inp.id));
+  await pintarListaDocLegalGuardados(docLegalHistTipoActual);
 }
 
-function pintarTabsLegales(){
-  const cont = document.getElementById("legalesTabs");
-  cont.innerHTML = Object.keys(PLANTILLAS_DOC_LEGAL).map(tipo =>
-    `<button class="tabBtn ${tipoDocLegalActual===tipo?'active':''}" onclick="cambiarTipoLegal('${tipo}')">${PLANTILLAS_DOC_LEGAL[tipo].nombre}</button>`
+function showDocTab(tab, btnEl){
+  document.querySelectorAll("#legalesRoot .doc-tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll("#legalesRoot .doc-content").forEach(c => c.classList.remove("active"));
+  if(btnEl) btnEl.classList.add("active");
+  const el = document.getElementById("doc-"+tab);
+  if(el) el.classList.add("active");
+}
+
+function pintarTabsDocLegal(){
+  const cont = document.getElementById("docTabsBar");
+  if(!cont) return;
+  cont.innerHTML = Object.keys(DOC_LEGAL_TIPOS).map((tipo, idx) =>
+    `<button class="doc-tab ${idx===0?'active':''}" onclick="showDocTab('${tipo}', this)">${DOC_LEGAL_TIPOS[tipo]}</button>`
   ).join("");
 }
 
-async function cambiarTipoLegal(tipo){
-  tipoDocLegalActual = tipo;
-  pintarTabsLegales();
-  await pintarListaLegales();
+/* ── Historial de documentos guardados (por tipo) ── */
+let docLegalHistTipoActual = "pagare";
+function pintarHistTabsDocLegal(){
+  const cont = document.getElementById("docHistTabsBar");
+  if(!cont) return;
+  cont.innerHTML = Object.keys(DOC_LEGAL_TIPOS).map(tipo =>
+    `<button class="doc-tab ${docLegalHistTipoActual===tipo?'active':''}" onclick="cambiarHistTipoDocLegal('${tipo}')">${DOC_LEGAL_TIPOS[tipo]}</button>`
+  ).join("");
 }
-
-async function pintarListaLegales(){
-  const tipo = tipoDocLegalActual;
-  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const cont = document.getElementById("legalesContenido");
-  cont.innerHTML = `
-    <div class="card">
-      <button class="btn primary" onclick="abrirFormularioLegal('${tipo}')">+ Nuevo ${plantilla.nombre}</button>
-    </div>
-    <div class="card" id="tablaLegales"><div class="emptyState">Cargando...</div></div>
-    <div id="modalLegalHost"></div>
-  `;
-  const tablaCont = document.getElementById("tablaLegales");
+async function cambiarHistTipoDocLegal(tipo){
+  docLegalHistTipoActual = tipo;
+  pintarHistTabsDocLegal();
+  await pintarListaDocLegalGuardados(tipo);
+}
+async function pintarListaDocLegalGuardados(tipo){
+  const cont = document.getElementById("docHistLista");
+  if(!cont) return;
+  cont.innerHTML = `<div class="emptyState">Cargando...</div>`;
   try{
-    documentosLegalesCache[tipo] = await cargarDocumentosLegales(tipo);
+    documentosLegalesGuardados[tipo] = await cargarDocumentosLegales(tipo);
   }catch(e){
-    tablaCont.innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "documentos_legales" a las reglas de Realtime Database.</span></div>`;
+    cont.innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "documentos_legales" a las reglas de Realtime Database.</span></div>`;
     return;
   }
-  const lista = documentosLegalesCache[tipo];
-  tablaCont.innerHTML = !lista.length ? `<div class="emptyState">Aún no hay documentos de este tipo.</div>` : `
-    <table><thead><tr><th>N°</th><th>Partes</th><th>Fecha</th><th></th></tr></thead><tbody>
+  const lista = documentosLegalesGuardados[tipo];
+  cont.innerHTML = !lista.length ? `<div class="emptyState">Aún no hay ${DOC_LEGAL_TIPOS[tipo].replace(/^\S+\s/,'')} guardados.</div>` : `
+    <table><thead><tr><th>Descripción</th><th>Fecha</th><th></th></tr></thead><tbody>
       ${lista.map(d => `<tr>
-        <td>${d.numeroAsignado?`<span class="pill ok">${escapeHtml(d.numeroAsignado)}</span>`:`<span class="pill muted">Borrador</span>`}</td>
-        <td>${escapeHtml(d.resumenPartes||'-')}</td>
+        <td>${escapeHtml(d.descripcion||'-')}</td>
         <td>${fmtFecha(d.creado)}</td>
         <td>
-          <button class="btn small" onclick="abrirDetalleLegal('${tipo}','${d.id}')">Abrir</button>
-          <button class="btn small danger" onclick="confirmarEliminarLegal('${tipo}','${d.id}')">Eliminar</button>
+          <button class="btn small" onclick="verDocLegalGuardado('${tipo}','${d.id}')">👁️ Ver</button>
+          <button class="btn small danger" onclick="eliminarDocLegalGuardado('${tipo}','${d.id}')">Eliminar</button>
         </td>
       </tr>`).join("")}
     </tbody></table>`;
 }
-
-async function confirmarEliminarLegal(tipo, id){
-  if(!confirm("¿Eliminar este documento?")) return;
+function verDocLegalGuardado(tipo, id){
+  const d = (documentosLegalesGuardados[tipo]||[]).find(x=>x.id===id);
+  if(!d) return;
+  const win = window.open("", "_blank");
+  win.document.write(`<html><head><title>${escapeHtml(d.descripcion||'Documento')}</title><style>
+    body{font-family:'Times New Roman',serif;padding:40px;color:#111;font-size:13px;line-height:1.7}
+    .doc-title{font-size:20px;font-weight:900;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
+    .doc-subtitle{text-align:center;color:#555;font-size:12px;margin-bottom:20px}
+    .doc-monto-box{border:2px solid #333;padding:12px;text-align:center;font-size:14px;font-weight:700;margin:20px 0}
+    .doc-body p{margin-bottom:10px;text-align:justify}
+    .doc-firma-row{display:flex;justify-content:space-between;margin-top:60px}
+    .doc-firma{text-align:center;width:45%}
+    .doc-firma-line{border-top:1px solid #333;padding-top:6px;font-size:12px}
+    .doc-footer{border-top:1px solid #ccc;padding-top:10px;font-size:10px;color:#777;margin-top:30px}
+  </style></head><body>${d.contenidoHtml||'<p>Sin contenido.</p>'}
+    <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
+  </body></html>`);
+  win.document.close();
+}
+async function eliminarDocLegalGuardado(tipo, id){
+  if(!confirm("¿Eliminar este documento guardado?")) return;
   await eliminarDocumentoLegal(id);
-  await pintarListaLegales();
+  await pintarListaDocLegalGuardados(tipo);
 }
 
-function abrirFormularioLegal(tipo, id){
-  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const existente = id ? documentosLegalesCache[tipo].find(x=>x.id===id) : null;
-  const campos = existente?.campos || {};
-  const host = document.getElementById("modalLegalHost");
-  host.innerHTML = `
-    <div class="modalBg">
-      <div class="modalBox" style="max-width:640px;">
-        <button class="closeX" onclick="document.getElementById('modalLegalHost').innerHTML=''">×</button>
-        <h3>${plantilla.nombre}</h3>
-        ${plantilla.campos.map(campo => `
-          <div class="field"><label>${campo.label}</label>
-            ${campo.tipo==="textarea"
-              ? `<textarea id="lc_${campo.id}" rows="3">${escapeHtml(campos[campo.id]||"")}</textarea>`
-              : campo.tipo==="select"
-              ? `<select id="lc_${campo.id}">${campo.opciones.map(o=>`<option ${campos[campo.id]===o?'selected':''}>${o}</option>`).join("")}</select>`
-              : `<input type="${campo.tipo}" id="lc_${campo.id}" value="${escapeHtml(campos[campo.id]||"")}">`}
-          </div>`).join("")}
-        <button class="btn primary" style="width:100%;margin-top:8px;" onclick="generarDocumentoLegal('${tipo}','${id||''}')">✨ Generar documento</button>
+// Guardado unificado en historial para cualquier documento generado — usa el
+// mismo almacenamiento de Firebase que ya tenía Documentos Legales.
+async function guardarHistorialDocumento(tipoDoc, descripcion, datos){
+  const previewMap = {
+    pagare:"pagare-preview", letra:"letra-preview", recibo:"recibo-preview",
+    servicios:"servicios-preview", alquiler:"alquiler-preview", trabajo:"trabajo-preview",
+    mutuoempresas:"mutuoempresas-preview", mutuopersonas:"mutuopersonas-preview",
+  };
+  const previewEl = document.getElementById(previewMap[tipoDoc]);
+  const contenidoHtml = previewEl ? previewEl.innerHTML : "";
+  await guardarDocumentoLegal({ tipo: tipoDoc, descripcion, datos, contenidoHtml }, null);
+  await registrarCambio("Documentos Legales", "generar", `${DOC_LEGAL_TIPOS[tipoDoc]||tipoDoc}: ${descripcion}`);
+  if(docLegalHistTipoActual===tipoDoc) await pintarListaDocLegalGuardados(tipoDoc);
+}
+
+function downloadFile(content, filename, mime="text/plain"){
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href:url, download:filename });
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ════════════════════════════════════════════════════════════════
+// VALIDADOR DE CÉDULA / RUC ECUATORIANO (Algoritmo Módulo 10 / 11 — SRI)
+// ════════════════════════════════════════════════════════════════
+function validarCedulaEcuador(cedula) {
+  if (!/^\d{10}$/.test(cedula)) return { valido:false, msg:'Debe tener 10 dígitos' };
+  const provincia = parseInt(cedula.substring(0,2), 10);
+  if (provincia < 1 || provincia > 24) return { valido:false, msg:'Código de provincia inválido' };
+  const tercerDigito = parseInt(cedula[2], 10);
+  if (tercerDigito > 6) return { valido:false, msg:'Tercer dígito inválido para cédula' };
+  const coef = [2,1,2,1,2,1,2,1,2];
+  let suma = 0;
+  for (let i=0;i<9;i++) {
+    let val = parseInt(cedula[i],10) * coef[i];
+    if (val >= 10) val -= 9;
+    suma += val;
+  }
+  const verificador = (10 - (suma % 10)) % 10;
+  const digitoVerificador = parseInt(cedula[9], 10);
+  return verificador === digitoVerificador
+    ? { valido:true, msg:'Cédula válida' }
+    : { valido:false, msg:'Dígito verificador incorrecto' };
+}
+
+function validarRucEcuador(ruc) {
+  if (!/^\d{13}$/.test(ruc)) return { valido:false, msg:'El RUC debe tener 13 dígitos' };
+  const tercerDigito = parseInt(ruc[2], 10);
+  const base = ruc.substring(0,10);
+  // Persona natural (tercer dígito 0-5)
+  if (tercerDigito >= 0 && tercerDigito <= 5) {
+    const cedValida = validarCedulaEcuador(base);
+    if (!cedValida.valido) return { valido:false, msg:'RUC inválido (cédula base incorrecta)' };
+    if (ruc.substring(10) !== '001') return { valido:false, msg:'El RUC debe terminar en 001 para persona natural' };
+    return { valido:true, msg:'RUC de persona natural válido' };
+  }
+  // Sociedad pública (tercer dígito 6)
+  if (tercerDigito === 6) {
+    const coef = [3,2,7,6,5,4,3,2];
+    let suma = 0;
+    for (let i=0;i<8;i++) suma += parseInt(ruc[i],10) * coef[i];
+    const mod = suma % 11;
+    const verificador = mod === 0 ? 0 : 11 - mod;
+    if (verificador !== parseInt(ruc[8],10)) return { valido:false, msg:'Dígito verificador incorrecto (entidad pública)' };
+    return { valido:true, msg:'RUC de entidad pública válido' };
+  }
+  // Sociedad privada (tercer dígito 9)
+  if (tercerDigito === 9) {
+    const coef = [4,3,2,7,6,5,4,3,2];
+    let suma = 0;
+    for (let i=0;i<9;i++) suma += parseInt(ruc[i],10) * coef[i];
+    const mod = suma % 11;
+    const verificador = mod === 0 ? 0 : 11 - mod;
+    if (verificador !== parseInt(ruc[9],10)) return { valido:false, msg:'Dígito verificador incorrecto (sociedad privada)' };
+    return { valido:true, msg:'RUC de sociedad privada válido' };
+  }
+  return { valido:false, msg:'Tercer dígito de RUC no reconocido' };
+}
+
+// Valida automáticamente cédula (10 díg.) o RUC (13 díg.) según longitud
+function validarIdentificacionEC(valor) {
+  if (!valor) return { valido:null, msg:'' };
+  const v = valor.replace(/\D/g,'');
+  if (v.length === 10) return validarCedulaEcuador(v);
+  if (v.length === 13) return validarRucEcuador(v);
+  return { valido:false, msg:'Debe tener 10 (cédula) o 13 (RUC) dígitos' };
+}
+
+// Aplica validación visual en vivo a un <input>: bordea verde/rojo y muestra mensaje
+function bindValidacionCI(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  let msgEl = document.getElementById(inputId + '-msg');
+  if (!msgEl) {
+    msgEl = document.createElement('div');
+    msgEl.id = inputId + '-msg';
+    msgEl.style.cssText = 'font-size:.68rem;margin-top:3px;min-height:14px;';
+    input.parentNode.appendChild(msgEl);
+  }
+  input.addEventListener('input', () => {
+    const v = input.value.replace(/\D/g,'');
+    input.value = v;
+    if (v.length < 10) { msgEl.textContent=''; input.style.borderColor=''; return; }
+    const r = validarIdentificacionEC(v);
+    input.style.borderColor = r.valido ? 'var(--emerald)' : '#ef4444';
+    msgEl.textContent = r.valido ? '✓ ' + r.msg : '✗ ' + r.msg;
+    msgEl.style.color = r.valido ? 'var(--emerald)' : '#ef4444';
+  });
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '___';
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('es-EC', {day:'numeric', month:'long', year:'numeric'});
+}
+
+function toggleTipoPersonaPagare(rol) {
+  const tipo = document.getElementById(`pag-${rol}-tipo`)?.value;
+  const juridicaBox = document.getElementById(`pag-${rol}-juridica-box`);
+  if (juridicaBox) juridicaBox.style.display = tipo === 'juridica' ? 'block' : 'none';
+  if (rol === 'deudor') {
+    const civilBox = document.getElementById('pag-deudor-civil-box');
+    if (civilBox) civilBox.style.display = tipo === 'natural' ? 'block' : 'none';
+    if (tipo === 'juridica') {
+      const conyPreg = document.getElementById('pag-deudor-conyuge-pregunta-box');
+      const conyNom = document.getElementById('pag-deudor-conyuge-nombre-box');
+      if (conyPreg) conyPreg.style.display = 'none';
+      if (conyNom) conyNom.style.display = 'none';
+    } else {
+      toggleConyugePagare('deudor');
+    }
+  }
+}
+
+function toggleConyugePagare(rol) {
+  const civil = document.getElementById(`pag-${rol}-civil`)?.value;
+  const preguntaBox = document.getElementById(`pag-${rol}-conyuge-pregunta-box`);
+  const nombreBox = document.getElementById(`pag-${rol}-conyuge-nombre-box`);
+  const mostrarPregunta = civil === 'casado' || civil === 'union';
+  if (preguntaBox) preguntaBox.style.display = mostrarPregunta ? 'block' : 'none';
+  if (!mostrarPregunta && nombreBox) nombreBox.style.display = 'none';
+  if (mostrarPregunta) toggleConyugeNombrePagare(rol);
+}
+
+function toggleConyugeNombrePagare(rol) {
+  const firma = document.getElementById(`pag-${rol}-conyuge-firma`)?.value;
+  const nombreBox = document.getElementById(`pag-${rol}-conyuge-nombre-box`);
+  if (nombreBox) nombreBox.style.display = firma === 'si' ? 'block' : 'none';
+}
+
+function toggleEndososPagare() {
+  const endosable = document.getElementById('pag-endosable')?.value;
+  const box = document.getElementById('pag-endosos-box');
+  if (box) box.style.display = endosable === 'si' ? 'block' : 'none';
+}
+
+function generarPagare() {
+  const ciudad = document.getElementById('pag-ciudad').value;
+  const fecha = document.getElementById('pag-fecha').value;
+  const monto = parseFloat(document.getElementById('pag-monto').value);
+  const vencimiento = document.getElementById('pag-vencimiento').value;
+  const tasa = parseFloat(document.getElementById('pag-tasa').value);
+  const interesDesde = document.getElementById('pag-interes-desde')?.value || 'vencimiento';
+
+  const deudorTipo = document.getElementById('pag-deudor-tipo')?.value || 'natural';
+  const deudor = document.getElementById('pag-deudor').value;
+  const ciDeudor = document.getElementById('pag-ci-deudor').value.replace(/\D/g,'');
+  const deudorRepLeg = document.getElementById('pag-deudor-repleg')?.value || '';
+  const deudorRepLegCi = document.getElementById('pag-deudor-repleg-ci')?.value.replace(/\D/g,'') || '';
+  const deudorCivil = document.getElementById('pag-deudor-civil')?.value || 'soltero';
+  const deudorConyugeFirma = document.getElementById('pag-deudor-conyuge-firma')?.value || 'no';
+  const deudorConyuge = document.getElementById('pag-deudor-conyuge')?.value || '';
+
+  const acreedorTipo = document.getElementById('pag-acreedor-tipo')?.value || 'natural';
+  const acreedor = document.getElementById('pag-acreedor').value;
+  const ciAcreedor = document.getElementById('pag-ci-acreedor').value.replace(/\D/g,'');
+  const acreedorRepLeg = document.getElementById('pag-acreedor-repleg')?.value || '';
+  const acreedorRepLegCi = document.getElementById('pag-acreedor-repleg-ci')?.value.replace(/\D/g,'') || '';
+
+  const domicilio = document.getElementById('pag-domicilio').value;
+  const lugarPago = document.getElementById('pag-lugar-pago').value;
+
+  if (!deudor || !acreedor || !monto) { toast('Complete los campos obligatorios', 'error'); return; }
+
+  // Validación de cédula/RUC del deudor y acreedor según legislación ecuatoriana
+  if (ciDeudor) {
+    const v = validarIdentificacionEC(ciDeudor);
+    if (!v.valido) { toast('Cédula/RUC del deudor inválido: ' + v.msg, 'error'); return; }
+  }
+  if (ciAcreedor) {
+    const v = validarIdentificacionEC(ciAcreedor);
+    if (!v.valido) { toast('Cédula/RUC del acreedor inválido: ' + v.msg, 'error'); return; }
+  }
+  if (deudorTipo === 'juridica' && deudorRepLegCi) {
+    const v = validarCedulaEcuador(deudorRepLegCi);
+    if (!v.valido) { toast('Cédula del representante legal (deudor) inválida: ' + v.msg, 'error'); return; }
+  }
+  if (acreedorTipo === 'juridica' && acreedorRepLegCi) {
+    const v = validarCedulaEcuador(acreedorRepLegCi);
+    if (!v.valido) { toast('Cédula del representante legal (acreedor) inválida: ' + v.msg, 'error'); return; }
+  }
+
+  const letras = montoEnLetrasUSD(monto);
+  const fI = fmtDate(fecha);
+  const fV = fmtDate(vencimiento);
+
+  // Texto de comparecencia del deudor, según sea persona natural o jurídica
+  let compareceDeudor;
+  if (deudorTipo === 'juridica') {
+    compareceDeudor = `<strong>${deudor}</strong>, debidamente representada por <strong>${deudorRepLeg || '___'}</strong>, portador de la cédula de ciudadanía No. <strong>${deudorRepLegCi || '___'}</strong>, en su calidad de Representante Legal, con RUC No. <strong>${ciDeudor}</strong>, domiciliada en <strong>${domicilio}</strong>`;
+  } else {
+    const estadoCivilTexto = { soltero:'soltero/a', casado:'casado/a', union:'en unión de hecho', divorciado:'divorciado/a', viudo:'viudo/a' }[deudorCivil] || '';
+    compareceDeudor = `<strong>${deudor}</strong>, de estado civil ${estadoCivilTexto}, portador de la cédula de ciudadanía No. <strong>${ciDeudor}</strong>, domiciliado/a en <strong>${domicilio}</strong>`;
+  }
+
+  let compareceAcreedor;
+  if (acreedorTipo === 'juridica') {
+    compareceAcreedor = `<strong>${acreedor}</strong>, debidamente representada por <strong>${acreedorRepLeg || '___'}</strong>, portador de la cédula de ciudadanía No. <strong>${acreedorRepLegCi || '___'}</strong>, en su calidad de Representante Legal, con RUC No. <strong>${ciAcreedor}</strong>`;
+  } else {
+    compareceAcreedor = `<strong>${acreedor}</strong> (C.I.: <strong>${ciAcreedor}</strong>)`;
+  }
+
+  // Cálculo de intereses según el tipo elegido: desde emisión o desde vencimiento
+  let intText = '';
+  if (fecha && vencimiento && tasa) {
+    if (interesDesde === 'emision') {
+      const diasTotales = Math.round((new Date(vencimiento) - new Date(fecha)) / 86400000);
+      const interesTotal = monto * (tasa/100) * diasTotales / 360;
+      intText = `<p>El presente pagaré devengará un interés del <strong>${tasa}% anual</strong> calculado desde la <strong>fecha de emisión</strong> (${fI}) hasta la fecha de vencimiento, por un total estimado de <strong>USD ${interesTotal.toFixed(2)}</strong> sobre el período de ${diasTotales} días. En caso de mora posterior al vencimiento, se aplicará adicionalmente el interés legal por mora vigente.</p>`;
+    } else {
+      intText = `<p>En caso de mora, el deudor pagará sobre el saldo insoluto un interés del <strong>${tasa}% anual</strong>, calculado <strong>desde la fecha de vencimiento</strong> (${fV}) hasta la fecha de pago efectivo, sin perjuicio de las acciones legales que correspondan.</p>`;
+    }
+  }
+
+  // Cláusula de firma de cónyuge del deudor (garantía conyugal), si aplica
+  let conyugeText = '';
+  let conyugeFirmaHTML = '';
+  if (deudorTipo === 'natural' && (deudorCivil === 'casado' || deudorCivil === 'union') && deudorConyugeFirma === 'si' && deudorConyuge) {
+    conyugeText = `<p>Comparece además <strong>${deudorConyuge}</strong>, en calidad de cónyuge del deudor, quien presta su consentimiento expreso a la presente obligación conforme al Art. 180 y siguientes del Código Civil, garantizando solidariamente el cumplimiento de la misma respecto de los bienes de la sociedad conyugal.</p>`;
+    conyugeFirmaHTML = `<div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${deudorConyuge}<br><em>Cónyuge del Deudor</em></div>
+      </div>`;
+  }
+
+  document.getElementById('pagare-preview').innerHTML = `
+    <div class="doc-header">
+      <div class="doc-title">PAGARÉ A LA ORDEN</div>
+      <div class="doc-subtitle">Documento Título-Valor · Art. 486 y siguientes del Código de Comercio del Ecuador</div>
+    </div>
+    <div class="doc-monto-box">
+      VALOR: USD $ ${monto.toLocaleString('es-EC', {minimumFractionDigits:2})}
+    </div>
+    <div class="doc-body">
+      <p>En la ciudad de <strong>${ciudad}</strong>, a <strong>${fI}</strong>, comparece ${compareceDeudor}, quien en calidad de deudor principal se compromete a pagar INCONDICIONALMENTE a la orden de ${compareceAcreedor}, o a quien sus derechos legítimamente represente, la suma de <strong>DÓLARES DE LOS ESTADOS UNIDOS DE NORTEAMÉRICA (USD) ${monto.toLocaleString('es-EC', {minimumFractionDigits:2})}</strong> (<em>${letras}</em>).</p>
+      ${conyugeText}
+      <br>
+      <p>El presente pagaré es pagadero a su vencimiento el día <strong>${fV}</strong>, en <strong>${lugarPago}</strong>, sin necesidad de requerimiento, presentación ni protesta alguna, conforme lo dispuesto en el Art. 487 del Código de Comercio.</p>
+      <br>
+      ${intText}
+      <p>Para el cobro de este pagaré, el deudor renuncia expresamente a su domicilio y se somete a los jueces competentes de la ciudad de <strong>${ciudad}</strong>, reconociendo pagar los honorarios del abogado y gastos judiciales que se generen en caso de demanda.</p>
+      <br>
+      <p>El presente pagaré está sujeto a las leyes de la República del Ecuador, específicamente al Código de Comercio y Código Civil vigentes.</p>
+    </div>
+    <div class="doc-firma-row">
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${deudor}<br>${deudorTipo==='juridica' ? 'RUC: '+ciDeudor+'<br>p.p. '+ (deudorRepLeg||'___') : 'C.I.: '+ciDeudor}<br><em>Deudor / Suscriptor</em></div>
       </div>
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${acreedor}<br>${acreedorTipo==='juridica' ? 'RUC: '+ciAcreedor+'<br>p.p. '+ (acreedorRepLeg||'___') : 'C.I.: '+ciAcreedor}<br><em>Beneficiario / Acreedor</em></div>
+      </div>
+      ${conyugeFirmaHTML}
+    </div>
+    ${(() => {
+      const endosable = document.getElementById('pag-endosable')?.value;
+      const e1 = document.getElementById('pag-endoso1')?.value;
+      const e2 = document.getElementById('pag-endoso2')?.value;
+      const e3 = document.getElementById('pag-endoso3')?.value;
+      if (endosable === 'si') {
+        const endososTexto = [e1,e2,e3].filter(Boolean);
+        return `<div style="margin-top:1.2rem;padding:.75rem;border-top:1px solid #333;font-size:.8rem;font-family:Georgia,serif">
+          <strong>CLÁUSULA DE ENDOSO:</strong> El presente pagaré es transferible por endoso conforme al Art. 491 del Código de Comercio. El endoso se realizará al dorso del documento con firma del endosante, nombre del endosatario y fecha.
+          ${endososTexto.length > 0 ? `<br><br><strong>Espacios de endoso registrados:</strong><br>${endososTexto.map((e,i)=>`${i+1}° Endoso — Endosatario: <strong>${e}</strong>`).join('<br>')}` : ''}
+          <br><br>
+          <table style="width:100%;border-collapse:collapse;margin-top:8px">
+            <tr><td style="border:1px solid #999;padding:6px;width:33%"><strong>1er Endoso</strong><br>Endosatario: ${e1||'_______________'}<br><br>Firma: _______________<br>Fecha: _______________</td>
+            <td style="border:1px solid #999;padding:6px;width:33%"><strong>2do Endoso</strong><br>Endosatario: ${e2||'_______________'}<br><br>Firma: _______________<br>Fecha: _______________</td>
+            <td style="border:1px solid #999;padding:6px;width:33%"><strong>3er Endoso</strong><br>Endosatario: ${e3||'_______________'}<br><br>Firma: _______________<br>Fecha: _______________</td></tr>
+          </table>
+        </div>`;
+      } else if (endosable === 'no') {
+        return `<div style="margin-top:.75rem;padding:.5rem;font-size:.8rem;font-family:Georgia,serif;color:#666">
+          <em>NO A LA ORDEN — Este documento no es transferible por endoso, conforme lo permite el Art. 491 del Código de Comercio.</em>
+        </div>`;
+      }
+      return '';
+    })()}
+    ${(() => {
+      const med = document.getElementById('pag-mediacion')?.value;
+      if (med === 'si') {
+        return `<div style="margin-top:.75rem;padding:.5rem;font-size:.8rem;font-family:Georgia,serif">
+          <strong>CLÁUSULA DE MEDIACIÓN:</strong> Las partes acuerdan que cualquier controversia derivada de este documento será sometida primero a mediación ante un Centro de Mediación calificado, antes de iniciar acción judicial, conforme a la Ley de Arbitraje y Mediación del Ecuador.
+        </div>`;
+      }
+      return '';
+    })()}
+    <div class="doc-footer">
+      Documento generado por FinanceOS Ecuador · ${new Date().toLocaleDateString('es-EC')} · Este documento requiere firma original y legalización notarial para tener plena validez legal.
+    </div>
+  `;
+  toast('Pagaré generado correctamente', 'success');
+  guardarHistorialDocumento('pagare', deudor + ' → ' + acreedor, {
+    ciudad, fecha, monto, vencimiento, tasa, interesDesde,
+    deudorTipo, deudor, ciDeudor, deudorRepLeg, deudorCivil, deudorConyuge,
+    acreedorTipo, acreedor, ciAcreedor, acreedorRepLeg,
+  });
+}
+
+function generarLetra() {
+  const ciudad = document.getElementById('let-ciudad').value;
+  const fecha = document.getElementById('let-fecha').value;
+  const monto = parseFloat(document.getElementById('let-monto').value);
+  const vencimiento = document.getElementById('let-vencimiento').value;
+  const librador = document.getElementById('let-librador').value;
+  const ciLibrador = document.getElementById('let-ci-librador').value.replace(/\D/g,'');
+  const librado = document.getElementById('let-librado').value;
+  const ciLibrado = document.getElementById('let-ci-librado').value.replace(/\D/g,'');
+  const beneficiario = document.getElementById('let-beneficiario').value;
+  const ciBeneficiario = document.getElementById('let-ci-beneficiario')?.value.replace(/\D/g,'') || '';
+  const domicilio = document.getElementById('let-domicilio').value;
+  const sinProtesto = document.getElementById('let-sin-protesto')?.value || 'no';
+  const mediacion = document.getElementById('let-mediacion')?.value || 'no';
+
+  if (!librador || !librado || !beneficiario || !monto) { toast('Complete los campos obligatorios', 'error'); return; }
+
+  // Validación de cédula/RUC conforme a la legislación ecuatoriana
+  for (const [label, valor] of [['Librador', ciLibrador], ['Librado', ciLibrado], ['Beneficiario', ciBeneficiario]]) {
+    if (valor) {
+      const v = validarIdentificacionEC(valor);
+      if (!v.valido) { toast(`Cédula/RUC del ${label} inválido: ` + v.msg, 'error'); return; }
+    }
+  }
+
+  const letras = montoEnLetrasUSD(monto);
+  const fI = fmtDate(fecha);
+  const fV = fmtDate(vencimiento);
+
+  const clausulaProtesto = sinProtesto === 'si'
+    ? `<p>Las partes convienen expresamente la <strong>dispensa de protesto</strong> ("sin protesto / sin gastos"), conforme lo permite el Art. 460 del Código de Comercio, por lo que el tenedor conservará la acción cambiaria contra todos los obligados sin necesidad de levantar protesto notarial en caso de falta de pago.</p>`
+    : `<p>En caso de falta de pago a su vencimiento, el tenedor deberá levantar el <strong>protesto</strong> correspondiente dentro de los dos (2) días hábiles siguientes, conforme a los Arts. 458 y 459 del Código de Comercio, a efectos de conservar la acción cambiaria contra el librador y los endosantes.</p>`;
+
+  const clausulaMediacionLetra = mediacion === 'si'
+    ? `<div style="margin-top:.75rem;padding:.5rem;font-size:.8rem;font-family:Georgia,serif">
+        <strong>CLÁUSULA DE MEDIACIÓN:</strong> Las partes acuerdan someter cualquier controversia derivada de la presente letra de cambio a un proceso de mediación previo ante un Centro de Mediación calificado, conforme a la Ley de Arbitraje y Mediación del Ecuador, antes de iniciar la vía judicial.
+      </div>`
+    : '';
+
+  document.getElementById('letra-preview').innerHTML = `
+    <div class="doc-header">
+      <div class="doc-title">LETRA DE CAMBIO</div>
+      <div class="doc-subtitle">Título Valor · Arts. 410 al 485 del Código de Comercio del Ecuador</div>
+    </div>
+    <div class="doc-monto-box">
+      LUGAR DE EMISIÓN: ${ciudad} &nbsp;|&nbsp; FECHA DE EMISIÓN: ${fI} &nbsp;|&nbsp; VENCE: ${fV}
+      <br>VALOR: USD $ ${monto.toLocaleString('es-EC', {minimumFractionDigits:2})}
+    </div>
+    <div class="doc-body">
+      <p>Por esta ÚNICA letra de cambio, sírvase Ud. pagar incondicionalmente a la orden de <strong>${beneficiario}</strong>${ciBeneficiario ? ` (C.I./RUC: <strong>${ciBeneficiario}</strong>)` : ''}, en la fecha de vencimiento señalada, la cantidad de <strong>DÓLARES DE LOS ESTADOS UNIDOS DE NORTEAMÉRICA (USD) ${monto.toLocaleString('es-EC', {minimumFractionDigits:2})}</strong> (<em>${letras}</em>), valor recibido a su entera satisfacción, que cargará Ud. en cuenta sin aviso, según lo dispuesto en el Art. 410 y siguientes del Código de Comercio del Ecuador.</p>
+      <br>
+      <p><strong>LIBRADOR (Quien emite la orden de pago):</strong> ${librador}${ciLibrador ? ` · C.I./RUC: ${ciLibrador}` : ''}</p>
+      <p><strong>LIBRADO (Quien debe pagar):</strong> ${librado}${ciLibrado ? ` · C.I./RUC: ${ciLibrado}` : ''}</p>
+      <p><strong>Domicilio para el pago:</strong> ${domicilio || ciudad}</p>
+      <br>
+      <p>El LIBRADO, al estampar su firma de aceptación al pie de este documento, se constituye en obligado principal y directo al pago de la cantidad señalada, conforme al Art. 437 del Código de Comercio, comprometiéndose a satisfacer su importe en la fecha y lugar indicados, sin necesidad de requerimiento previo.</p>
+      ${clausulaProtesto}
+      <p>Para todos los efectos legales derivados de la presente letra de cambio, las partes se someten a los jueces competentes de la ciudad de <strong>${ciudad}</strong>, renunciando expresamente a fuero y domicilio, y reconociendo a su cargo los honorarios profesionales y costas judiciales que se llegaren a generar en caso de acción de cobro.</p>
+    </div>
+    <div class="doc-firma-row">
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${librador}<br>C.I./RUC: ${ciLibrador || '___'}<br><em>Librador / Girador</em></div>
+      </div>
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${librado}<br>C.I./RUC: ${ciLibrado || '___'}<br><em>Acepto · Librado</em></div>
+      </div>
+    </div>
+    ${(() => {
+      const endosable = document.getElementById('let-endosable')?.value;
+      if (endosable === 'si') {
+        return `<div style="margin-top:1rem;padding:.6rem;border-top:1px solid #333;font-size:.78rem;font-family:Georgia,serif">
+          <strong>CLÁUSULA DE ENDOSO:</strong> La presente letra de cambio es transferible mediante endoso conforme al Art. 446 del Código de Comercio. El endoso se efectuará al dorso del documento, indicando el nombre del endosatario, fecha y firma del endosante.
+        </div>`;
+      }
+      return `<div style="margin-top:.75rem;padding:.5rem;font-size:.78rem;font-family:Georgia,serif;color:#666"><em>NO A LA ORDEN — Esta letra de cambio no es transferible por endoso, conforme lo permite el Art. 446 del Código de Comercio.</em></div>`;
+    })()}
+    ${clausulaMediacionLetra}
+    <div class="doc-footer">
+      Documento generado por FinanceOS Ecuador · ${new Date().toLocaleDateString('es-EC')} · Requiere firma original y legalización notarial para plena validez legal.
+    </div>
+  `;
+  toast('Letra de cambio generada', 'success');
+  guardarHistorialDocumento('letra', librador + ' → ' + librado, {
+    ciudad, fecha, monto, vencimiento, librador, ciLibrador, librado, ciLibrado,
+    beneficiario, ciBeneficiario, domicilio, sinProtesto, mediacion,
+  });
+}
+
+function generarRecibo() {
+  const ciudad = document.getElementById('rec-ciudad').value;
+  const fecha = document.getElementById('rec-fecha').value;
+  const de = document.getElementById('rec-de').value;
+  const monto = parseFloat(document.getElementById('rec-monto').value);
+  const concepto = document.getElementById('rec-concepto').value;
+  const forma = document.getElementById('rec-forma').value;
+  const receptor = document.getElementById('rec-receptor').value;
+  if (!de || !monto || !concepto) { toast('Complete los campos obligatorios', 'error'); return; }
+
+  const letras = montoEnLetrasUSD(monto);
+  document.getElementById('recibo-preview').innerHTML = `
+    <div class="doc-header">
+      <div class="doc-title">RECIBO DE DINERO</div>
+      <div class="doc-subtitle">${ciudad}, ${fmtDate(fecha)}</div>
+    </div>
+    <div class="doc-monto-box">USD $ ${monto.toLocaleString('es-EC', {minimumFractionDigits:2})}</div>
+    <div class="doc-body">
+      <p>RECIBÍ DE: <strong>${de}</strong></p>
+      <p>LA CANTIDAD DE: <em>${letras}</em></p>
+      <p>POR CONCEPTO DE: <strong>${concepto}</strong></p>
+      <p>FORMA DE PAGO: <strong>${forma}</strong></p>
+      <br>
+      <p>Y para constancia de lo cual, firmo el presente recibo en la ciudad de ${ciudad}, a ${fmtDate(fecha)}.</p>
+    </div>
+    <div class="doc-firma-row">
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${receptor}<br><em>Firma · Quien recibe</em></div>
+      </div>
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${de}<br><em>Firma · Quien entrega</em></div>
+      </div>
+    </div>
+  `;
+  toast('Recibo generado', 'success');
+}
+
+function imprimirDocumento(previewId) {
+  const content = document.getElementById(previewId).innerHTML;
+  const win = window.open('', '_blank');
+  win.document.write(`<html><head><title>Documento</title><style>
+    body{font-family:'Times New Roman',serif;padding:40px;color:#111;font-size:13px;line-height:1.7}
+    .doc-title{font-size:20px;font-weight:900;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
+    .doc-subtitle{text-align:center;color:#555;font-size:12px;margin-bottom:20px}
+    .doc-monto-box{border:2px solid #333;padding:12px;text-align:center;font-size:14px;font-weight:700;margin:20px 0}
+    .doc-body p{margin-bottom:10px;text-align:justify}
+    .doc-firma-row{display:flex;justify-content:space-between;margin-top:60px}
+    .doc-firma{text-align:center;width:45%}
+    .doc-firma-line{border-top:1px solid #333;padding-top:6px;font-size:12px}
+    .doc-footer{border-top:1px solid #ccc;padding-top:10px;font-size:10px;color:#777;margin-top:30px}
+  </style></head><body>${content}</body></html>`);
+  win.document.close();
+  setTimeout(() => win.print(), 500);
+}
+
+
+// ═══════════════ tributacion.js ═══════════════
+// ══════════════════════════════════════════════════
+// TRIBUTACIÓN MODULE — Sistema SRI Ecuador 2024-2025
+// ══════════════════════════════════════════════════
+
+function actualizarCamposTrabajo() {
+  const tipo = document.getElementById('trab-tipo')?.value;
+  const plazoBox = document.getElementById('trab-plazo-box');
+  const pruebaBox = document.getElementById('trab-prueba-box');
+  // El plazo solo aplica a modalidades con duración definida
+  const requierePlazo = ['plazo_fijo','eventual','temporada','parcial'].includes(tipo);
+  if (plazoBox) plazoBox.style.display = requierePlazo ? 'block' : 'none';
+  // El período de prueba (Art. 15 CT) solo aplica a contratos indefinidos
+  if (pruebaBox) pruebaBox.style.display = tipo === 'indefinido' ? 'block' : 'none';
+}
+
+function calcularBeneficios() {
+  const sueldo = parseFloat(document.getElementById('trab-sueldo')?.value) || 0;
+  const box = document.getElementById('trab-beneficios-box');
+  if (!box || sueldo <= 0) return;
+  const decTer = sueldo;
+  const decCuar = 460; // SBU 2024
+  const vacaciones = sueldo / 24;
+  const fondosRes = sueldo * 0.0833;
+  const iessEmpleado = sueldo * 0.0945;
+  const iessEmpleador = sueldo * 0.1215;
+  const totalAnual = (sueldo * 12) + decTer + decCuar + (vacaciones * 2) + (fondosRes * 12);
+  box.innerHTML = `<strong style="color:var(--accent-gold)">💼 Costos laborales estimados:</strong><br>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem .75rem;margin-top:.5rem;font-size:.82rem">
+      <span>Décimo tercero:</span><span style="color:var(--accent-gold);font-family:var(--font-mono)">$${decTer.toFixed(2)}</span>
+      <span>Décimo cuarto:</span><span style="color:var(--accent-gold);font-family:var(--font-mono)">$${decCuar.toFixed(2)}</span>
+      <span>Vacaciones (15d):</span><span style="color:var(--accent-gold);font-family:var(--font-mono)">$${(vacaciones*15).toFixed(2)}</span>
+      <span>Fondos de reserva/mes:</span><span style="color:var(--accent-gold);font-family:var(--font-mono)">$${fondosRes.toFixed(2)}</span>
+      <span>IESS empleado (9.45%):</span><span style="color:#f59e0b;font-family:var(--font-mono)">$${iessEmpleado.toFixed(2)}</span>
+      <span>IESS empleador (12.15%):</span><span style="color:#ef4444;font-family:var(--font-mono)">$${iessEmpleador.toFixed(2)}</span>
+      <span style="font-weight:700;color:var(--text-primary)">Costo total anual empresa:</span>
+      <span style="color:var(--accent-emerald);font-family:var(--font-mono);font-weight:700">$${totalAnual.toFixed(2)}</span>
     </div>`;
 }
 
-async function generarDocumentoLegal(tipo, id){
-  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const campos = {};
-  plantilla.campos.forEach(c => { campos[c.id] = document.getElementById("lc_"+c.id).value; });
-  const contenido = plantilla.generar(campos);
-  // Un resumen corto de las partes para identificar el documento en la lista
-  const posiblesNombres = [campos.acreedorNombre, campos.deudorNombre, campos.giradorNombre, campos.giradoNombre,
-    campos.mutuanteNombre, campos.mutuarioNombre, campos.empleadorNombre, campos.trabajadorNombre,
-    campos.contratanteNombre, campos.contratistaNombre, campos.arrendadorNombre, campos.arrendatarioNombre].filter(Boolean);
-  const resumenPartes = posiblesNombres.slice(0,2).join(" / ") || "Sin nombre";
-  const nuevoId = await guardarDocumentoLegal({ tipo, campos, contenido, resumenPartes, endosos:[], numeroAsignado:null, confirmado:false }, id||null);
-  document.getElementById("modalLegalHost").innerHTML = "";
-  await pintarListaLegales();
-  abrirDetalleLegal(tipo, nuevoId);
-}
-
-async function abrirDetalleLegal(tipo, id){
-  documentosLegalesCache[tipo] = await cargarDocumentosLegales(tipo);
-  const d = documentosLegalesCache[tipo].find(x=>x.id===id);
-  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const esTituloValor = plantilla.categoria==="titulo_valor";
-  const host = document.getElementById("modalLegalHost");
-  host.innerHTML = `
-    <div class="modalBg">
-      <div class="modalBox" style="max-width:760px;">
-        <button class="closeX" onclick="document.getElementById('modalLegalHost').innerHTML=''; pintarListaLegales();">×</button>
-        <h3>${plantilla.nombre} ${d.numeroAsignado?`<span class="pill ok">${escapeHtml(d.numeroAsignado)}</span>`:`<span class="pill muted">Borrador</span>`}</h3>
-        <div class="field"><label>Contenido del documento (editable)</label>
-          <textarea id="legContenido" rows="18">${escapeHtml(d.contenido||"")}</textarea>
+function generarContratoServicios() {
+  const g = id => document.getElementById(id)?.value || '';
+  const ciudad = g('srv-ciudad'), fecha = g('srv-fecha'), contratante = g('srv-contratante'),
+        rucC = g('srv-ruc-contratante'), repLegal = g('srv-rep-legal'),
+        prestador = g('srv-prestador'), ciP = g('srv-ci-prestador'),
+        profesion = g('srv-profesion'), objeto = g('srv-objeto'),
+        plazo = g('srv-plazo'), honorarios = parseFloat(g('srv-honorarios')) || 0,
+        forma = g('srv-forma-pago'), lugar = g('srv-lugar'),
+        conf = g('srv-confidencialidad'), mediacion = g('srv-mediacion'),
+        totalContrato = honorarios * parseInt(plazo);
+  const fechaFmt = fecha ? new Date(fecha+'T12:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+  const preview = document.getElementById('servicios-preview');
+  if (!preview) return;
+  preview.innerHTML = `
+    <div style="font-family:Georgia,serif;color:#1a1a2e;line-height:1.7;font-size:.85rem">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <h2 style="font-size:1.1rem;text-transform:uppercase;letter-spacing:1px;margin:0">CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h2>
+        <p style="font-size:.8rem;color:#666;margin:.3rem 0">${ciudad}, ${fechaFmt}</p>
+      </div>
+      <p><strong>COMPARECIENTES:</strong> En la ciudad de ${ciudad||'___'}, a ${fechaFmt}, comparecen por una parte <strong>${contratante||'___'}</strong>, RUC/C.I. ${rucC||'___'}, representada por ${repLegal||'___'}, en calidad de CONTRATANTE; y por otra parte <strong>${prestador||'___'}</strong>, portador de la C.I./RUC ${ciP||'___'}, ${profesion||'profesional'}, en calidad de PRESTADOR DE SERVICIOS.</p>
+      <p><strong>PRIMERA — OBJETO:</strong> El PRESTADOR se obliga a prestar los siguientes servicios profesionales a favor del CONTRATANTE: <em>${objeto||'(descripción del servicio)'}</em>. Los servicios se prestarán en: ${lugar||'las instalaciones acordadas'}.</p>
+      <p><strong>SEGUNDA — PLAZO:</strong> El presente contrato tendrá una duración de <strong>${plazo} mes(es)</strong> contados a partir de la fecha de suscripción, pudiendo renovarse de mutuo acuerdo por escrito.</p>
+      <p><strong>TERCERA — HONORARIOS:</strong> El CONTRATANTE pagará al PRESTADOR la suma de <strong>USD ${honorarios.toFixed(2)} (${honorarios.toFixed(2)} dólares)</strong> mensuales, mediante ${forma}. El valor total del contrato asciende a <strong>USD ${totalContrato.toFixed(2)}</strong>. El CONTRATANTE efectuará la retención en la fuente de Impuesto a la Renta conforme a la normativa del SRI vigente.</p>
+      <p><strong>CUARTA — NATURALEZA:</strong> El presente contrato es de carácter civil/mercantil. No existe relación de dependencia laboral, por lo que el PRESTADOR no tendrá derecho a beneficios sociales propios del Código del Trabajo.</p>
+      <p><strong>QUINTA — OBLIGACIONES DEL PRESTADOR:</strong> Ejecutar los servicios con diligencia y profesionalismo; emitir facturas por los honorarios; mantener la calidad acordada; informar oportunamente de cualquier impedimento.</p>
+      <p><strong>SEXTA — OBLIGACIONES DEL CONTRATANTE:</strong> Pagar puntualmente los honorarios acordados; proporcionar la información y recursos necesarios para la ejecución del contrato; efectuar las retenciones tributarias correspondientes.</p>
+      ${conf==='si' ? '<p><strong>SÉPTIMA — CONFIDENCIALIDAD:</strong> El PRESTADOR se obliga a guardar absoluta reserva y confidencialidad sobre toda información, datos, documentos y estrategias del CONTRATANTE a los que acceda con motivo de este contrato, durante su vigencia y por un período de dos (2) años posteriores a su terminación.</p>' : ''}
+      <p><strong>${conf==='si'?'OCTAVA':'SÉPTIMA'} — TERMINACIÓN:</strong> El contrato podrá darse por terminado por mutuo acuerdo, por incumplimiento de las obligaciones de cualquiera de las partes previo aviso de 15 días, o por vencimiento del plazo.</p>
+      <p><strong>${conf==='si'?'NOVENA':'OCTAVA'} — JURISDICCIÓN:</strong> Para cualquier controversia derivada del presente contrato, las partes se someten a los jueces y tribunales de la ciudad de ${ciudad||'Quito'}, renunciando al fuero de su domicilio.</p>
+      ${clausulaMediacionHTML(mediacion)}
+      <p style="margin-top:2rem">En fe de lo cual, las partes suscriben el presente contrato en dos ejemplares de igual valor y efecto, en la fecha indicada.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:3rem">
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>${contratante||'CONTRATANTE'}</strong><br>RUC/C.I.: ${rucC||'___'}<br>Rep. Legal: ${repLegal||'___'}</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn small" onclick="guardarContenidoLegalManual('${tipo}','${id}')">💾 Guardar cambios</button>
-          <button class="btn small" onclick="abrirFormularioLegal('${tipo}','${id}')">✏️ Editar campos y regenerar</button>
-          ${!d.numeroAsignado ? `<button class="btn green" onclick="confirmarDocumentoLegal('${tipo}','${id}')">✅ Confirmar y asignar número</button>` : ''}
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>${prestador||'PRESTADOR'}</strong><br>C.I./RUC: ${ciP||'___'}<br>${profesion||'Profesional'}</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <button class="btn small" onclick="imprimirDocumentoLegal('${tipo}','${id}')">🖨️ Imprimir</button>
-          <button class="btn small" onclick="descargarPDFLegal('${tipo}','${id}')">⬇️ Descargar PDF</button>
-          <button class="btn small" onclick="descargarWordLegal('${tipo}','${id}')">⬇️ Descargar Word</button>
-        </div>
-        ${esTituloValor ? `
-          <div class="card" style="margin-top:16px;">
-            <h4 style="margin-top:0;">Endosos (Art. 124-127 Código de Comercio)</h4>
-            <div id="listaEndosos"></div>
-            <div class="grid3">
-              <div class="field"><label>Fecha</label><input type="date" id="endFecha"></div>
-              <div class="field"><label>Endosante (quien transfiere)</label><input type="text" id="endEndosante"></div>
-              <div class="field"><label>Endosatario (a favor de quien)</label><input type="text" id="endEndosatario"></div>
-            </div>
-            <button class="btn small" onclick="agregarEndoso('${tipo}','${id}')">+ Agregar endoso</button>
-          </div>
-        ` : ''}
       </div>
     </div>`;
-  if(esTituloValor) pintarListaEndosos(d.endosos||[]);
+  toast('Contrato de servicios generado', 'success');
 }
 
-function pintarListaEndosos(endosos){
-  const cont = document.getElementById("listaEndosos");
-  if(!endosos.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin endosos registrados.</p>`; return; }
-  cont.innerHTML = `<table><thead><tr><th>Fecha</th><th>Endosante</th><th>Endosatario</th></tr></thead><tbody>
-    ${endosos.map(e => `<tr><td>${fmtFecha(e.fecha)}</td><td>${escapeHtml(e.endosante)}</td><td>${escapeHtml(e.endosatario)}</td></tr>`).join("")}
-  </tbody></table>`;
+function generarContratoAlquiler() {
+  const g = id => document.getElementById(id)?.value || '';
+  const ciudad=g('alq-ciudad'), fecha=g('alq-fecha'), arrendador=g('alq-arrendador'),
+        ciA=g('alq-ci-arrendador'), arrendatario=g('alq-arrendatario'),
+        ciAt=g('alq-ci-arrendatario'), dir=g('alq-direccion'), tipo=g('alq-tipo'),
+        canon=parseFloat(g('alq-canon'))||0, deposito=parseFloat(g('alq-deposito'))||0,
+        plazo=parseInt(g('alq-plazo'))||12, inicio=g('alq-inicio'),
+        servicios=g('alq-servicios'), uso=g('alq-uso'), mediacion=g('alq-mediacion');
+  const fechaFmt = fecha ? new Date(fecha+'T12:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+  const inicioFmt = inicio ? new Date(inicio+'T12:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+  const finDate = inicio ? new Date(new Date(inicio).setMonth(new Date(inicio).getMonth()+plazo)).toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+  const canonLetras = montoEnLetrasUSD(canon);
+  const preview = document.getElementById('alquiler-preview');
+  if (!preview) return;
+  preview.innerHTML = `
+    <div style="font-family:Georgia,serif;color:#1a1a2e;line-height:1.7;font-size:.85rem">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <h2 style="font-size:1.1rem;text-transform:uppercase;letter-spacing:1px;margin:0">CONTRATO DE ARRENDAMIENTO DE INMUEBLE</h2>
+        <p style="font-size:.8rem;color:#666;margin:.3rem 0">${ciudad}, ${fechaFmt}</p>
+      </div>
+      <p><strong>COMPARECIENTES:</strong> En la ciudad de ${ciudad}, a ${fechaFmt}, comparecen: <strong>${arrendador||'___'}</strong>, C.I./RUC ${ciA||'___'}, en calidad de ARRENDADOR; y <strong>${arrendatario||'___'}</strong>, C.I./RUC ${ciAt||'___'}, en calidad de ARRENDATARIO.</p>
+      <p><strong>PRIMERA — OBJETO:</strong> El ARRENDADOR da en arrendamiento al ARRENDATARIO el inmueble de tipo <strong>${tipo}</strong>, ubicado en <strong>${dir||'(dirección del inmueble)'}</strong>, para uso exclusivo de: <strong>${uso}</strong>.</p>
+      <p><strong>SEGUNDA — PLAZO:</strong> El presente contrato tendrá vigencia de <strong>${plazo} meses</strong>, desde el <strong>${inicioFmt}</strong> hasta el <strong>${finDate}</strong>. Vencido el plazo, se considerará prorrogado automáticamente por períodos iguales salvo notificación de desahucio con 30 días de anticipación (Art. 30 Ley de Inquilinato).</p>
+      <p><strong>TERCERA — CANON:</strong> El canon mensual de arrendamiento es de <strong>USD ${canon.toFixed(2)} (${canonLetras} dólares)</strong>, pagadero los primeros cinco días de cada mes. Los servicios básicos (agua, luz, internet) son: <strong>${servicios==='si'?'incluidos en el canon':servicios==='parcial'?'parcialmente incluidos':'a cargo del arrendatario'}</strong>.</p>
+      <p><strong>CUARTA — DEPÓSITO:</strong> El ARRENDATARIO entrega como depósito de garantía la suma de <strong>USD ${deposito.toFixed(2)}</strong>, equivalente a ${Math.round(deposito/canon)} mes(es) de canon. Dicho depósito será devuelto al término del contrato, previa verificación del estado del inmueble.</p>
+      <p><strong>QUINTA — OBLIGACIONES DEL ARRENDADOR:</strong> Entregar el inmueble en perfecto estado; mantener al arrendatario en el goce pacífico del bien; efectuar reparaciones locativas mayores; registrar el contrato ante la Comisaría de la Policía Nacional.</p>
+      <p><strong>SEXTA — OBLIGACIONES DEL ARRENDATARIO:</strong> Pagar puntualmente el canon; conservar el inmueble en buen estado; no subarrendar sin autorización expresa; no efectuar modificaciones estructurales; permitir la inspección del inmueble previo aviso.</p>
+      <p><strong>SÉPTIMA — TERMINACIÓN:</strong> El contrato terminará por vencimiento del plazo, mutuo acuerdo, incumplimiento grave de obligaciones, o por la causal de desahucio conforme a la Ley de Inquilinato.</p>
+      <p><strong>OCTAVA — JURISDICCIÓN:</strong> Las partes se someten a los jueces competentes de la ciudad de ${ciudad||'Quito'} y a la Ley de Inquilinato vigente.</p>
+      ${clausulaMediacionHTML(mediacion)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:3rem">
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>ARRENDADOR</strong><br>${arrendador||'___'}<br>C.I./RUC: ${ciA||'___'}</p>
+        </div>
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>ARRENDATARIO</strong><br>${arrendatario||'___'}<br>C.I./RUC: ${ciAt||'___'}</p>
+        </div>
+      </div>
+    </div>`;
+  toast('Contrato de alquiler generado', 'success');
 }
 
-async function agregarEndoso(tipo, id){
-  const fecha = document.getElementById("endFecha").value;
-  const endosante = document.getElementById("endEndosante").value.trim();
-  const endosatario = document.getElementById("endEndosatario").value.trim();
-  if(!fecha || !endosante || !endosatario){ alert("Completa fecha, endosante y endosatario."); return; }
-  const d = documentosLegalesCache[tipo].find(x=>x.id===id);
-  const nuevosEndosos = [...(d.endosos||[]), { fecha: new Date(fecha+"T00:00:00").getTime(), endosante, endosatario }];
-  await guardarDocumentoLegal({ endosos: nuevosEndosos }, id);
-  documentosLegalesCache[tipo] = await cargarDocumentosLegales(tipo);
-  pintarListaEndosos(nuevosEndosos);
-  document.getElementById("endFecha").value=""; document.getElementById("endEndosante").value=""; document.getElementById("endEndosatario").value="";
+function generarContratoTrabajo() {
+  const g = id => document.getElementById(id)?.value || '';
+  const ciudad=g('trab-ciudad'), fecha=g('trab-fecha'), empresa=g('trab-empresa'),
+        rucE=g('trab-ruc-empresa'), rep=g('trab-rep'), trabajador=g('trab-trabajador'),
+        ci=g('trab-ci'), cargo=g('trab-cargo'), tipo=g('trab-tipo'), prueba=g('trab-prueba'),
+        plazo=g('trab-plazo'), sueldo=parseFloat(g('trab-sueldo'))||0,
+        jornada=g('trab-jornada'), lugar=g('trab-lugar'), mediacion=g('trab-mediacion');
+
+  if (ci) {
+    const v = validarCedulaEcuador(ci.replace(/\D/g,''));
+    if (!v.valido) { toast('Cédula del trabajador inválida: ' + v.msg, 'error'); return; }
+  }
+
+  const fechaFmt = fecha ? new Date(fecha+'T12:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+
+  const MODALIDADES = {
+    indefinido: { texto: 'TIEMPO INDEFINIDO (Art. 14 CT)',
+      clausula: `El presente contrato es de <strong>tiempo indefinido</strong>${prueba==='si' ? `, sujeto a un período de prueba de hasta noventa (90) días contados desde la fecha de suscripción, conforme al Art. 15 del Código del Trabajo, durante el cual cualquiera de las partes podrá darlo por terminado libremente sin lugar a indemnización` : ''}. Vencido el período de prueba (de existir), el contrato continuará vigente de forma indefinida. La terminación deberá ajustarse a las causales y procedimientos establecidos en los Arts. 169 y siguientes del Código del Trabajo.` },
+    plazo_fijo: { texto: `PLAZO FIJO — ${plazo} meses (Art. 14 CT)`,
+      clausula: `El presente contrato tendrá una duración de <strong>${plazo} mes(es)</strong>, contados desde la fecha de suscripción. Vencido el plazo, si las partes continúan la relación laboral sin formalizar nuevo contrato, este se entenderá convertido en contrato de tiempo indefinido, conforme al Art. 14 del Código del Trabajo.` },
+    obra: { texto: 'POR OBRA O SERVICIO ESPECÍFICO',
+      clausula: `El presente contrato concluirá de manera automática al término de la obra, labor o servicio específico para el cual fue contratado el TRABAJADOR/A, sin que se requiera desahucio ni indemnización adicional, conforme a la naturaleza de esta modalidad contractual prevista en el Código del Trabajo.` },
+    eventual: { texto: `EVENTUAL / OCASIONAL — ${plazo} mes(es) (Art. 17 CT)`,
+      clausula: `El presente es un contrato <strong>eventual</strong>, celebrado para atender exigencias circunstanciales del EMPLEADOR, tales como reemplazo de personal en vacaciones o licencia, o demanda excesiva de producción, conforme al Art. 17 del Código del Trabajo. Su duración no podrá exceder ciento ochenta (180) días continuos en un mismo año. El TRABAJADOR/A tendrá derecho a una remuneración con el recargo del 35% adicional sobre la tasa que corresponda al trabajo que realice, salvo que ya esté contemplado en la remuneración pactada.` },
+    temporada: { texto: `POR TEMPORADA — ${plazo} mes(es) (Art. 17 CT)`,
+      clausula: `El presente es un contrato <strong>de temporada</strong>, propio de actividades cíclicas o periódicas del EMPLEADOR (Art. 17 Código del Trabajo). El TRABAJADOR/A tiene derecho preferente a ser llamado a prestar sus servicios cada vez que se inicie la temporada respectiva, conservando los derechos de antigüedad y demás beneficios consolidados en temporadas anteriores.` },
+    parcial: { texto: `TIEMPO PARCIAL — ${plazo} mes(es) (Art. 82 CT)`,
+      clausula: `El presente contrato es de <strong>tiempo parcial</strong>, conforme al Art. 82 del Código del Trabajo, con una jornada inferior a las ocho (8) horas diarias u ocho (8) horas semanales pactadas expresamente entre las partes. La remuneración y beneficios sociales se calcularán de manera proporcional al tiempo efectivamente laborado en relación con la jornada ordinaria completa.` },
+    domestico: { texto: 'SERVICIO DOMÉSTICO',
+      clausula: `El presente contrato corresponde a la modalidad de <strong>trabajo doméstico</strong>, regulado por el Código del Trabajo y sus reformas que eliminan la diferenciación remunerativa con otras actividades laborales, garantizando al TRABAJADOR/A el salario básico unificado, afiliación al IESS, vacaciones, decimotercera y decimocuarta remuneración, y demás beneficios de ley en igualdad de condiciones que cualquier otro trabajador.` },
+  };
+
+  const modalidad = MODALIDADES[tipo] || MODALIDADES.indefinido;
+  const iessEmp = sueldo*0.0945, iessEmpresa = sueldo*0.1215;
+  const preview = document.getElementById('trabajo-preview');
+  if (!preview) return;
+  preview.innerHTML = `
+    <div style="font-family:Georgia,serif;color:#1a1a2e;line-height:1.7;font-size:.85rem">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <h2 style="font-size:1.1rem;text-transform:uppercase;letter-spacing:1px;margin:0">CONTRATO INDIVIDUAL DE TRABAJO</h2>
+        <p style="font-size:.8rem;color:#666;margin:.3rem 0">${ciudad}, ${fechaFmt}</p>
+        <p style="font-size:.78rem;background:#f5f5f5;padding:.3rem .8rem;border-radius:4px;display:inline-block;margin:.3rem 0">Modalidad: ${modalidad.texto}</p>
+      </div>
+      <p><strong>COMPARECIENTES:</strong> En la ciudad de ${ciudad}, a ${fechaFmt}, comparecen: la empresa <strong>${empresa||'___'}</strong>, RUC ${rucE||'___'}, representada por ${rep||'___'}, en calidad de EMPLEADOR; y <strong>${trabajador||'___'}</strong>, portador/a de la C.I. ${ci||'___'}, en calidad de TRABAJADOR/A.</p>
+      <p><strong>PRIMERA — OBJETO Y CARGO:</strong> El TRABAJADOR/A se compromete a prestar sus servicios lícitos y personales en el cargo de <strong>${cargo||'___'}</strong>, en las instalaciones de ${lugar||'la empresa'}, bajo relación de dependencia y subordinación.</p>
+      <p><strong>SEGUNDA — JORNADA:</strong> ${jornada}. Conforme al Art. 47 del Código del Trabajo, la jornada ordinaria no podrá exceder de 8 horas diarias y 40 horas semanales (salvo en la modalidad de tiempo parcial, que se rige por la jornada proporcional pactada). Las horas extraordinarias y suplementarias serán reconocidas con los recargos de ley.</p>
+      <p><strong>TERCERA — REMUNERACIÓN:</strong> El EMPLEADOR pagará al TRABAJADOR/A la remuneración mensual de <strong>USD ${sueldo.toFixed(2)}</strong>, que incluye todos los componentes salariales. Descuento IESS trabajador (9.45%): USD ${iessEmp.toFixed(2)}. Aporte empleador (12.15%): USD ${iessEmpresa.toFixed(2)}.</p>
+      <p><strong>CUARTA — BENEFICIOS SOCIALES:</strong> El TRABAJADOR/A gozará de todos los beneficios establecidos en el Código del Trabajo: Décimo Tercer Sueldo (diciembre), Décimo Cuarto Sueldo (agosto Sierra/Oriente, abril Costa/Galápagos), Vacaciones (15 días anuales remunerados), Fondos de Reserva (a partir del 13° mes), afiliación al IESS desde el primer día de trabajo.</p>
+      <p><strong>QUINTA — AFILIACIÓN AL IESS:</strong> El EMPLEADOR afiliará al TRABAJADOR/A al Instituto Ecuatoriano de Seguridad Social desde el primer día de la relación laboral, conforme al Art. 73 del Código del Trabajo.</p>
+      <p><strong>SEXTA — MODALIDAD Y PLAZO:</strong> ${modalidad.clausula}</p>
+      <p><strong>SÉPTIMA — OBLIGACIONES DEL TRABAJADOR/A:</strong> Cumplir las tareas encomendadas con diligencia; observar el Reglamento Interno; guardar los secretos de la empresa; no realizar competencia desleal.</p>
+      <p><strong>OCTAVA — JURISDICCIÓN:</strong> Este contrato se rige por el Código del Trabajo ecuatoriano. Para cualquier controversia, las partes se someten a los Inspectores del Trabajo y Jueces del Trabajo de la ciudad de ${ciudad||'Quito'}.</p>
+      ${clausulaMediacionHTML(mediacion)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:3rem">
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>EMPLEADOR</strong><br>${empresa||'___'}<br>RUC: ${rucE||'___'}<br>Rep. Legal: ${rep||'___'}</p>
+        </div>
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>TRABAJADOR/A</strong><br>${trabajador||'___'}<br>C.I.: ${ci||'___'}</p>
+        </div>
+      </div>
+    </div>`;
+  toast('Contrato de trabajo generado', 'success');
+  guardarHistorialDocumento('trabajo', empresa + ' → ' + trabajador, {
+    ciudad, fecha, empresa, rucE, rep, trabajador, ci, cargo, tipo, prueba, plazo, sueldo, jornada, lugar,
+  });
 }
 
-async function guardarContenidoLegalManual(tipo, id){
-  const contenido = document.getElementById("legContenido").value;
-  await guardarDocumentoLegal({ contenido }, id);
-  documentosLegalesCache[tipo] = await cargarDocumentosLegales(tipo);
-  alert("Cambios guardados.");
-}
-
-async function confirmarDocumentoLegal(tipo, id){
-  if(!confirm("Al confirmar se asigna un número interno definitivo. ¿Continuar?")) return;
-  const numero = await obtenerSiguienteNumeroDocumento(tipo);
-  await guardarDocumentoLegal({ numeroAsignado: numero, fechaConfirmado: Date.now() }, id);
-  documentosLegalesCache[tipo] = await cargarDocumentosLegales(tipo);
-  abrirDetalleLegal(tipo, id);
-}
-
-// Genera el bloque de endosos para imprimir/exportar: SIEMPRE incluye el
-// espacio de endosos en los títulos valor (pagaré, letra de cambio), aunque
-// todavía no se haya usado ninguno — porque el documento puede circular y
-// endosarse más adelante, y en papel esa sección debe estar prevista desde
-// el inicio. Muestra los ya registrados como filas llenas, y agrega filas en
-// blanco adicionales para los siguientes.
-const FILAS_ENDOSO_BLANCO_MINIMO = 4;
-function bloqueEndososHtml(endosos){
-  const registrados = endosos||[];
-  const filasLlenas = registrados.map(e => `<tr><td>${fmtFecha(e.fecha)}</td><td>${escapeHtml(e.endosante)}</td><td>${escapeHtml(e.endosatario)}</td><td></td></tr>`).join("");
-  const filasVacias = Array(FILAS_ENDOSO_BLANCO_MINIMO).fill(0).map(()=>`<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join("");
-  return `<div style="margin-top:32px;page-break-inside:avoid;">
-    <h3 style="font-size:13px;border-bottom:1px solid #999;padding-bottom:4px;">ENDOSOS (Art. 124-127 Código de Comercio)</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;">
-      <thead><tr>
-        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Fecha</th>
-        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Endosante (transfiere)</th>
-        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Endosatario (recibe)</th>
-        <th style="border:1px solid #999;padding:6px;background:#f2f2f2;">Firma</th>
-      </tr></thead>
-      <tbody>${filasLlenas}${filasVacias}</tbody>
-    </table>
+function clausulaMediacionHTML(valorSelect) {
+  if (valorSelect !== 'si') return '';
+  return `<div style="margin-top:1rem;padding:.75rem;border-top:1px solid #333;font-size:.8rem;font-family:Georgia,serif">
+    <strong>CLÁUSULA DE MEDIACIÓN:</strong> Las partes acuerdan que cualquier controversia, diferencia o reclamo derivado del presente contrato o relacionado con él, será sometido en primera instancia a un proceso de mediación ante un Centro de Mediación legalmente reconocido en el Ecuador, conforme a la Ley de Arbitraje y Mediación. Solo en caso de no llegar a un acuerdo, las partes podrán acudir a la vía judicial ordinaria.
   </div>`;
 }
 
-function textoEndososParaExportar(endosos){
-  if(!endosos || !endosos.length) return "";
-  return "\n\n---------------------------------------\nENDOSOS\n" +
-    endosos.map(e => `Fecha: ${fmtFecha(e.fecha)} | Endosante: ${e.endosante} | Endosatario: ${e.endosatario}`).join("\n");
+function generarMutuoEmpresas() {
+  const g = id => document.getElementById(id)?.value || '';
+  const ciudad=g('mue-ciudad'), fecha=g('mue-fecha'), mutuante=g('mue-mutuante'),
+        rucMutuante=g('mue-ruc-mutuante'), repMutuante=g('mue-rep-mutuante'),
+        mutuaria=g('mue-mutuaria'), rucMutuaria=g('mue-ruc-mutuaria'), repMutuaria=g('mue-rep-mutuaria'),
+        monto=parseFloat(g('mue-monto'))||0, tasa=parseFloat(g('mue-tasa'))||0,
+        plazo=parseInt(g('mue-plazo'))||12, desembolso=g('mue-desembolso'),
+        formaPago=g('mue-forma-pago'), mediacion=g('mue-mediacion');
+
+  if (rucMutuante) { const v=validarRucEcuador(rucMutuante); if(!v.valido){ toast('RUC Mutuante inválido: '+v.msg,'error'); return; } }
+  if (rucMutuaria)  { const v=validarRucEcuador(rucMutuaria);  if(!v.valido){ toast('RUC Mutuaria inválido: '+v.msg,'error'); return; } }
+
+  const fechaFmt = fecha ? new Date(fecha+'T12:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+  const desemFmt = desembolso ? new Date(desembolso+'T12:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+  const interesTotal = monto * (tasa/100) * (plazo/12);
+  const montoLetras = montoEnLetrasUSD(monto);
+
+  const preview = document.getElementById('mutuoempresas-preview');
+  if (!preview) return;
+  preview.innerHTML = `
+    <div style="font-family:Georgia,serif;color:#1a1a2e;line-height:1.7;font-size:.85rem">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <h2 style="font-size:1.1rem;text-transform:uppercase;letter-spacing:1px;margin:0">CONTRATO DE MUTUO ENTRE PERSONAS JURÍDICAS</h2>
+        <p style="font-size:.8rem;color:#666;margin:.3rem 0">${ciudad}, ${fechaFmt}</p>
+      </div>
+      <p><strong>COMPARECIENTES:</strong> En la ciudad de ${ciudad}, a ${fechaFmt}, comparecen: <strong>${mutuante||'___'}</strong>, RUC ${rucMutuante||'___'}, representada por ${repMutuante||'___'}, en calidad de MUTUANTE; y <strong>${mutuaria||'___'}</strong>, RUC ${rucMutuaria||'___'}, representada por ${repMutuaria||'___'}, en calidad de MUTUARIA.</p>
+      <p><strong>PRIMERA — OBJETO:</strong> La MUTUANTE entrega en calidad de préstamo (mutuo) a la MUTUARIA la suma de <strong>USD ${monto.toFixed(2)} (${montoLetras} dólares)</strong>, que la MUTUARIA declara recibir a su entera satisfacción en la fecha de desembolso: <strong>${desemFmt}</strong>.</p>
+      <p><strong>SEGUNDA — PLAZO:</strong> La MUTUARIA se obliga a restituir el capital recibido en el plazo de <strong>${plazo} meses</strong>, contados desde la fecha de desembolso.</p>
+      <p><strong>TERCERA — INTERESES:</strong> ${tasa > 0 ? `El préstamo devengará un interés anual del <strong>${tasa}%</strong>, pagadero de forma <strong>${formaPago.toLowerCase()}</strong>. El interés total estimado por el plazo del contrato es de <strong>USD ${interesTotal.toFixed(2)}</strong>. Las partes declaran que la tasa pactada no excede la tasa máxima convencional fijada por el Banco Central del Ecuador.` : 'El presente préstamo se otorga sin generar intereses.'}</p>
+      <p><strong>CUARTA — DESTINO Y NATURALEZA TRIBUTARIA:</strong> Las partes declaran que el presente préstamo será registrado contablemente como cuenta por cobrar/pagar a empresas relacionadas, y se compromete a su correcta declaración ante el Servicio de Rentas Internas conforme a la normativa de precios de transferencia, de ser aplicable.</p>
+      <p><strong>QUINTA — INCUMPLIMIENTO:</strong> En caso de mora, la MUTUARIA pagará el interés legal por mora desde la fecha de vencimiento hasta su pago efectivo, sin perjuicio de las acciones legales que correspondan.</p>
+      ${clausulaMediacionHTML(mediacion)}
+      <p style="margin-top:1rem"><strong>SEXTA — JURISDICCIÓN:</strong> Para todo efecto legal derivado del presente contrato, las partes se someten a los jueces competentes de la ciudad de ${ciudad||'Quito'}.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:3rem">
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>MUTUANTE</strong><br>${mutuante||'___'}<br>RUC: ${rucMutuante||'___'}<br>Rep. Legal: ${repMutuante||'___'}</p>
+        </div>
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>MUTUARIA</strong><br>${mutuaria||'___'}<br>RUC: ${rucMutuaria||'___'}<br>Rep. Legal: ${repMutuaria||'___'}</p>
+        </div>
+      </div>
+    </div>`;
+  toast('Contrato de mutuo entre empresas generado', 'success');
 }
 
-async function imprimirDocumentoLegal(tipo, id){
-  const d = documentosLegalesCache[tipo].find(x=>x.id===id);
-  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const esTituloValor = plantilla.categoria==="titulo_valor";
-  const textoDocumento = document.getElementById("legContenido")?.value || d.contenido;
-  const encabezado = d.numeroAsignado
-    ? `<p style="font-size:12px;color:#555;"><b>N° ${escapeHtml(d.numeroAsignado)}</b></p>`
-    : `<p style="font-size:12px;color:#b00;"><b>BORRADOR — sin confirmar</b></p>`;
-  const win = window.open("", "_blank");
-  win.document.write(`<html><head><title>${plantilla.nombre}</title>
-    <style>
-      @page { size: A4; margin: 18mm; }
-      body{font-family:Georgia,'Times New Roman',serif;padding:0;color:#1a1a1a;line-height:1.55;}
-      .portada-linea{height:4px;background:linear-gradient(90deg,#1a2733,#3a4a5c);margin-bottom:14px;}
-      .titulo-doc{font-size:11px;letter-spacing:.08em;color:#5c6b7a;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:16px;display:flex;justify-content:space-between;}
-      pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0;}
-      table{border-collapse:collapse;}
-      .pie{margin-top:26px;font-size:9px;color:#8ea2b3;border-top:1px solid #d7dee6;padding-top:6px;}
-    </style>
-    </head><body>
-    <div class="portada-linea"></div>
-    <div class="titulo-doc"><span>${plantilla.nombre}</span><span>Control Documental</span></div>
-    ${encabezado}
-    <pre>${escapeHtml(textoDocumento)}</pre>
-    ${esTituloValor ? bloqueEndososHtml(d.endosos) : ''}
-    <div class="pie">Documento generado por Control Documental.</div>
-    </body></html>`);
-  win.document.close(); win.focus(); win.print();
+function generarMutuoPersonas() {
+  const g = id => document.getElementById(id)?.value || '';
+  const ciudad=g('mup-ciudad'), fecha=g('mup-fecha'), mutuante=g('mup-mutuante'),
+        ciMutuante=g('mup-ci-mutuante'), mutuario=g('mup-mutuario'), ciMutuario=g('mup-ci-mutuario'),
+        monto=parseFloat(g('mup-monto'))||0, tasa=parseFloat(g('mup-tasa'))||0,
+        plazo=parseInt(g('mup-plazo'))||6, formaPago=g('mup-forma-pago'), mediacion=g('mup-mediacion');
+
+  if (ciMutuante) { const v=validarCedulaEcuador(ciMutuante); if(!v.valido){ toast('Cédula Mutuante inválida: '+v.msg,'error'); return; } }
+  if (ciMutuario)  { const v=validarCedulaEcuador(ciMutuario);  if(!v.valido){ toast('Cédula Mutuario inválida: '+v.msg,'error'); return; } }
+
+  const fechaFmt = fecha ? new Date(fecha+'T12:00').toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'}) : '___';
+  const interesTotal = monto * (tasa/100) * (plazo/12);
+  const montoLetras = montoEnLetrasUSD(monto);
+  const cuotaMensual = formaPago.includes('Cuotas') ? (monto + interesTotal) / plazo : 0;
+
+  const preview = document.getElementById('mutuopersonas-preview');
+  if (!preview) return;
+  preview.innerHTML = `
+    <div style="font-family:Georgia,serif;color:#1a1a2e;line-height:1.7;font-size:.85rem">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <h2 style="font-size:1.1rem;text-transform:uppercase;letter-spacing:1px;margin:0">CONTRATO DE MUTUO ENTRE PERSONAS NATURALES</h2>
+        <p style="font-size:.8rem;color:#666;margin:.3rem 0">${ciudad}, ${fechaFmt}</p>
+      </div>
+      <p><strong>COMPARECIENTES:</strong> En la ciudad de ${ciudad}, a ${fechaFmt}, comparecen: <strong>${mutuante||'___'}</strong>, portador/a de la cédula de ciudadanía N° ${ciMutuante||'___'}, en calidad de MUTUANTE; y <strong>${mutuario||'___'}</strong>, portador/a de la cédula de ciudadanía N° ${ciMutuario||'___'}, en calidad de MUTUARIO/A.</p>
+      <p><strong>PRIMERA — OBJETO:</strong> El/La MUTUANTE entrega en calidad de préstamo al/a la MUTUARIO/A la suma de <strong>USD ${monto.toFixed(2)} (${montoLetras} dólares)</strong>, que declara recibir a su entera satisfacción en este acto.</p>
+      <p><strong>SEGUNDA — PLAZO Y FORMA DE PAGO:</strong> El/La MUTUARIO/A se obliga a restituir el capital recibido en un plazo de <strong>${plazo} meses</strong>, mediante <strong>${formaPago.toLowerCase()}</strong>.${formaPago.includes('Cuotas') ? ` La cuota mensual será de <strong>USD ${cuotaMensual.toFixed(2)}</strong>, que incluye capital e intereses.` : ''}</p>
+      <p><strong>TERCERA — INTERESES:</strong> ${tasa > 0 ? `El préstamo devengará un interés anual del <strong>${tasa}%</strong>, ascendiendo el interés total estimado a <strong>USD ${interesTotal.toFixed(2)}</strong>. Las partes declaran expresamente que esta tasa no excede la tasa máxima convencional fijada por el Banco Central del Ecuador, evitando así incurrir en el delito de usura tipificado en el Código Orgánico Integral Penal.` : 'El presente préstamo se otorga sin generar intereses, por mera liberalidad entre las partes.'}</p>
+      <p><strong>CUARTA — INCUMPLIMIENTO:</strong> En caso de no cumplir con el pago en la fecha pactada, el/la MUTUARIO/A reconoce adeudar el saldo pendiente más los intereses de mora calculados a la tasa máxima legal permitida, sin perjuicio del derecho del/de la MUTUANTE a iniciar las acciones legales pertinentes para el cobro.</p>
+      ${clausulaMediacionHTML(mediacion)}
+      <p style="margin-top:1rem"><strong>QUINTA — JURISDICCIÓN:</strong> Para cualquier controversia derivada de este contrato, las partes se someten a los jueces competentes de la ciudad de ${ciudad||'Quito'}, renunciando fuero y domicilio.</p>
+      <p style="margin-top:1rem;font-size:.78rem;color:#666"><em>Se recomienda el reconocimiento de firmas ante notario público para que este documento tenga mérito ejecutivo.</em></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:3rem">
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>MUTUANTE</strong><br>${mutuante||'___'}<br>C.I.: ${ciMutuante||'___'}</p>
+        </div>
+        <div style="text-align:center;border-top:1px solid #333;padding-top:.5rem">
+          <p style="font-size:.8rem;margin:0"><strong>MUTUARIO/A</strong><br>${mutuario||'___'}<br>C.I.: ${ciMutuario||'___'}</p>
+        </div>
+      </div>
+    </div>`;
+  toast('Contrato de mutuo entre personas naturales generado', 'success');
 }
 
-async function descargarPDFLegal(tipo, id){
-  const d = documentosLegalesCache[tipo].find(x=>x.id===id);
-  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const esTituloValor = plantilla.categoria==="titulo_valor";
-  const textoDocumento = document.getElementById("legContenido")?.value || d.contenido;
-  const encabezado = d.numeroAsignado
-    ? `<p style="font-size:12px;color:#555;"><b>N° ${escapeHtml(d.numeroAsignado)}</b></p>`
-    : `<p style="font-size:12px;color:#b00;"><b>BORRADOR — sin confirmar</b></p>`;
-  const win = window.open("", "_blank");
-  win.document.write(`<html><head><title>${plantilla.nombre}</title>
-    <style>
-      @page { size: A4; margin: 18mm; }
-      body{font-family:Georgia,'Times New Roman',serif;padding:0;color:#1a1a1a;line-height:1.55;}
-      .portada-linea{height:4px;background:linear-gradient(90deg,#1a2733,#3a4a5c);margin-bottom:14px;}
-      .titulo-doc{font-size:11px;letter-spacing:.08em;color:#5c6b7a;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:16px;display:flex;justify-content:space-between;}
-      pre{white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0;}
-      table{border-collapse:collapse;}
-      .pie{margin-top:26px;font-size:9px;color:#8ea2b3;border-top:1px solid #d7dee6;padding-top:6px;}
-    </style>
-    </head><body>
-    <div class="portada-linea"></div>
-    <div class="titulo-doc"><span>${plantilla.nombre}</span><span>Control Documental</span></div>
-    ${encabezado}
-    <pre>${escapeHtml(textoDocumento)}</pre>
-    ${esTituloValor ? bloqueEndososHtml(d.endosos) : ''}
-    <div class="pie">Documento generado por Control Documental.</div>
-    <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
-    </body></html>`);
-  win.document.close(); win.focus();
+// Guardado unificado en historial para cualquier documento generado (botón "Terminar y Guardar")
+function terminarYGuardarDocumento(tipoDoc, etiqueta) {
+  const previewMap = {
+    pagare:'pagare-preview', letra:'letra-preview', recibo:'recibo-preview',
+    servicios:'servicios-preview', alquiler:'alquiler-preview', trabajo:'trabajo-preview',
+    mutuoempresas:'mutuoempresas-preview', mutuopersonas:'mutuopersonas-preview',
+  };
+  const previewId = previewMap[tipoDoc];
+  const preview = previewId ? document.getElementById(previewId) : null;
+  if (!preview || preview.querySelector('.doc-placeholder')) {
+    toast('Genere la vista previa antes de guardar', 'warning');
+    return;
+  }
+  // Recolectar todos los inputs visibles del formulario activo como datos
+  const formActivo = document.querySelector(`#doc-${tipoDoc} .doc-form`);
+  const datos = {};
+  if (formActivo) {
+    formActivo.querySelectorAll('input, select, textarea').forEach(inp => {
+      if (inp.id) datos[inp.id] = inp.value;
+    });
+  }
+  guardarHistorialDocumento(tipoDoc, etiqueta, datos);
+  toast(`${etiqueta} guardado en historial ✓`, 'success');
 }
 
-async function descargarWordLegal(tipo, id){
-  const d = documentosLegalesCache[tipo].find(x=>x.id===id);
-  const plantilla = PLANTILLAS_DOC_LEGAL[tipo];
-  const esTituloValor = plantilla.categoria==="titulo_valor";
-  const textoDocumento = document.getElementById("legContenido")?.value || d.contenido;
-  const htmlCuerpo = textoDocumento.split("\n").map(l=>`<p>${escapeHtml(l)||'&nbsp;'}</p>`).join("");
-  const htmlEndosos = esTituloValor ? bloqueEndososHtml(d.endosos) : '';
-  descargarWord(plantilla.nombre + (d.numeroAsignado?'_'+d.numeroAsignado:''), htmlCuerpo + htmlEndosos);
+
+function exportarDocCSV(tipo) {
+  const g = id => document.getElementById(id)?.value || '';
+  let rows = [];
+  if (tipo === 'pagare') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('pag-ciudad')], ['Fecha', g('pag-fecha')],
+      ['Monto USD', g('pag-monto')], ['Vencimiento', g('pag-vencimiento')],
+      ['Tasa Anual %', g('pag-tasa')], ['Interés desde', g('pag-interes-desde')],
+      ['Tipo Deudor', g('pag-deudor-tipo')], ['Deudor', g('pag-deudor')],
+      ['CI/RUC Deudor', g('pag-ci-deudor')],
+      ['Rep. Legal Deudor', g('pag-deudor-repleg')], ['CI Rep. Legal Deudor', g('pag-deudor-repleg-ci')],
+      ['Estado Civil Deudor', g('pag-deudor-civil')], ['Firma Cónyuge', g('pag-deudor-conyuge-firma')],
+      ['Cónyuge', g('pag-deudor-conyuge')],
+      ['Tipo Acreedor', g('pag-acreedor-tipo')], ['Acreedor', g('pag-acreedor')],
+      ['CI/RUC Acreedor', g('pag-ci-acreedor')],
+      ['Rep. Legal Acreedor', g('pag-acreedor-repleg')], ['CI Rep. Legal Acreedor', g('pag-acreedor-repleg-ci')],
+      ['Domicilio', g('pag-domicilio')], ['Lugar de Pago', g('pag-lugar-pago')],
+      ['Endosable', g('pag-endosable')],
+      ['1er Endoso', g('pag-endoso1')], ['2do Endoso', g('pag-endoso2')], ['3er Endoso', g('pag-endoso3')],
+      ['Mediación', g('pag-mediacion')]];
+  } else if (tipo === 'letra') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('let-ciudad')], ['Fecha Emisión', g('let-fecha')],
+      ['Monto USD', g('let-monto')], ['Vencimiento', g('let-vencimiento')],
+      ['Librador', g('let-librador')], ['CI/RUC Librador', g('let-ci-librador')],
+      ['Librado', g('let-librado')], ['CI/RUC Librado', g('let-ci-librado')],
+      ['Beneficiario', g('let-beneficiario')], ['CI/RUC Beneficiario', g('let-ci-beneficiario')],
+      ['Domicilio Pago', g('let-domicilio')], ['Endosable', g('let-endosable')],
+      ['Sin Protesto', g('let-sin-protesto')], ['Mediación', g('let-mediacion')]];
+  } else if (tipo === 'recibo') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('rec-ciudad')], ['Fecha', g('rec-fecha')],
+      ['Recibí de', g('rec-de')], ['CI/RUC Pagador', g('rec-ci-de')],
+      ['Monto USD', g('rec-monto')], ['Concepto', g('rec-concepto')],
+      ['Forma de Pago', g('rec-forma')], ['Receptor', g('rec-receptor')],
+      ['CI/RUC Receptor', g('rec-ci-receptor')]];
+  } else if (tipo === 'servicios') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('srv-ciudad')], ['Fecha', g('srv-fecha')],
+      ['Contratante', g('srv-contratante')], ['RUC Contratante', g('srv-ruc-contratante')],
+      ['Rep. Legal', g('srv-rep-legal')], ['Prestador', g('srv-prestador')],
+      ['CI/RUC Prestador', g('srv-ci-prestador')], ['Profesión', g('srv-profesion')],
+      ['Objeto', g('srv-objeto')], ['Plazo meses', g('srv-plazo')],
+      ['Honorarios mensuales USD', g('srv-honorarios')], ['Forma de Pago', g('srv-forma-pago')],
+      ['Lugar', g('srv-lugar')], ['Confidencialidad', g('srv-confidencialidad')]];
+  } else if (tipo === 'alquiler') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('alq-ciudad')], ['Fecha', g('alq-fecha')],
+      ['Arrendador', g('alq-arrendador')], ['CI/RUC Arrendador', g('alq-ci-arrendador')],
+      ['Arrendatario', g('alq-arrendatario')], ['CI/RUC Arrendatario', g('alq-ci-arrendatario')],
+      ['Dirección', g('alq-direccion')], ['Tipo Inmueble', g('alq-tipo')],
+      ['Canon mensual USD', g('alq-canon')], ['Depósito USD', g('alq-deposito')],
+      ['Plazo meses', g('alq-plazo')], ['Inicio', g('alq-inicio')],
+      ['Servicios', g('alq-servicios')], ['Uso', g('alq-uso')]];
+  } else if (tipo === 'trabajo') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('trab-ciudad')], ['Fecha', g('trab-fecha')],
+      ['Empresa', g('trab-empresa')], ['RUC Empresa', g('trab-ruc-empresa')],
+      ['Rep. Legal', g('trab-rep')], ['Trabajador', g('trab-trabajador')],
+      ['CI', g('trab-ci')], ['Cargo', g('trab-cargo')],
+      ['Tipo Contrato', g('trab-tipo')], ['Plazo meses', g('trab-plazo')],
+      ['Sueldo USD', g('trab-sueldo')], ['Jornada', g('trab-jornada')],
+      ['Lugar', g('trab-lugar')]];
+  } else if (tipo === 'mutuoempresas') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('mue-ciudad')], ['Fecha', g('mue-fecha')],
+      ['Mutuante', g('mue-mutuante')], ['RUC Mutuante', g('mue-ruc-mutuante')],
+      ['Rep. Legal Mutuante', g('mue-rep-mutuante')], ['Mutuaria', g('mue-mutuaria')],
+      ['RUC Mutuaria', g('mue-ruc-mutuaria')], ['Rep. Legal Mutuaria', g('mue-rep-mutuaria')],
+      ['Monto USD', g('mue-monto')], ['Tasa Anual %', g('mue-tasa')],
+      ['Plazo meses', g('mue-plazo')], ['Desembolso', g('mue-desembolso')],
+      ['Forma de Pago', g('mue-forma-pago')], ['Mediación', g('mue-mediacion')]];
+  } else if (tipo === 'mutuopersonas') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('mup-ciudad')], ['Fecha', g('mup-fecha')],
+      ['Mutuante', g('mup-mutuante')], ['CI Mutuante', g('mup-ci-mutuante')],
+      ['Mutuario', g('mup-mutuario')], ['CI Mutuario', g('mup-ci-mutuario')],
+      ['Monto USD', g('mup-monto')], ['Tasa Anual %', g('mup-tasa')],
+      ['Plazo meses', g('mup-plazo')], ['Forma de Pago', g('mup-forma-pago')],
+      ['Mediación', g('mup-mediacion')]];
+  }
+  if (!rows.length) return;
+  const csv = rows.map(r => r.map(c => `"${(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  downloadFile(csv, `${tipo}_${Date.now()}.csv`, 'text/csv;charset=utf-8');
+  toast('Datos exportados a CSV', 'success');
 }
+
+
+
+// ════════════════════════════════════════════════════════
+// PRESUPUESTOS PERSONALES
+// ════════════════════════════════════════════════════════
 
 /* =========================================================================
    MÓDULO: ACTAS DE REUNIÓN
