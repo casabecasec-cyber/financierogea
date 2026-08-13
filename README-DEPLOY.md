@@ -226,6 +226,19 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Rediseñado: "Pago a cuenta" ahora tiene una fila por AÑO de anticipos (no por retención), con
+  compensación FIFO** — antes, cada retención guardada creaba su propia fila (vinculada 1 a 1).
+  Ahora:
+  - Hay una fila automática por cada año que tenga anticipos registrados en Escenarios (ej. si
+    hay anticipos en 2025 y 2026, aparecen ambos años, no solo el de la retención más reciente).
+  - El total de TODAS las retenciones formales realizadas (sin importar en qué año se hicieron)
+    se reparte como "Compensado" empezando por el año **más antiguo**: primero se termina de
+    compensar por completo ese año, y lo que sobra se va abonando al siguiente año más reciente,
+    y así sucesivamente — dejando el saldo disponible correcto en cada año.
+  - Estas filas se recalculan solas cada vez que agregas/editas/eliminas un anticipo o una
+    retención, o simplemente al abrir Escenarios o Distribución Actual — no hay que hacer nada
+    manual.
+
 - **Corregido: en "Pago a cuenta", la fila auto-generada desde una retención tenía el Monto y
   el Compensado invertidos** — antes, "Monto pagado" usaba directamente la retención del 12% (el
   impuesto retenido), y "Compensado" se quedaba en $0. Ahora es al revés, que es lo correcto:
