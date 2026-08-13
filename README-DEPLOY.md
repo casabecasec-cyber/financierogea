@@ -226,6 +226,15 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: en "Pago a cuenta", la fila auto-generada desde una retención tenía el Monto y
+  el Compensado invertidos** — antes, "Monto pagado" usaba directamente la retención del 12% (el
+  impuesto retenido), y "Compensado" se quedaba en $0. Ahora es al revés, que es lo correcto:
+  "Monto pagado" toma el total de **anticipos de dividendos** entregados ese año (los que
+  registras en Escenarios), y "Compensado/usado" toma la **retención formal ya hecha** — porque
+  es la retención la que compensa/consume ese anticipo, no al revés. Esto se actualiza solo
+  cada vez que abres Escenarios o Distribución Actual (misma reparación automática de siempre),
+  así que no tienes que hacer nada para que tu fila existente se corrija.
+
 - **🔴 Nuevo — requiere configuración manual: sistema de usuarios con roles (Administrador /
   Solo lectura)** — ahora puedes crear usuarios adicionales para esta app, con dos roles:
   - **Administrador**: acceso completo, igual que tu cuenta principal.

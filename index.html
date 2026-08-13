@@ -7554,24 +7554,26 @@ async function ejecutarCalculoRetencionAccionistas(){
 // recalcular. El monto que se pasa es el IMPUESTO RETENIDO (lo que
 // efectivamente se remite/paga por esta retención), no el valor bruto pagado
 // a los accionistas.
+// El "Monto pagado" de esta fila usa los ANTICIPOS de dividendos ya
+// entregados ese año (Escenarios) — no la retención en sí — porque el
+// anticipo es lo que representa el pago/crédito real. La retención formal
+// del 12% (o la tarifa que corresponda) se registra como "Compensado/usado",
+// ya que esa retención es lo que "consume" o compensa ese anticipo/crédito.
 function sincronizarPagoACuentaDesdeRetencion(clave, r){
   if(!datosDividendosCache.pagosACuenta) datosDividendosCache.pagosACuenta = {};
   if(!datosDividendosCache.pagosACuenta[clave]) datosDividendosCache.pagosACuenta[clave] = [];
   const lista = datosDividendosCache.pagosACuenta[clave];
   let entrada = lista.find(p=>p.retencionId===r.id);
   if(!entrada){
-    entrada = { anio:r.anio, monto:0, observacion:"", metodoPago:null, pagosBanco:[], cuentasPorPagarAcumulado:0, retencionId:r.id };
+    entrada = { anio:r.anio, monto:0, observacion:"", metodoPago:null, pagosBanco:[], cuentasPorPagarAcumulado:0, montoCompensado:0, retencionId:r.id };
     lista.push(entrada);
   }
   entrada.anio = r.anio;
-  entrada.monto = r.totalRetencion;
-  entrada.observacion = `Retención de dividendos — periodo ${r.periodo}${r.fechaRetencion?` (${fmtFecha(new Date(r.fechaRetencion+"T00:00:00").getTime())})`:''} — generado automáticamente`;
+  entrada.monto = calcularAnticiposDelAnio(clave, r.anio);
+  entrada.montoCompensado = r.totalRetencion;
+  entrada.observacion = `Retención de dividendos — periodo ${r.periodo}${r.fechaRetencion?` (${fmtFecha(new Date(r.fechaRetencion+"T00:00:00").getTime())})`:''} — Monto = anticipos del año ${r.anio}, Compensado = retención formal ya hecha — generado automáticamente`;
 }
 
-// Igual que sincronizarPagoACuentaDesdeRetencion, pero para el desglose de
-// "Anticipos de dividendos pagados por año" en Escenarios — usa el valor
-// BRUTO pagado a los accionistas (totalValorPagar), ya que un anticipo es lo
-// que efectivamente se entregó, no el impuesto retenido de eso.
 // Una retención ya calculada/formal NO es un "anticipo" — es la retención en
 // sí. Esta función quita cualquier fila que se haya creado por error en
 // "Anticipos de dividendos" vinculada a una retención (de una versión
