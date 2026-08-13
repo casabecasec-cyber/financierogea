@@ -19,6 +19,34 @@
 // "roles_control_documental".
 const DATOS_UID_OWNER = "s51EqDX0m9hWmo9C4Hy00dFqD0C3";
 
+// Normaliza la clave privada aceptando varios formatos comunes en los que
+// puede quedar guardada al pegarla en la UI de Netlify:
+// - con \n literales (texto "\n" de dos caracteres) en vez de saltos de línea reales
+// - envuelta en comillas dobles (si se copió el valor completo del JSON, comillas incluidas)
+// - con espacios extra al inicio/final
+function normalizarPrivateKey(raw) {
+  let key = (raw || "").trim();
+  if (key.startsWith('"') && key.endsWith('"')) {
+    key = key.slice(1, -1);
+  }
+  key = key.replace(/\\n/g, "\n").trim();
+
+  // Reconstruye el PEM desde cero a partir del contenido base64 entre
+  // BEGIN/END, sin importar qué le haya pasado a los saltos de línea al
+  // pegarlo en Netlify (es común que un campo de una sola línea los borre
+  // todos, dejando el encabezado, el contenido y el pie pegados sin
+  // separación — eso rompe la clave aunque los marcadores BEGIN/END estén
+  // bien). Esto la vuelve a armar correctamente sin importar el estado en
+  // que haya llegado.
+  const match = key.match(/-----BEGIN PRIVATE KEY-----([\s\S]*?)-----END PRIVATE KEY-----/);
+  if (match) {
+    const soloBase64 = match[1].replace(/\s+/g, "");
+    const lineasDe64 = soloBase64.match(/.{1,64}/g) || [];
+    key = "-----BEGIN PRIVATE KEY-----\n" + lineasDe64.join("\n") + "\n-----END PRIVATE KEY-----\n";
+  }
+  return key;
+}
+
 function inicializarAdmin() {
   // Carga "firebase-admin" aquí (no al inicio del archivo) y dentro del
   // try/catch del handler — así, si el paquete no está disponible en el
@@ -26,7 +54,16 @@ function inicializarAdmin() {
   // que la función se caiga en silencio antes de poder generar una respuesta.
   const admin = require("firebase-admin");
   if (!admin.apps.length) {
-    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+    const privateKey = normalizarPrivateKey(process.env.FIREBASE_PRIVATE_KEY);
+    // Diagnóstico seguro (no expone la clave): confirma que empieza y termina
+    // con los marcadores PEM esperados, sin imprimir el contenido real.
+    const empiezaOk = privateKey.startsWith("-----BEGIN PRIVATE KEY-----");
+    const terminaOk = privateKey.trim().endsWith("-----END PRIVATE KEY-----");
+    if (!empiezaOk || !terminaOk) {
+      throw new Error(
+        `FIREBASE_PRIVATE_KEY no tiene el formato esperado (¿empieza con "-----BEGIN PRIVATE KEY-----"? ${empiezaOk ? "sí" : "NO"} — ¿termina con "-----END PRIVATE KEY-----"? ${terminaOk ? "sí" : "NO"} — longitud actual: ${privateKey.length} caracteres). Vuelve a copiar el valor completo de "private_key" del JSON de la cuenta de servicio, incluyendo las comillas y los \\n, y pégalo de nuevo en Netlify.`
+      );
+    }
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
