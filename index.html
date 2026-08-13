@@ -7600,13 +7600,14 @@ async function ejecutarCalculoRetencionAccionistas(){
 // Reconstruye por completo la parte automática de "Pago a cuenta" a partir
 // de: (1) los Anticipos de dividendos por año (Escenarios) — una fila por
 // cada año que tenga anticipos, con "Monto" = total de anticipos de ese año;
-// y (2) el total de TODAS las retenciones formales realizadas (sin importar
-// en qué año se hicieron) — ese total se reparte como "Compensado" en orden
-// del año MÁS ANTIGUO al más reciente: primero se termina de compensar el
-// año más bajo por completo, y lo que sobra se va abonando al siguiente año,
-// y así sucesivamente, dejando el saldo disponible correcto por año. Las
-// filas manuales (Art. 39.2.1) nunca se tocan. Se puede llamar siempre
-// (idempotente) — vuelve a calcular todo desde cero cada vez.
+// y (2) el total de retenciones formales realizadas EN ESE MISMO AÑO (no se
+// mezclan años distintos) — ese total compensa el anticipo de su propio año.
+// Si la retención de un año supera el anticipo registrado en ese mismo año,
+// el excedente NO se traslada a otro año (ni antes ni después) — se suma
+// aparte para documentar cómo y en qué formulario se pagó, porque ya se
+// pagó y no es un crédito pendiente. Las filas manuales (Art. 39.2.1) nunca
+// se tocan. Se puede llamar siempre (idempotente) — recalcula todo desde
+// cero cada vez.
 function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
   if(!datosDividendosCache.pagosACuenta) datosDividendosCache.pagosACuenta = {};
   if(!datosDividendosCache.pagosACuenta[clave]) datosDividendosCache.pagosACuenta[clave] = [];
@@ -7619,22 +7620,24 @@ function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
   const autoPorAnioViejo = {};
   listaActual.filter(p => p.autoDesdeAnticipos).forEach(p => { autoPorAnioViejo[p.anio] = p; });
 
-  let poolRetenciones = retenciones.reduce((s,r)=>s+(r.totalRetencion||0), 0);
+  let excesoTotal = 0;
 
   const nuevasFilasAuto = aniosConAnticipo.map(anio => {
     const montoAnio = calcularAnticiposDelAnio(clave, anio);
-    const compensarAqui = Math.min(poolRetenciones, montoAnio);
-    poolRetenciones -= compensarAqui;
+    const retencionesDelAnio = retenciones.filter(r=>r.anio===anio);
+    const retencionAnio = retencionesDelAnio.reduce((s,r)=>s+(r.totalRetencion||0), 0);
+    const compensarAqui = Math.min(retencionAnio, montoAnio);
+    const excesoAnio = Math.max(0, retencionAnio - montoAnio);
+    excesoTotal += excesoAnio;
     const previa = autoPorAnioViejo[anio] || {};
     // Resumen (de solo lectura) de la forma de pago ya registrada en las
     // retenciones de ese año — la forma de pago se gestiona en la retención
     // misma (Escenarios), no aquí, para no duplicar el dato.
-    const retencionesDelAnio = retenciones.filter(r=>r.anio===anio);
     const totalBancoRet = retencionesDelAnio.reduce((s,r)=>s+((r.pagosBanco||[]).reduce((s2,x)=>s2+(x.monto||0),0)),0);
     const totalCxPRet = retencionesDelAnio.reduce((s,r)=>s+(r.cuentasPorPagarAcumulado||0),0);
     return {
       anio, monto: montoAnio, montoCompensado: compensarAqui,
-      observacion: `Anticipos de dividendos del año ${anio} — compensado con el total de retenciones formales ya realizadas, aplicado del año más antiguo al más reciente — generado automáticamente`,
+      observacion: `Anticipos de dividendos del año ${anio} — compensado con las retenciones formales de ese mismo año — generado automáticamente`,
       metodoPago: previa.metodoPago || null,
       pagosBanco: previa.pagosBanco || [],
       cuentasPorPagarAcumulado: previa.cuentasPorPagarAcumulado || 0,
@@ -7645,15 +7648,21 @@ function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
 
   datosDividendosCache.pagosACuenta[clave] = [...filasManuales, ...nuevasFilasAuto];
 
-  // Si después de repartir por todos los años con anticipo todavía sobra
-  // retención sin aplicar, es porque se retuvo/pagó MÁS de lo que hay
-  // registrado como anticipo total — ese excedente NO se traslada a un año
-  // futuro (ya se pagó, no es un crédito pendiente): se deja aparte para
-  // documentar cómo y en qué formulario se pagó.
+  // Si hay retenciones de un año que NO tiene ningún anticipo registrado,
+  // esa retención completa también es "excedente sin anticipo" — no tiene
+  // ningún monto contra el cual compensarse.
+  const aniosConRetencion = [...new Set(retenciones.map(r=>r.anio))];
+  aniosConRetencion.filter(a=>!aniosConAnticipo.includes(a)).forEach(anio=>{
+    excesoTotal += retenciones.filter(r=>r.anio===anio).reduce((s,r)=>s+(r.totalRetencion||0), 0);
+  });
+
+  // El excedente (retención de un año que supera su propio anticipo, o sin
+  // anticipo registrado) NO se traslada a otro año — ya se pagó, no es un
+  // crédito pendiente: se documenta aparte (cómo se pagó y en qué formulario).
   if(!datosDividendosCache.excesoPagoACuenta) datosDividendosCache.excesoPagoACuenta = {};
   const excesoPrevio = datosDividendosCache.excesoPagoACuenta[clave] || {};
   datosDividendosCache.excesoPagoACuenta[clave] = {
-    monto: poolRetenciones,
+    monto: excesoTotal,
     comoSePago: excesoPrevio.comoSePago || "",
     numeroFormulario: excesoPrevio.numeroFormulario || "",
     observacion: excesoPrevio.observacion || "",
