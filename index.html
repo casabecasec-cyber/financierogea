@@ -7043,20 +7043,18 @@ function pintarBloqueExcesoPagoACuenta(){
   if(!exc || exc.monto<=0.5){ cont.innerHTML = ""; return; }
   cont.innerHTML = `
     <div class="card" style="border:1px solid var(--warn);">
-      <h4 style="margin-top:0;color:var(--warn);">⚠️ Retenciones que superan los anticipos registrados</h4>
-      <p class="helpNote">El total de retenciones formales realizadas supera lo registrado como anticipos en todos los años — hay <b>$${exc.monto.toFixed(2)}</b> que ya se pagaron/retuvieron pero no tienen un anticipo asociado. Este monto <b>no se traslada a un año futuro</b> (ya se pagó, no es un crédito pendiente) — documenta cómo se pagó.</p>
+      <h4 style="margin-top:0;color:var(--warn);">⚠️ Diferencia a pagar — retenciones superan el anticipo del año más bajo</h4>
+      <p class="helpNote">El total de retenciones formales realizadas ya se aplicó completo al año más bajo con anticipo registrado, y aun así sobran <b>$${exc.monto.toFixed(2)}</b> — esta diferencia <b>no se traslada a ningún otro año</b> (ya se retuvo/debe pagarse). Documenta cómo se pagó y, en observaciones, el N° de formulario correspondiente.</p>
       <div class="grid3">
-        <div class="field" style="margin:0;"><label>¿Cómo se pagó?</label>
+        <div class="field" style="margin:0;"><label>Monto a pagar</label><input type="text" value="$${exc.monto.toFixed(2)}" disabled></div>
+        <div class="field" style="margin:0;"><label>¿Se pagó con cheque o transferencia?</label>
           <select onchange="actualizarExcesoPagoACuenta('comoSePago',this.value)">
             <option value="">-- selecciona --</option>
-            <option value="transferencia" ${exc.comoSePago==='transferencia'?'selected':''}>Transferencia</option>
             <option value="cheque" ${exc.comoSePago==='cheque'?'selected':''}>Cheque</option>
-            <option value="cuentasPorPagar" ${exc.comoSePago==='cuentasPorPagar'?'selected':''}>Cuentas por pagar</option>
-            <option value="efectivo" ${exc.comoSePago==='efectivo'?'selected':''}>Efectivo</option>
+            <option value="transferencia" ${exc.comoSePago==='transferencia'?'selected':''}>Transferencia</option>
           </select>
         </div>
-        <div class="field" style="margin:0;"><label>N° de formulario / documento</label><input type="text" value="${escapeHtml(exc.numeroFormulario||'')}" onchange="actualizarExcesoPagoACuenta('numeroFormulario',this.value)" placeholder="Ej. Formulario 103, N° transferencia..."></div>
-        <div class="field" style="margin:0;"><label>Observación</label><input type="text" value="${escapeHtml(exc.observacion||'')}" onchange="actualizarExcesoPagoACuenta('observacion',this.value)"></div>
+        <div class="field" style="margin:0;"><label>Observaciones (N° de formulario)</label><input type="text" value="${escapeHtml(exc.observacion||'')}" onchange="actualizarExcesoPagoACuenta('observacion',this.value)" placeholder="Ej. Formulario 103, N° de cheque/transferencia..."></div>
       </div>
     </div>`;
 }
@@ -7601,15 +7599,15 @@ async function ejecutarCalculoRetencionAccionistas(){
 // de: (1) los Anticipos de dividendos por año (Escenarios) — una fila por
 // cada año que tenga anticipos, con "Monto" = total de anticipos de ese año;
 // y (2) el total de TODAS las retenciones formales realizadas juntas (sin
-// importar en qué año se hicieron) — ese total se va compensando en orden
-// del año MÁS BAJO al más alto: primero se termina de compensar por completo
-// el año más bajo, y lo que sobra se va abonando al siguiente año, y así
-// sucesivamente. Si después de recorrer TODOS los años con anticipo todavía
-// sobra retención sin aplicar, es porque ya se pagó/retuvo más de lo que hay
-// registrado como anticipo — ese excedente NO se traslada a un año futuro
-// (no es un crédito pendiente): se documenta aparte (cómo y en qué
-// formulario se pagó). Las filas manuales (Art. 39.2.1) nunca se tocan. Se
-// puede llamar siempre (idempotente) — recalcula todo desde cero cada vez.
+// importar en qué año se hicieron) — ese total compensa ÚNICAMENTE el año
+// MÁS BAJO con anticipo registrado, hasta el monto de ese año. Los demás
+// años NO reciben nada del pool (quedan con Compensado $0, sin tocar). Si el
+// total retenido supera el monto del año más bajo, esa diferencia NO se
+// traslada a ningún otro año — ya se retuvo/pagó, así que se debe pagar
+// aparte: se documenta en un recuadro separado (monto a pagar, si fue en
+// cheque o transferencia, y observaciones para el N° de formulario). Las
+// filas manuales (Art. 39.2.1) nunca se tocan. Se puede llamar siempre
+// (idempotente) — recalcula todo desde cero cada vez.
 function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
   if(!datosDividendosCache.pagosACuenta) datosDividendosCache.pagosACuenta = {};
   if(!datosDividendosCache.pagosACuenta[clave]) datosDividendosCache.pagosACuenta[clave] = [];
@@ -7622,12 +7620,14 @@ function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
   const autoPorAnioViejo = {};
   listaActual.filter(p => p.autoDesdeAnticipos).forEach(p => { autoPorAnioViejo[p.anio] = p; });
 
-  let poolRetenciones = retenciones.reduce((s,r)=>s+(r.totalRetencion||0), 0);
+  const totalRetenciones = retenciones.reduce((s,r)=>s+(r.totalRetencion||0), 0);
+  const anioMasBajo = aniosConAnticipo[0]; // undefined si no hay ningún anticipo
 
   const nuevasFilasAuto = aniosConAnticipo.map(anio => {
     const montoAnio = calcularAnticiposDelAnio(clave, anio);
-    const compensarAqui = Math.min(poolRetenciones, montoAnio);
-    poolRetenciones -= compensarAqui;
+    // Solo el año más bajo recibe compensación del total retenido; los demás
+    // años quedan siempre en $0 (no se les traslada nada).
+    const compensarAqui = (anio===anioMasBajo) ? Math.min(totalRetenciones, montoAnio) : 0;
     const previa = autoPorAnioViejo[anio] || {};
     // Resumen (de solo lectura) de la forma de pago ya registrada en las
     // retenciones de ese año — la forma de pago se gestiona en la retención
@@ -7637,7 +7637,9 @@ function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
     const totalCxPRet = retencionesDelAnio.reduce((s,r)=>s+(r.cuentasPorPagarAcumulado||0),0);
     return {
       anio, monto: montoAnio, montoCompensado: compensarAqui,
-      observacion: `Anticipos de dividendos del año ${anio} — compensado con el total de retenciones formales ya realizadas, aplicado del año más bajo al más alto — generado automáticamente`,
+      observacion: anio===anioMasBajo
+        ? `Anticipos de dividendos del año ${anio} (año más bajo) — compensado con el total de retenciones formales ya realizadas — generado automáticamente`
+        : `Anticipos de dividendos del año ${anio} — no recibe compensación (el total retenido se aplica solo al año más bajo) — generado automáticamente`,
       metodoPago: previa.metodoPago || null,
       pagosBanco: previa.pagosBanco || [],
       cuentasPorPagarAcumulado: previa.cuentasPorPagarAcumulado || 0,
@@ -7648,15 +7650,17 @@ function resincronizarPagoACuentaDesdeAnticiposYRetenciones(clave){
 
   datosDividendosCache.pagosACuenta[clave] = [...filasManuales, ...nuevasFilasAuto];
 
-  // Lo que sobra del pool después de recorrer TODOS los años con anticipo
-  // (de más bajo a más alto) ya se pagó pero supera lo registrado como
-  // anticipo en total — no se traslada a ningún año, se documenta aparte.
+  // Si el total retenido supera el monto del año más bajo, esa diferencia ya
+  // se retuvo/pagó y NO se traslada a ningún otro año — se documenta aparte
+  // como "diferencia a pagar".
+  const montoAnioMasBajo = anioMasBajo!==undefined ? calcularAnticiposDelAnio(clave, anioMasBajo) : 0;
+  const diferenciaAPagar = Math.max(0, totalRetenciones - montoAnioMasBajo);
+
   if(!datosDividendosCache.excesoPagoACuenta) datosDividendosCache.excesoPagoACuenta = {};
   const excesoPrevio = datosDividendosCache.excesoPagoACuenta[clave] || {};
   datosDividendosCache.excesoPagoACuenta[clave] = {
-    monto: poolRetenciones,
+    monto: diferenciaAPagar,
     comoSePago: excesoPrevio.comoSePago || "",
-    numeroFormulario: excesoPrevio.numeroFormulario || "",
     observacion: excesoPrevio.observacion || "",
   };
 }

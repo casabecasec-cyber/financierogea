@@ -226,15 +226,15 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
-- **Corregido de vuelta: las retenciones (todas juntas) se compensan desde el año MÁS BAJO hacia
-  el más alto** — se había cambiado por error a que cada retención compense solo su propio año;
-  el comportamiento correcto es: el total de todas las retenciones formales realizadas (sin
-  importar en qué año se hicieron) se va aplicando empezando por el año más bajo con anticipo
-  registrado — se termina de compensar ese año por completo, y lo que sobra se abona al
-  siguiente año, y así sucesivamente. Si después de recorrer todos los años con anticipo
-  todavía sobra retención sin aplicar, ese excedente ya se pagó — **no se traslada a ningún
-  año** — se documenta aparte en el recuadro "⚠️ Retenciones que superan los anticipos
-  registrados" (cómo se pagó y en qué formulario).
+- **Corregido definitivamente: el total retenido compensa SOLO el año más bajo, nunca se
+  reparte entre años** — los intentos anteriores repartían (FIFO) o igualaban por año propio;
+  ambos estaban mal. El comportamiento correcto: el total de todas las retenciones formales
+  realizadas se aplica **únicamente al año más bajo** con anticipo registrado, hasta el monto de
+  ese año. Los demás años quedan siempre en $0 de compensado, sin tocar. Si el total retenido
+  supera el monto de ese primer año, la diferencia **no se traslada a ningún otro año** — ya se
+  retuvo/debe pagarse, así que aparece en un recuadro aparte "⚠️ Diferencia a pagar" con: el
+  monto (automático), si se pagó con cheque o transferencia, y un campo de observaciones para
+  anotar el N° de formulario.
 
 - **Nuevo: la forma de pago de las filas automáticas de "Pago a cuenta" viene sola desde las
   retenciones** — antes cada fila auto tenía su propio botón "💳 Pago" independiente. Ahora esas
