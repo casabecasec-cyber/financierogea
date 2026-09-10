@@ -226,6 +226,12 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: las subáreas de Dividendos marcadas "Sin acceso" seguían siendo visibles** —
+  antes, el permiso "Sin acceso" en una subárea (ej. Comparativo SRI) solo bloqueaba la edición,
+  pero la pestaña seguía apareciendo y se podía entrar a verla. Ahora esa pestaña se **oculta
+  por completo** del módulo de Dividendos para ese usuario, igual que ya pasaba con las áreas
+  principales del menú — consistente en todos los niveles.
+
 - **🔴 Nuevo: permisos por área y subárea (no solo admin/solo lectura global)** — en
   "Administración de Usuarios", cada usuario con rol "Solo lectura" ahora tiene un botón
   **"⚙️ Permisos por área"** que abre una lista con las 19 áreas de la app (Empresas, Trámites,

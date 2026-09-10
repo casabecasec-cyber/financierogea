@@ -7578,16 +7578,17 @@ function ejecutarAuditoriaDividendos(datos){
 /* --- Render principal --- */
 async function renderDividendos(){
   const main = document.getElementById("main");
+  const subareasDiv = AREAS_APP.dividendos.subareas;
+  const subareasPermitidas = Object.keys(subareasDiv).filter(sub => nivelAccesoSubarea("dividendos", sub) !== "sin_acceso");
+  if(!subareasPermitidas.length){
+    main.innerHTML = `<div class="pageTitle"><div><h2>Dividendos</h2></div></div><div class="card emptyState">No tienes acceso a ninguna sección de Dividendos.</div>`;
+    return;
+  }
+  if(!subareasPermitidas.includes(dividendoVistaActual)) dividendoVistaActual = subareasPermitidas[0];
   main.innerHTML = `
     <div class="pageTitle"><div><h2>Dividendos</h2><p>Auditoría, edición y recomendaciones de distribución conforme la normativa vigente en Ecuador</p></div></div>
     <div class="tabs" id="tabsDividendos">
-      <button class="tabBtn ${dividendoVistaActual==='importar'?'active':''}" data-vista="importar" onclick="cambiarVistaDividendos('importar')">Importar</button>
-      <button class="tabBtn ${dividendoVistaActual==='auditoria'?'active':''}" data-vista="auditoria" onclick="cambiarVistaDividendos('auditoria')">🔍 Auditoría</button>
-      <button class="tabBtn ${dividendoVistaActual==='trabajar'?'active':''}" data-vista="trabajar" onclick="cambiarVistaDividendos('trabajar')">📊 Trabajar con Resúmenes</button>
-      <button class="tabBtn ${dividendoVistaActual==='escenarios'?'active':''}" data-vista="escenarios" onclick="cambiarVistaDividendos('escenarios')">🧭 Escenarios</button>
-      <button class="tabBtn ${dividendoVistaActual==='distribucionActual'?'active':''}" data-vista="distribucionActual" onclick="cambiarVistaDividendos('distribucionActual')">🧮 Distribución Accionistas Actuales</button>
-      <button class="tabBtn ${dividendoVistaActual==='resumenCapitalSocios'?'active':''}" data-vista="resumenCapitalSocios" onclick="cambiarVistaDividendos('resumenCapitalSocios')">🧾 Resumen de Capital</button>
-      <button class="tabBtn ${dividendoVistaActual==='comparativoSri'?'active':''}" data-vista="comparativoSri" onclick="cambiarVistaDividendos('comparativoSri')">📊 Comparativo SRI/Súper Cías/Contable</button>
+      ${subareasPermitidas.map(sub => `<button class="tabBtn ${dividendoVistaActual===sub?'active':''}" data-vista="${sub}" onclick="cambiarVistaDividendos('${sub}')">${subareasDiv[sub]}</button>`).join("")}
     </div>
     <div id="dividendosContenido"></div>
   `;
@@ -7599,6 +7600,10 @@ async function renderDividendos(){
 }
 
 function cambiarVistaDividendos(vista){
+  if(nivelAccesoSubarea("dividendos", vista) === "sin_acceso"){
+    alert("No tienes acceso a esta sección de Dividendos.");
+    return;
+  }
   dividendoVistaActual = vista;
   const barra = document.getElementById("tabsDividendos");
   if(barra){
