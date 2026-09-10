@@ -226,6 +226,59 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **🔴 Nuevo: permisos por área y subárea (no solo admin/solo lectura global)** — en
+  "Administración de Usuarios", cada usuario con rol "Solo lectura" ahora tiene un botón
+  **"⚙️ Permisos por área"** que abre una lista con las 19 áreas de la app (Empresas, Trámites,
+  Documentos Legales, Dividendos, etc.), cada una con 3 niveles configurables:
+  - **Sin acceso**: el área se oculta por completo del menú, no puede entrar ni por URL directa.
+  - **Solo lectura** (nivel por defecto si no configuras nada): puede ver el área, pero no
+    editar/guardar/eliminar nada ahí.
+  - **Acceso completo**: puede ver y editar esa área específica.
+
+  El módulo **Dividendos**, al ser el más complejo, además tiene permisos por **subárea**
+  (Importar, Auditoría, Trabajar con Resúmenes, Escenarios, Distribución Actual, Resumen de
+  Capital, Comparativo SRI) — si no configuras una subárea en particular, hereda el nivel del
+  área general.
+
+  Los usuarios ya creados antes de este cambio **no pierden acceso a nada** — por defecto, sin
+  ninguna área configurada explícitamente, un usuario "Solo lectura" sigue viendo todo (sin
+  poder editar), exactamente como antes; los permisos por área son para restringir
+  selectivamente cuando lo necesites, no algo que tengas que configurar obligatoriamente.
+
+  ⚠️ **Alcance de esta protección — importante que lo sepas**: el bloqueo de "Sin acceso" (oculta
+  el área) y "Solo lectura" (bloquea los botones de editar/guardar) funciona igual de sólido que
+  antes — se aplica en la app y, para la distinción admin/no-admin, también en las reglas de
+  Firebase. Sin embargo, el nivel **"Acceso completo" otorgado a un usuario con rol base "Solo
+  lectura"** (para darle permiso de editar solo en un área puntual, sin hacerlo administrador
+  general) **todavía no está reforzado a nivel de las reglas de Firebase** — hoy esas reglas
+  distinguen únicamente "admin" vs "no-admin" para todo el resto de la app. En la práctica, hoy
+  por hoy, para que alguien pueda editar de verdad en cualquier área necesita el rol
+  "Administrador" (acceso completo a todo); usar "Acceso completo" en un área específica para un
+  usuario "Solo lectura" oculta/muestra correctamente los botones de edición en la app, pero
+  Firebase rechazaría el guardado real hasta que actualicemos las reglas para que sean
+  conscientes de estos permisos por área — avísame si quieres que hagamos ese ajuste adicional
+  de reglas (es un cambio más grande, ruta por ruta).
+
+- **Mejorado: el mensaje de WhatsApp ahora incluye el evento como calendario** — WhatsApp no
+  permite adjuntar archivos (como un archivo de calendario) a través de su enlace directo, solo
+  admite texto — por eso el mensaje ahora incluye un **enlace para agregar el evento
+  directamente a Google Calendar con un clic**, además del resumen de texto de siempre. También
+  se agregó el botón **"📆 .ics"** en cada evento, que descarga un archivo de calendario
+  estándar (compatible con Outlook, Apple Calendar, Google Calendar) — útil para adjuntarlo
+  manualmente donde haga falta, o abrirlo directo para agregarlo a tu propio calendario.
+
+- **Nuevo: módulo "📅 Reuniones y Eventos"** — planifica reuniones y eventos con: nombre,
+  descripción, fecha y hora de inicio, un checkbox "Incluir hora de finalización" (si lo
+  marcas, aparece el campo de hora de fin; si no, el evento queda sin hora de cierre definida),
+  y ubicación. Cada evento se puede enviar por **WhatsApp** (abre WhatsApp con el mensaje ya
+  armado, listo para elegir el contacto/grupo) o por **correo** (abre tu cliente de correo con
+  asunto y cuerpo ya armados) — en ambos casos se comparte el mismo resumen: nombre,
+  descripción, fecha, hora y ubicación. Los eventos ya pasados se muestran atenuados con la
+  etiqueta "Realizada".
+  ⚠️ **Requiere agregar la ruta `reuniones_eventos` a las reglas de Firebase Realtime
+  Database** (mismo patrón que las demás rutas — lectura/escritura solo para el usuario dueño
+  o con rol asignado, ver la sección de reglas de Control Documental más arriba).
+
 - **Nuevo: "🎉 Festejos — Responsables del sorteo"** en el módulo de Cumpleaños — debajo de la
   tabla de colaboradores, una lista con un checkbox "Participa" por cada persona (marcado por
   defecto; si le quitas el check, no se le toma en cuenta en el sorteo). Botón "🎲 Sortear 2

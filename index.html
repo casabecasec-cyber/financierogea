@@ -210,6 +210,7 @@ tr:hover td{background:var(--panel2);}
     <button class="navBtn" data-view="activos" onclick="goTo('activos')">🏷️ Activos Fijos</button>
     <button class="navBtn" data-view="bancario" onclick="goTo('bancario')">🏦 Área Bancaria</button>
     <button class="navBtn" data-view="vacaciones" onclick="goTo('vacaciones')">🏖️ Vacaciones</button>
+    <button class="navBtn" data-view="reuniones" onclick="goTo('reuniones')">📅 Reuniones y Eventos</button>
     <button class="navBtn" data-view="actasjunta" onclick="goTo('actasjunta')">🏛️ Actas de Junta</button>
     <button class="navBtn" data-view="cesiones" onclick="goTo('cesiones')">📜 Cesión de Acciones</button>
     <button class="navBtn" data-view="logcambios" onclick="goTo('logcambios')">📋 Historial de Cambios</button>
@@ -320,7 +321,8 @@ const DATOS_UID = "s51EqDX0m9hWmo9C4Hy00dFqD0C3";
 
 let currentUser = null;
 let currentView = "dashboard";
-let usuarioRol = null; // 'admin' | 'lectura' — se determina al iniciar sesión
+let usuarioRol = null; // 'admin' | 'lectura' — rol base del usuario
+let usuarioPermisos = null; // objeto completo {rol, areas:{}, subareas:{}} — ver AREAS_APP más abajo
 let empresasCache = [];
 let empresaSeleccionadaId = null;
 let checklistModo = "mensual"; // 'mensual' | 'anual'
@@ -328,13 +330,74 @@ const hoyInicial = new Date();
 let checklistAnio = hoyInicial.getFullYear();
 let checklistMes = hoyInicial.getMonth()+1; // 1-12
 
+// Catálogo de áreas (coincide con cada data-view del menú) y, para
+// Dividendos, sus subáreas (pestañas internas) — se usa tanto para pintar el
+// menú y filtrar el acceso, como para la pantalla de "Administración de
+// Usuarios" donde se configuran los permisos de cada usuario.
+const AREAS_APP = {
+  dashboard:    { label:"📊 Dashboard" },
+  empresas:     { label:"🏢 Empresas y Cumplimiento" },
+  publicos:     { label:"📨 Trámites Públicos" },
+  privados:     { label:"🔒 Trámites Privados" },
+  revision:     { label:"🧾 Revisión de Documentos" },
+  elaboracion:  { label:"📝 Memos y Oficios" },
+  legales:      { label:"📜 Documentos Legales" },
+  actas:        { label:"🗒️ Actas de Reunión" },
+  equipos:      { label:"👥 Equipo de Trabajo" },
+  cumpleanos:   { label:"🎂 Cumpleaños" },
+  auditoria:    { label:"🔎 Auditoría" },
+  activos:      { label:"🏷️ Activos Fijos" },
+  bancario:     { label:"🏦 Área Bancaria" },
+  vacaciones:   { label:"🏖️ Vacaciones" },
+  reuniones:    { label:"📅 Reuniones y Eventos" },
+  actasjunta:   { label:"🏛️ Actas de Junta" },
+  cesiones:     { label:"📜 Cesión de Acciones" },
+  logcambios:   { label:"📋 Historial de Cambios" },
+  dividendos:   { label:"💰 Dividendos", subareas: {
+    importar:            "Importar",
+    auditoria:            "🔍 Auditoría",
+    trabajar:             "📊 Trabajar con Resúmenes",
+    escenarios:           "🧭 Escenarios",
+    distribucionActual:   "🧮 Distribución Accionistas Actuales",
+    resumenCapitalSocios: "🧾 Resumen de Capital",
+    comparativoSri:       "📊 Comparativo SRI/Súper Cías/Contable",
+  }},
+  usuarios:     { label:"👥 Administración de Usuarios" },
+};
+const NIVELES_ACCESO = { sin_acceso:"Sin acceso", lectura:"Solo lectura", completo:"Acceso completo" };
+
+// Nivel de acceso de un área para el usuario actual: 'sin_acceso' | 'lectura' | 'completo'.
+// admin siempre tiene 'completo' en todo. Si el área no tiene una entrada
+// explícita en usuarioPermisos.areas, se hereda del rol base (lectura =
+// puede ver todo salvo lo restringido explícitamente) — así los usuarios ya
+// creados antes de este sistema no pierden acceso a nada por default.
+function nivelAccesoArea(area){
+  if(!usuarioPermisos) return "sin_acceso";
+  if(usuarioPermisos.rol === "admin") return "completo";
+  const v = usuarioPermisos.areas?.[area];
+  return v || "lectura";
+}
+// Igual que nivelAccesoArea, pero para una subárea específica (por ahora solo
+// Dividendos las tiene). Si no hay override de subárea, hereda el nivel del
+// área completa.
+function nivelAccesoSubarea(area, subarea){
+  if(!usuarioPermisos) return "sin_acceso";
+  if(usuarioPermisos.rol === "admin") return "completo";
+  const nivelArea = nivelAccesoArea(area);
+  if(nivelArea === "sin_acceso") return "sin_acceso";
+  const v = usuarioPermisos.subareas?.[area]?.[subarea];
+  return v || nivelArea;
+}
+
 /* =========================================================================
-   AUTENTICACIÓN — inicio de sesión + control de acceso por rol.
+   AUTENTICACIÓN — inicio de sesión + control de acceso por rol y por área.
    Esta app comparte la base de datos con CasaBecas; el usuario dueño
-   original (DATOS_UID) siempre es "admin". Los usuarios adicionales que se
-   creen desde "Administración de Usuarios" quedan con rol "admin" o
-   "lectura" (guardado en la ruta "roles_control_documental/{uid}" de
-   Firebase) — si un usuario no tiene rol asignado ahí, no puede entrar.
+   original (DATOS_UID) siempre es "admin" con acceso completo a todo. Los
+   usuarios adicionales que se creen desde "Administración de Usuarios"
+   quedan con un rol base ("admin"|"lectura") y, opcionalmente, permisos
+   específicos por área/subárea — todo guardado en
+   "roles_control_documental/{uid}" de Firebase. Si un usuario no tiene nada
+   asignado ahí, no puede entrar.
    ========================================================================= */
 function submitAuth(){
   const email = document.getElementById("authEmail").value.trim();
@@ -361,43 +424,70 @@ function logout(){ auth.signOut(); }
 auth.onAuthStateChanged(async user => {
   currentUser = user;
   if(user){
-    // Determina el rol del usuario que inició sesión. El dueño original
-    // (DATOS_UID) siempre es admin; cualquier otro usuario necesita tener un
-    // rol asignado en "roles_control_documental/{uid}" o no se le deja entrar.
+    // Determina los permisos del usuario que inició sesión. El dueño
+    // original (DATOS_UID) siempre es admin con acceso completo; cualquier
+    // otro usuario necesita tener algo asignado en
+    // "roles_control_documental/{uid}" o no se le deja entrar. Ese valor
+    // puede venir como texto plano ("admin"/"lectura", de antes de que
+    // existieran los permisos por área) o como objeto completo
+    // {rol, areas, subareas} — ambos formatos se soportan.
     if(user.uid === DATOS_UID){
-      usuarioRol = "admin";
+      usuarioPermisos = { rol:"admin", areas:{}, subareas:{} };
     } else {
+      let valor = null;
       try{
         const snap = await db.ref(`roles_control_documental/${user.uid}`).once("value");
-        usuarioRol = snap.val() || null;
-      }catch(e){ usuarioRol = null; }
-      if(!usuarioRol){
+        valor = snap.val();
+      }catch(e){ valor = null; }
+      if(!valor){
         document.getElementById("loginError").textContent = "Tu usuario no tiene un rol asignado en esta app. Pide a un administrador que te lo asigne desde \"Administración de Usuarios\".";
         auth.signOut();
         return;
       }
+      usuarioPermisos = (typeof valor === "string")
+        ? { rol: valor, areas:{}, subareas:{} }
+        : { rol: valor.rol, areas: valor.areas||{}, subareas: valor.subareas||{} };
     }
+    usuarioRol = usuarioPermisos.rol;
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("app").classList.add("show");
     document.getElementById("userEmailFoot").textContent = user.email + (usuarioRol==="lectura" ? " (solo lectura)" : "");
     document.body.classList.toggle("modo-lectura", usuarioRol==="lectura");
+    pintarNavSegunPermisos();
     cargarEmpresas().then(() => goTo("dashboard"));
   } else {
     usuarioRol = null;
+    usuarioPermisos = null;
     document.getElementById("loginScreen").style.display = "flex";
     document.getElementById("app").classList.remove("show");
   }
 });
 
-// Bloqueo de acciones de escritura para usuarios con rol "lectura": intercepta
-// cualquier clic en un botón/enlace cuyo onclick llame a una función cuyo
-// nombre empiece con un verbo de escritura (guardar, eliminar, agregar,
-// crear, etc.) y lo cancela con un aviso — Firebase también lo rechazaría
-// (las reglas son la protección real), pero esto da un mensaje claro en vez
-// de un error críptico de permisos.
+// Oculta del menú las áreas marcadas como "sin_acceso" para el usuario
+// actual — se llama al iniciar sesión y cada vez que un admin actualiza los
+// permisos de su propio usuario (no hace falta recargar la página).
+function pintarNavSegunPermisos(){
+  document.querySelectorAll(".navBtn[data-view]").forEach(btn => {
+    const area = btn.dataset.view;
+    const oculto = nivelAccesoArea(area) === "sin_acceso";
+    btn.style.display = oculto ? "none" : "";
+  });
+}
+
+// Bloqueo de acciones de escritura por área: intercepta cualquier clic en un
+// botón/enlace cuyo onclick llame a una función cuyo nombre empiece con un
+// verbo de escritura (guardar, eliminar, agregar, crear, etc.) y lo cancela
+// con un aviso si el usuario no tiene "acceso completo" en el área (o
+// subárea, dentro de Dividendos) donde se encuentra — Firebase también lo
+// rechazaría (las reglas son la protección real), pero esto da un mensaje
+// claro en vez de un error críptico de permisos.
 const PATRON_FUNCION_ESCRITURA = /^(guardar|eliminar|agregar|crear|actualizar|confirmar|recalcular|sincronizar|editar|marcar|registrar|toggleFormaPago|toggleMetodoPago|cambiarMetodoPago)/i;
 document.addEventListener("click", function(e){
-  if(usuarioRol !== "lectura") return;
+  if(!usuarioPermisos || usuarioPermisos.rol === "admin") return;
+  const nivelActual = (currentView==="dividendos")
+    ? nivelAccesoSubarea("dividendos", dividendoVistaActual)
+    : nivelAccesoArea(currentView);
+  if(nivelActual === "completo") return;
   const btn = e.target.closest("button, a");
   if(!btn) return;
   const onclickAttr = btn.getAttribute("onclick") || "";
@@ -405,7 +495,9 @@ document.addEventListener("click", function(e){
   if(match && PATRON_FUNCION_ESCRITURA.test(match[1])){
     e.preventDefault();
     e.stopPropagation();
-    alert("Tu usuario tiene permiso de solo lectura e impresión — no puedes editar, guardar ni eliminar en esta app.");
+    alert(nivelActual==="sin_acceso"
+      ? "No tienes acceso a esta área."
+      : "Tienes permiso de solo lectura en esta área — no puedes editar, guardar ni eliminar aquí.");
   }
 }, true);
 
@@ -414,6 +506,10 @@ document.addEventListener("click", function(e){
    NAVEGACIÓN
    ========================================================================= */
 function goTo(view){
+  if(nivelAccesoArea(view) === "sin_acceso"){
+    alert("No tienes acceso a esta área. Pide a un administrador que te lo habilite desde \"Administración de Usuarios\".");
+    return;
+  }
   currentView = view;
   document.querySelectorAll(".navBtn").forEach(b => b.classList.toggle("active", b.dataset.view===view));
   const renderers = {
@@ -431,6 +527,7 @@ function goTo(view){
     activos: renderActivosFijos,
     bancario: renderAreaBancaria,
     vacaciones: renderVacaciones,
+    reuniones: renderReunionesEventos,
     actasjunta: renderActasJuntas,
     cesiones: renderCesiones,
     logcambios: renderLogCambios,
@@ -922,6 +1019,20 @@ async function guardarColaborador(datos, id){
   return id;
 }
 async function eliminarColaborador(id){ await db.ref(`colaboradores/${DATOS_UID}/${id}`).remove(); }
+
+/* --- Reuniones y Eventos --- */
+async function cargarReunionesEventos(){
+  const snap = await db.ref(`reuniones_eventos/${DATOS_UID}`).once("value");
+  const val = snap.val() || {};
+  return Object.keys(val).map(id => ({id, ...val[id]})).sort((a,b)=>(a.fechaInicio||0)-(b.fechaInicio||0));
+}
+async function guardarReunionEvento(datos, id){
+  const payload = {...datos, actualizado: Date.now()};
+  if(id){ await db.ref(`reuniones_eventos/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`reuniones_eventos/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
+  return id;
+}
+async function eliminarReunionEvento(id){ await db.ref(`reuniones_eventos/${DATOS_UID}/${id}`).remove(); }
 
 /* --- Auditoría general --- */
 async function cargarAuditorias(){
@@ -5610,7 +5721,9 @@ async function pintarTablaUsuarios(){
   try{
     const data = await llamarGestionUsuarios({ accion:"listar" });
     const usuarios = data.usuarios || [];
+    usuariosAdminCache = usuarios;
     cont.innerHTML = `<h3 style="margin-top:0;">Usuarios con acceso</h3>
+      <p class="helpNote">El rol "Administrador" siempre tiene acceso completo a todo. Para un usuario "Solo lectura", usa "⚙️ Permisos por área" para elegir exactamente qué puede ver o editar en cada área — si no configuras nada ahí, por defecto puede ver (no editar) todas las áreas.</p>
       <table><thead><tr><th>Correo</th><th>Rol</th><th></th></tr></thead><tbody>
         <tr><td><b>(cuenta principal)</b></td><td><span class="pill ok">Administrador</span></td><td></td></tr>
         ${usuarios.map(u => `<tr>
@@ -5621,12 +5734,99 @@ async function pintarTablaUsuarios(){
               <option value="admin" ${u.rol==='admin'?'selected':''}>Administrador</option>
             </select>
           </td>
-          <td><button class="btn small danger" onclick="ejecutarEliminarUsuario('${u.uid}','${escapeHtml(u.email)}')">Eliminar</button></td>
-        </tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted);">Sin usuarios adicionales creados todavía.</td></tr>`}
+          <td style="white-space:nowrap;">
+            ${u.rol==='lectura' ? `<button class="btn small" onclick="togglePermisosUsuario('${u.uid}')">⚙️ Permisos por área</button>` : ''}
+            <button class="btn small danger" onclick="ejecutarEliminarUsuario('${u.uid}','${escapeHtml(u.email)}')">Eliminar</button>
+          </td>
+        </tr>
+        <tr id="filaPermisos_${u.uid}" class="hidden"><td colspan="3"></td></tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted);">Sin usuarios adicionales creados todavía.</td></tr>`}
       </tbody></table>`;
   }catch(e){
     cont.innerHTML = `<h3 style="margin-top:0;">Usuarios con acceso</h3>
       <div class="emptyState" style="color:var(--danger);">No se pudo cargar: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;color:var(--muted);">Si el mensaje menciona variables de entorno, revisa la sección de configuración en el README-DEPLOY.md — falta configurar la cuenta de servicio de Firebase en Netlify.</span></div>`;
+  }
+}
+let usuariosAdminCache = [];
+
+function togglePermisosUsuario(uid){
+  const fila = document.getElementById("filaPermisos_"+uid);
+  if(!fila) return;
+  if(!fila.classList.contains("hidden")){ fila.classList.add("hidden"); fila.querySelector("td").innerHTML=""; return; }
+  fila.classList.remove("hidden");
+  pintarPanelPermisos(uid);
+}
+
+function pintarPanelPermisos(uid){
+  const fila = document.getElementById("filaPermisos_"+uid);
+  if(!fila) return;
+  const u = usuariosAdminCache.find(x=>x.uid===uid);
+  if(!u) return;
+  const areas = u.areas || {};
+  const subareas = u.subareas || {};
+  fila.querySelector("td").innerHTML = `
+    <div class="card" style="margin:6px 0;">
+      <b style="font-size:12px;">Permisos por área — ${escapeHtml(u.email)}</b>
+      <p class="helpNote" style="margin-top:4px;">Si dejas un área en "Solo lectura" (el valor por defecto), el usuario la ve pero no puede editar nada ahí. "Sin acceso" la oculta por completo del menú.</p>
+      <table style="font-size:12px;"><thead><tr><th>Área</th><th>Nivel</th></tr></thead><tbody>
+        ${Object.keys(AREAS_APP).filter(a=>a!=="usuarios").map(area => {
+          const cfg = AREAS_APP[area];
+          const nivel = areas[area] || "lectura";
+          const filaSubareas = cfg.subareas ? `
+            <tr id="subareasWrap_${uid}_${area}" class="${nivel==='sin_acceso'?'hidden':''}">
+              <td colspan="2" style="padding-left:20px;background:var(--bg);">
+                <table style="font-size:11px;width:100%;"><tbody>
+                  ${Object.keys(cfg.subareas).map(sub => `<tr>
+                    <td style="width:60%;">↳ ${cfg.subareas[sub]}</td>
+                    <td><select id="permSub_${uid}_${area}_${sub}">
+                      <option value="">(hereda del área: ${NIVELES_ACCESO[nivel]})</option>
+                      <option value="sin_acceso" ${subareas[area]?.[sub]==='sin_acceso'?'selected':''}>Sin acceso</option>
+                      <option value="lectura" ${subareas[area]?.[sub]==='lectura'?'selected':''}>Solo lectura</option>
+                      <option value="completo" ${subareas[area]?.[sub]==='completo'?'selected':''}>Acceso completo</option>
+                    </select></td>
+                  </tr>`).join("")}
+                </tbody></table>
+              </td>
+            </tr>` : '';
+          return `<tr>
+            <td>${cfg.label}</td>
+            <td><select id="permArea_${uid}_${area}" onchange="${cfg.subareas?`document.getElementById('subareasWrap_${uid}_${area}').classList.toggle('hidden', this.value==='sin_acceso')`:''}">
+              <option value="sin_acceso" ${nivel==='sin_acceso'?'selected':''}>Sin acceso</option>
+              <option value="lectura" ${nivel==='lectura'?'selected':''}>Solo lectura</option>
+              <option value="completo" ${nivel==='completo'?'selected':''}>Acceso completo</option>
+            </select></td>
+          </tr>${filaSubareas}`;
+        }).join("")}
+      </tbody></table>
+      <button class="btn primary small" style="margin-top:8px;" onclick="guardarPermisosUsuario('${uid}')">Guardar permisos</button>
+      <span id="estadoPermisos_${uid}" style="margin-left:8px;color:var(--muted);font-size:12px;"></span>
+    </div>`;
+}
+
+async function guardarPermisosUsuario(uid){
+  const areas = {};
+  const subareas = {};
+  Object.keys(AREAS_APP).filter(a=>a!=="usuarios").forEach(area => {
+    const sel = document.getElementById(`permArea_${uid}_${area}`);
+    if(sel) areas[area] = sel.value;
+    const cfg = AREAS_APP[area];
+    if(cfg.subareas){
+      subareas[area] = {};
+      Object.keys(cfg.subareas).forEach(sub => {
+        const selSub = document.getElementById(`permSub_${uid}_${area}_${sub}`);
+        if(selSub && selSub.value) subareas[area][sub] = selSub.value;
+      });
+    }
+  });
+  const estadoEl = document.getElementById("estadoPermisos_"+uid);
+  estadoEl.textContent = "Guardando...";
+  try{
+    await llamarGestionUsuarios({ accion:"actualizarPermisos", uid, areas, subareas });
+    estadoEl.textContent = "Guardado ✓";
+    const u = usuariosAdminCache.find(x=>x.uid===uid);
+    if(u){ u.areas = areas; u.subareas = subareas; }
+  }catch(e){
+    estadoEl.textContent = "";
+    alert("No se pudo guardar: " + e.message);
   }
 }
 
@@ -6894,6 +7094,208 @@ async function descargarWordSocietario(id){
   const textoCompleto = document.getElementById("socContenido")?.value || d.contenido;
   const html = textoCompleto.split("\n").map(l=>`<p>${escapeHtml(l)}</p>`).join("");
   descargarWord(`${cfg.tituloSingular}_${empresa?.nombre||''}${d.numeroAsignado?'_'+d.numeroAsignado:''}`, html);
+}
+
+/* =========================================================================
+   MÓDULO: REUNIONES Y EVENTOS
+   ========================================================================= */
+let reunionesEventosCache = [];
+
+async function renderReunionesEventos(){
+  const main = document.getElementById("main");
+  main.innerHTML = `
+    <div class="pageTitle"><div><h2>Reuniones y Eventos</h2><p>Planifica reuniones y eventos, con fecha, hora, ubicación, y envíalos por WhatsApp o correo</p></div>
+      <button class="btn primary" onclick="abrirFormularioReunionEvento()">+ Nueva reunión/evento</button></div>
+    <div class="card" id="tablaReunionesEventos">Cargando...</div>
+    <div id="modalReunionEventoHost"></div>
+  `;
+  try{
+    reunionesEventosCache = await cargarReunionesEventos();
+  }catch(e){
+    document.getElementById("tablaReunionesEventos").innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "reuniones_eventos" a las reglas de Realtime Database.</span></div>`;
+    return;
+  }
+  pintarTablaReunionesEventos();
+}
+
+function pintarTablaReunionesEventos(){
+  const cont = document.getElementById("tablaReunionesEventos");
+  if(!reunionesEventosCache.length){ cont.innerHTML = `<div class="emptyState">Aún no hay reuniones ni eventos planificados.</div>`; return; }
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  cont.innerHTML = `<table><thead><tr><th>Nombre</th><th>Fecha y hora</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${reunionesEventosCache.map(r => {
+      const fechaEvento = new Date(r.fechaInicio+"T"+(r.horaInicio||"00:00"));
+      const yaOcurrio = fechaEvento < new Date();
+      const horario = r.horaInicio ? `${r.horaInicio}${r.incluyeHoraFin && r.horaFin ? ' - '+r.horaFin : ''}` : '';
+      return `<tr style="${yaOcurrio?'opacity:.55;':''}">
+        <td><b>${escapeHtml(r.nombre)}</b>${r.descripcion?`<div style="font-size:12px;color:var(--muted);">${escapeHtml(r.descripcion)}</div>`:''}</td>
+        <td>${fmtFecha(fechaEvento.getTime())}${horario?' — '+horario:''}</td>
+        <td>${escapeHtml(r.ubicacion||'-')}</td>
+        <td>${yaOcurrio?'<span class="pill muted">Realizada</span>':'<span class="pill ok">Próxima</span>'}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn small" onclick="abrirFormularioReunionEvento('${r.id}')">Editar</button>
+          <button class="btn small" onclick="enviarReunionWhatsApp('${r.id}')">📱 WhatsApp</button>
+          <button class="btn small" onclick="enviarReunionCorreo('${r.id}')">✉️ Correo</button>
+          <button class="btn small" onclick="descargarICSReunion('${r.id}')" title="Descarga un archivo de calendario (.ics) para Outlook/Apple Calendar/Google Calendar">📆 .ics</button>
+          <button class="btn small danger" onclick="confirmarEliminarReunionEvento('${r.id}')">Eliminar</button>
+        </td>
+      </tr>`;
+    }).join("")}
+  </tbody></table>`;
+}
+
+function abrirFormularioReunionEvento(id){
+  const r = id ? reunionesEventosCache.find(x=>x.id===id) : null;
+  const host = document.getElementById("modalReunionEventoHost");
+  host.innerHTML = `
+    <div class="modalBg">
+      <div class="modalBox">
+        <button class="closeX" onclick="document.getElementById('modalReunionEventoHost').innerHTML=''">×</button>
+        <h3>${r?"Editar":"Nueva"} reunión/evento</h3>
+        <div class="field"><label>Nombre del evento</label><input id="reuNombre" value="${r?escapeHtml(r.nombre||''):''}" placeholder="Ej. Reunión de directorio"></div>
+        <div class="field"><label>Descripción</label><textarea id="reuDescripcion" rows="3" placeholder="Detalles, agenda, objetivo...">${r?escapeHtml(r.descripcion||''):''}</textarea></div>
+        <div class="grid2">
+          <div class="field" style="margin:0;"><label>Fecha de inicio</label><input type="date" id="reuFechaInicio" value="${r?.fechaInicio||''}"></div>
+          <div class="field" style="margin:0;"><label>Hora de inicio</label><input type="time" id="reuHoraInicio" value="${r?.horaInicio||''}"></div>
+        </div>
+        <div class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;">
+          <input type="checkbox" id="reuIncluyeHoraFin" ${r?.incluyeHoraFin?'checked':''} onchange="toggleHoraFinReunion()" style="width:auto;">
+          <label style="margin:0;">Incluir hora de finalización</label>
+        </div>
+        <div class="field" id="wrapReuHoraFin" style="${r?.incluyeHoraFin?'':'display:none;'}"><label>Hora de finalización</label><input type="time" id="reuHoraFin" value="${r?.horaFin||''}"></div>
+        <div class="field"><label>Ubicación</label><input id="reuUbicacion" value="${r?escapeHtml(r.ubicacion||''):''}" placeholder="Ej. Sala de juntas, dirección, enlace virtual..."></div>
+        <button class="btn primary" style="width:100%;margin-top:8px;" onclick="guardarReunionEventoForm('${r?r.id:''}')">Guardar</button>
+      </div>
+    </div>`;
+}
+
+function toggleHoraFinReunion(){
+  const checked = document.getElementById("reuIncluyeHoraFin").checked;
+  document.getElementById("wrapReuHoraFin").style.display = checked ? "" : "none";
+}
+
+async function guardarReunionEventoForm(id){
+  const nombre = document.getElementById("reuNombre").value.trim();
+  const fechaInicio = document.getElementById("reuFechaInicio").value;
+  if(!nombre){ alert("Ingresa el nombre del evento."); return; }
+  if(!fechaInicio){ alert("Ingresa la fecha de inicio."); return; }
+  const incluyeHoraFin = document.getElementById("reuIncluyeHoraFin").checked;
+  const datos = {
+    nombre,
+    descripcion: document.getElementById("reuDescripcion").value.trim(),
+    fechaInicio,
+    horaInicio: document.getElementById("reuHoraInicio").value,
+    incluyeHoraFin,
+    horaFin: incluyeHoraFin ? document.getElementById("reuHoraFin").value : null,
+    ubicacion: document.getElementById("reuUbicacion").value.trim(),
+  };
+  await guardarReunionEvento(datos, id||null);
+  document.getElementById("modalReunionEventoHost").innerHTML = "";
+  reunionesEventosCache = await cargarReunionesEventos();
+  pintarTablaReunionesEventos();
+}
+
+async function confirmarEliminarReunionEvento(id){
+  if(!confirm("¿Eliminar esta reunión/evento?")) return;
+  await eliminarReunionEvento(id);
+  reunionesEventosCache = await cargarReunionesEventos();
+  pintarTablaReunionesEventos();
+}
+
+// Arma el texto compartible (mismo contenido para WhatsApp y correo)
+// Fecha/hora de inicio y fin en formato compacto (YYYYMMDDTHHMMSS) que
+// requieren tanto el enlace de Google Calendar como el archivo .ics. Si no
+// hay hora definida, usa 09:00 como referencia; si no hay hora de fin, usa
+// 1 hora de duración por defecto — son solo para armar el evento de
+// calendario, no cambian lo que se guarda ni se muestra en la tabla.
+function fechasCalendarioReunion(r){
+  const horaInicio = r.horaInicio || "09:00";
+  const inicio = new Date(`${r.fechaInicio}T${horaInicio}:00`);
+  let fin;
+  if(r.incluyeHoraFin && r.horaFin){
+    fin = new Date(`${r.fechaInicio}T${r.horaFin}:00`);
+    if(fin <= inicio) fin = new Date(inicio.getTime() + 60*60*1000);
+  } else {
+    fin = new Date(inicio.getTime() + 60*60*1000);
+  }
+  const fmt = d => d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0') + "T" + String(d.getHours()).padStart(2,'0') + String(d.getMinutes()).padStart(2,'0') + "00";
+  return { inicio: fmt(inicio), fin: fmt(fin) };
+}
+
+// Enlace que abre Google Calendar con el evento ya prellenado, listo para
+// agregar con un clic — es la forma real de "enviar como evento" por
+// WhatsApp, ya que su API de enlace directo solo admite texto (no permite
+// adjuntar archivos de calendario).
+function linkGoogleCalendarReunion(r){
+  const { inicio, fin } = fechasCalendarioReunion(r);
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: r.nombre,
+    dates: `${inicio}/${fin}`,
+    details: r.descripcion || "",
+    location: r.ubicacion || "",
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function textoReunionEvento(r){
+  const fechaEvento = new Date(r.fechaInicio+"T00:00:00");
+  const horario = r.horaInicio ? `${r.horaInicio}${r.incluyeHoraFin && r.horaFin ? ' a '+r.horaFin : ''}` : 'Sin hora definida';
+  let txt = `📅 ${r.nombre}\n\n`;
+  if(r.descripcion) txt += `${r.descripcion}\n\n`;
+  txt += `🗓️ Fecha: ${fmtFecha(fechaEvento.getTime())}\n`;
+  txt += `🕐 Hora: ${horario}\n`;
+  if(r.ubicacion) txt += `📍 Ubicación: ${r.ubicacion}\n`;
+  txt += `\n📆 Agregar a mi calendario: ${linkGoogleCalendarReunion(r)}\n`;
+  return txt;
+}
+
+// Genera el archivo .ics del evento (estándar iCalendar) — funciona para
+// importar/abrir directamente en Outlook, Apple Calendar, Google Calendar, y
+// la mayoría de apps de calendario. No se puede adjuntar automáticamente a un
+// chat de WhatsApp (su enlace directo no lo admite), pero sí se puede
+// compartir manualmente como archivo desde donde se descargue.
+function generarICSReunion(r){
+  const { inicio, fin } = fechasCalendarioReunion(r);
+  const escaparICS = s => (s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
+  const ahora = new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
+  return [
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Control Documental//Reuniones y Eventos//ES",
+    "BEGIN:VEVENT",
+    `UID:${r.id}@control-documental`,
+    `DTSTAMP:${ahora}`,
+    `DTSTART:${inicio}`,
+    `DTEND:${fin}`,
+    `SUMMARY:${escaparICS(r.nombre)}`,
+    r.descripcion ? `DESCRIPTION:${escaparICS(r.descripcion)}` : "",
+    r.ubicacion ? `LOCATION:${escaparICS(r.ubicacion)}` : "",
+    "END:VEVENT","END:VCALENDAR"
+  ].filter(Boolean).join("\r\n");
+}
+
+function descargarICSReunion(id){
+  const r = reunionesEventosCache.find(x=>x.id===id);
+  if(!r) return;
+  const blob = new Blob([generarICSReunion(r)], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href:url, download: `${r.nombre.replace(/[^\w\-]+/g,"_")}.ics` });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function enviarReunionWhatsApp(id){
+  const r = reunionesEventosCache.find(x=>x.id===id);
+  if(!r) return;
+  const url = `https://wa.me/?text=${encodeURIComponent(textoReunionEvento(r))}`;
+  window.open(url, "_blank");
+}
+
+function enviarReunionCorreo(id){
+  const r = reunionesEventosCache.find(x=>x.id===id);
+  if(!r) return;
+  const asunto = `Invitación: ${r.nombre}`;
+  const url = `mailto:?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(textoReunionEvento(r))}`;
+  window.open(url, "_blank");
 }
 
 /* =========================================================================
