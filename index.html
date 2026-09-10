@@ -5766,7 +5766,12 @@ function pintarPanelPermisos(uid){
   fila.querySelector("td").innerHTML = `
     <div class="card" style="margin:6px 0;">
       <b style="font-size:12px;">Permisos por área — ${escapeHtml(u.email)}</b>
-      <p class="helpNote" style="margin-top:4px;">Si dejas un área en "Solo lectura" (el valor por defecto), el usuario la ve pero no puede editar nada ahí. "Sin acceso" la oculta por completo del menú.</p>
+      <p class="helpNote" style="margin-top:4px;">Si dejas un área en "Solo lectura", el usuario la ve pero no puede editar nada ahí. "Sin acceso" la oculta por completo del menú. <b>Consejo</b>: si quieres que solo vea 1 o 2 áreas, usa primero "🚫 Sin acceso a todas" y después habilita únicamente las que necesites — así no se te olvida ninguna.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="btn small" onclick="aplicarNivelATodasLasAreas('${uid}','sin_acceso')">🚫 Sin acceso a todas</button>
+        <button class="btn small" onclick="aplicarNivelATodasLasAreas('${uid}','lectura')">👁️ Solo lectura a todas</button>
+        <button class="btn small" onclick="aplicarNivelATodasLasAreas('${uid}','completo')">✏️ Acceso completo a todas</button>
+      </div>
       <table style="font-size:12px;"><thead><tr><th>Área</th><th>Nivel</th></tr></thead><tbody>
         ${Object.keys(AREAS_APP).filter(a=>a!=="usuarios").map(area => {
           const cfg = AREAS_APP[area];
@@ -5800,6 +5805,21 @@ function pintarPanelPermisos(uid){
       <button class="btn primary small" style="margin-top:8px;" onclick="guardarPermisosUsuario('${uid}')">Guardar permisos</button>
       <span id="estadoPermisos_${uid}" style="margin-left:8px;color:var(--muted);font-size:12px;"></span>
     </div>`;
+}
+
+// Pone el mismo nivel en TODOS los selects de área de un usuario, de una sola
+// vez — pensado para "🚫 Sin acceso a todas" y luego habilitar manualmente
+// solo las 1-2 áreas necesarias, en vez de tener que cambiar cada una de las
+// 18 áreas por separado (que era fácil que se te olvidara alguna).
+function aplicarNivelATodasLasAreas(uid, nivel){
+  Object.keys(AREAS_APP).filter(a=>a!=="usuarios").forEach(area => {
+    const sel = document.getElementById(`permArea_${uid}_${area}`);
+    if(sel){
+      sel.value = nivel;
+      const wrap = document.getElementById(`subareasWrap_${uid}_${area}`);
+      if(wrap) wrap.classList.toggle("hidden", nivel==="sin_acceso");
+    }
+  });
 }
 
 async function guardarPermisosUsuario(uid){

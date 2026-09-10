@@ -226,6 +226,16 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: era fácil configurar mal "que solo vea un área" y terminar viendo todas** — el
+  problema real: al guardar los permisos, se guarda el valor de **las 18 áreas a la vez**, y si
+  no tocabas manualmente cada una (dejándolas en su valor por defecto "Solo lectura"), esas
+  quedaban visibles aunque tu intención fuera que el usuario viera solo 1 o 2 áreas — era fácil
+  que se te olvidara alguna. Ahora hay 3 botones de acción rápida arriba del panel de permisos:
+  **"🚫 Sin acceso a todas"**, **"👁️ Solo lectura a todas"** y **"✏️ Acceso completo a todas"** —
+  para "que solo vea Documentos Legales", usa primero "🚫 Sin acceso a todas" y después cambia
+  únicamente esa área a "Solo lectura" o "Acceso completo", y guarda — así no se te escapa
+  ninguna.
+
 - **Corregido: las subáreas de Dividendos marcadas "Sin acceso" seguían siendo visibles** —
   antes, el permiso "Sin acceso" en una subárea (ej. Comparativo SRI) solo bloqueaba la edición,
   pero la pestaña seguía apareciendo y se podía entrar a verla. Ahora esa pestaña se **oculta
