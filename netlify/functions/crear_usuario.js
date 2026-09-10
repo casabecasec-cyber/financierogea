@@ -105,7 +105,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { idToken, accion, email, password, uid, rol } = JSON.parse(event.body || "{}");
+    const { idToken, accion, email, password, uid, rol, areas, subareas } = JSON.parse(event.body || "{}");
     if (!idToken) {
       return { statusCode: 401, headers, body: JSON.stringify({ error: "Falta la sesión del administrador." }) };
     }
@@ -117,7 +117,8 @@ exports.handler = async (event) => {
     let callerEsAdmin = callerUid === DATOS_UID_OWNER;
     if (!callerEsAdmin) {
       const snap = await admin.database().ref(`roles_control_documental/${callerUid}`).once("value");
-      callerEsAdmin = snap.val() === "admin";
+      const val = snap.val();
+      callerEsAdmin = val === "admin" || (val && typeof val === "object" && val.rol === "admin");
     }
     if (!callerEsAdmin) {
       return { statusCode: 403, headers, body: JSON.stringify({ error: "No tienes permisos de administrador para gestionar usuarios." }) };
@@ -134,7 +135,7 @@ exports.handler = async (event) => {
         return { statusCode: 400, headers, body: JSON.stringify({ error: "Rol inválido." }) };
       }
       const nuevoUsuario = await admin.auth().createUser({ email, password });
-      await admin.database().ref(`roles_control_documental/${nuevoUsuario.uid}`).set(rol);
+      await admin.database().ref(`roles_control_documental/${nuevoUsuario.uid}`).set({ rol, areas: {}, subareas: {} });
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, uid: nuevoUsuario.uid }) };
     }
 
@@ -145,7 +146,28 @@ exports.handler = async (event) => {
       if (uid === DATOS_UID_OWNER) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: "El usuario dueño original de los datos siempre es administrador; no se puede cambiar." }) };
       }
-      await admin.database().ref(`roles_control_documental/${uid}`).set(rol);
+      // Si el valor actual todavía es texto plano (formato antiguo, sin
+      // permisos por área), lo convierte a objeto antes de actualizar el rol,
+      // para no perder la estructura.
+      const refUsuario = admin.database().ref(`roles_control_documental/${uid}`);
+      const actual = (await refUsuario.once("value")).val();
+      if (typeof actual !== "object" || actual === null) {
+        await refUsuario.set({ rol, areas: {}, subareas: {} });
+      } else {
+        await refUsuario.update({ rol });
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (accion === "actualizarPermisos") {
+      if (!uid) return { statusCode: 400, headers, body: JSON.stringify({ error: "Falta el uid del usuario." }) };
+      if (uid === DATOS_UID_OWNER) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: "El usuario dueño original de los datos siempre tiene acceso completo; no se puede restringir." }) };
+      }
+      await admin.database().ref(`roles_control_documental/${uid}`).update({
+        areas: areas || {},
+        subareas: subareas || {},
+      });
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
     }
 
@@ -161,15 +183,21 @@ exports.handler = async (event) => {
 
     if (accion === "listar") {
       const snap = await admin.database().ref("roles_control_documental").once("value");
-      const roles = snap.val() || {};
-      const uids = Object.keys(roles);
+      const registros = snap.val() || {};
+      const uids = Object.keys(registros);
       const usuarios = [];
       for (const u of uids) {
         try {
           const userRecord = await admin.auth().getUser(u);
-          usuarios.push({ uid: u, email: userRecord.email, rol: roles[u] });
+          const val = registros[u];
+          // Normaliza: el formato antiguo era solo un texto ("admin"/"lectura");
+          // el nuevo es {rol, areas, subareas}.
+          const normalizado = (typeof val === "object" && val !== null)
+            ? { rol: val.rol, areas: val.areas || {}, subareas: val.subareas || {} }
+            : { rol: val, areas: {}, subareas: {} };
+          usuarios.push({ uid: u, email: userRecord.email, ...normalizado });
         } catch (e) {
-          // Usuario borrado de Auth pero con rol residual en la base — se ignora.
+          // Usuario borrado de Auth pero con registro residual en la base — se ignora.
         }
       }
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, usuarios }) };
