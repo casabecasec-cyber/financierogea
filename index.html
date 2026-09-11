@@ -3528,6 +3528,27 @@ async function renderDocumentosLegales(){
             <div class="form-group"><label>C.I./RUC Librador</label><input type="text" id="let-ci-librador" class="ci-validar"></div>
             <div class="form-group"><label>Librado (Quien paga)</label><input type="text" id="let-librado" placeholder="Nombre del librado"></div>
             <div class="form-group"><label>C.I./RUC Librado</label><input type="text" id="let-ci-librado" class="ci-validar"></div>
+            <div class="form-group" id="let-librado-civil-box">
+              <label>Estado Civil del Librado</label>
+              <select id="let-librado-civil" onchange="toggleConyugeLetra()">
+                <option value="soltero">Soltero/a</option>
+                <option value="casado">Casado/a</option>
+                <option value="union">Unión de Hecho</option>
+                <option value="divorciado">Divorciado/a</option>
+                <option value="viudo">Viudo/a</option>
+              </select>
+            </div>
+            <div class="form-group" id="let-librado-conyuge-pregunta-box" style="display:none">
+              <label>¿Solicitar firma del cónyuge?</label>
+              <select id="let-librado-conyuge-firma" onchange="toggleConyugeNombreLetra()">
+                <option value="no">No</option>
+                <option value="si">Sí</option>
+              </select>
+            </div>
+            <div class="form-group" id="let-librado-conyuge-nombre-box" style="display:none">
+              <label>Nombre del Cónyuge</label>
+              <input type="text" id="let-librado-conyuge" placeholder="Nombre completo del cónyuge">
+            </div>
             <div class="form-group"><label>Beneficiario</label><input type="text" id="let-beneficiario" placeholder="A la orden de..."></div>
             <div class="form-group"><label>C.I./RUC Beneficiario</label><input type="text" id="let-ci-beneficiario" class="ci-validar"></div>
             <div class="form-group"><label>Domicilio de Pago</label><input type="text" id="let-domicilio" placeholder="Dirección"></div>
@@ -4052,6 +4073,22 @@ function toggleConyugeNombrePagare(rol) {
   if (nombreBox) nombreBox.style.display = firma === 'si' ? 'block' : 'none';
 }
 
+function toggleConyugeLetra() {
+  const civil = document.getElementById('let-librado-civil')?.value;
+  const preguntaBox = document.getElementById('let-librado-conyuge-pregunta-box');
+  const nombreBox = document.getElementById('let-librado-conyuge-nombre-box');
+  const mostrarPregunta = civil === 'casado' || civil === 'union';
+  if (preguntaBox) preguntaBox.style.display = mostrarPregunta ? 'block' : 'none';
+  if (!mostrarPregunta && nombreBox) nombreBox.style.display = 'none';
+  if (mostrarPregunta) toggleConyugeNombreLetra();
+}
+
+function toggleConyugeNombreLetra() {
+  const firma = document.getElementById('let-librado-conyuge-firma')?.value;
+  const nombreBox = document.getElementById('let-librado-conyuge-nombre-box');
+  if (nombreBox) nombreBox.style.display = firma === 'si' ? 'block' : 'none';
+}
+
 function toggleEndososPagare() {
   const endosable = document.getElementById('pag-endosable')?.value;
   const box = document.getElementById('pag-endosos-box');
@@ -4231,6 +4268,9 @@ function generarLetra() {
   const ciLibrador = document.getElementById('let-ci-librador').value.replace(/\D/g,'');
   const librado = document.getElementById('let-librado').value;
   const ciLibrado = document.getElementById('let-ci-librado').value.replace(/\D/g,'');
+  const libradoCivil = document.getElementById('let-librado-civil')?.value || 'soltero';
+  const libradoConyugeFirma = document.getElementById('let-librado-conyuge-firma')?.value || 'no';
+  const libradoConyuge = document.getElementById('let-librado-conyuge')?.value || '';
   const beneficiario = document.getElementById('let-beneficiario').value;
   const ciBeneficiario = document.getElementById('let-ci-beneficiario')?.value.replace(/\D/g,'') || '';
   const domicilio = document.getElementById('let-domicilio').value;
@@ -4261,6 +4301,17 @@ function generarLetra() {
       </div>`
     : '';
 
+  // Cláusula de firma de cónyuge del librado (garantía conyugal), si aplica
+  let conyugeTextLetra = '';
+  let conyugeFirmaHTMLLetra = '';
+  if ((libradoCivil === 'casado' || libradoCivil === 'union') && libradoConyugeFirma === 'si' && libradoConyuge) {
+    conyugeTextLetra = `<p>Comparece además <strong>${libradoConyuge}</strong>, en calidad de cónyuge del librado, quien presta su consentimiento expreso a la presente obligación conforme al Art. 180 y siguientes del Código Civil, garantizando solidariamente el cumplimiento de la misma respecto de los bienes de la sociedad conyugal.</p>`;
+    conyugeFirmaHTMLLetra = `<div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${libradoConyuge}<br><em>Cónyuge del Librado</em></div>
+      </div>`;
+  }
+
   document.getElementById('letra-preview').innerHTML = `
     <div class="doc-header">
       <div class="doc-title">LETRA DE CAMBIO</div>
@@ -4276,6 +4327,7 @@ function generarLetra() {
       <p><strong>LIBRADOR (Quien emite la orden de pago):</strong> ${librador}${ciLibrador ? ` · C.I./RUC: ${ciLibrador}` : ''}</p>
       <p><strong>LIBRADO (Quien debe pagar):</strong> ${librado}${ciLibrado ? ` · C.I./RUC: ${ciLibrado}` : ''}</p>
       <p><strong>Domicilio para el pago:</strong> ${domicilio || ciudad}</p>
+      ${conyugeTextLetra}
       <br>
       <p>El LIBRADO, al estampar su firma de aceptación al pie de este documento, se constituye en obligado principal y directo al pago de la cantidad señalada, conforme al Art. 437 del Código de Comercio, comprometiéndose a satisfacer su importe en la fecha y lugar indicados, sin necesidad de requerimiento previo.</p>
       ${clausulaProtesto}
@@ -4290,6 +4342,7 @@ function generarLetra() {
         <br><br><br>
         <div class="doc-firma-line">${librado}<br>C.I./RUC: ${ciLibrado || '___'}<br><em>Acepto · Librado</em></div>
       </div>
+      ${conyugeFirmaHTMLLetra}
     </div>
     ${(() => {
       const endosable = document.getElementById('let-endosable')?.value;
@@ -4309,6 +4362,7 @@ function generarLetra() {
   guardarHistorialDocumento('letra', librador + ' → ' + librado, {
     ciudad, fecha, monto, vencimiento, librador, ciLibrador, librado, ciLibrado,
     beneficiario, ciBeneficiario, domicilio, sinProtesto, mediacion,
+    libradoCivil, libradoConyugeFirma, libradoConyuge,
   });
 }
 

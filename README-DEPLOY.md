@@ -226,6 +226,13 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: opción de firma del cónyuge también en Letra de Cambio** — el Pagaré ya tenía esto
+  (estado civil del deudor + pregunta "¿Solicitar firma del cónyuge?"); ahora Letra de Cambio
+  también lo tiene, para el **Librado** (quien debe pagar): si su estado civil es "Casado/a" o
+  "Unión de Hecho", aparece la pregunta de si se solicita la firma del cónyuge — si eliges
+  "Sí" y escribes su nombre, se agrega la cláusula de garantía conyugal (Art. 180 y siguientes
+  del Código Civil) y su línea de firma en el documento generado.
+
 - **Nuevo: reporte ejecutivo de Activos Fijos con totales generales y por categoría** — el
   reporte imprimible (el financiero, no el de toma física) ahora tiene formato profesional
   (encabezado con línea de color, tarjetas de resumen) con: total de activos, vigentes vs. dados
