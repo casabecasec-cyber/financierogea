@@ -226,6 +226,61 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **🔴 Nuevo: 4° nivel de permiso "Puede agregar, no editar/eliminar"** — en Administración de
+  Usuarios, además de Sin acceso/Solo lectura/Acceso completo, ahora hay un nivel intermedio:
+  el usuario puede **guardar información nueva** en esa área, pero **no puede editar ni
+  eliminar** lo que ya existe. Para las funciones que sirven tanto para crear como editar (el
+  patrón más común, "guardarXForm(id)"), la app decide mirando si el formulario está vacío
+  (creación, permitido) o trae datos existentes (edición, bloqueado). Hay un botón de acción
+  rápida "➕ Puede agregar (no editar) a todas" en el panel de permisos.
+
+- **🔴 Nuevo: módulo "🧑‍🤝‍🧑 Miembros"** — directorio general de personas, compartido con
+  Cumpleaños/Festejos (mismos datos "colaboradores"). Cada miembro tiene nombre, cargo, fecha de
+  nacimiento y un **correo de acceso opcional** — si ese correo coincide con un usuario creado
+  en Administración de Usuarios, aparece un botón "⚙️ Permisos" directo desde Miembros para
+  configurar sus permisos por área, sin tener que ir a buscarlo en la otra pantalla.
+  ⚠️ **Requiere actualizar la regla de Firebase de `colaboradores`** (ver abajo) para que
+  también reconozca el área "miembros", no solo "cumpleanos".
+
+- **Nuevo: selector de Miembros en Reuniones y Eventos** — al crear una reunión/evento, ahora
+  puedes marcar participantes de la lista de Miembros (checkboxes) y/o escribir otros nombres
+  que no estén registrados. Los participantes aparecen en la tabla y se incluyen en el mensaje
+  de WhatsApp/correo.
+
+- **Nuevo: selector de Miembros en Equipo de Trabajo** — al agregar un integrante a un
+  proyecto/equipo, puedes elegirlo de la lista de Miembros o escribir un nombre distinto. El
+  panel principal ahora muestra los **nombres** de los integrantes (no solo la cantidad).
+  Además, si un usuario "solo lectura" está vinculado a un Miembro (por su correo de acceso),
+  **solo ve los equipos donde ese miembro participa** — los demás quedan ocultos para él.
+
+- **Nuevo: miembro responsable y obligaciones manuales en Empresas** — en el formulario de
+  empresa, el campo "Responsable" ahora es un selector de la lista de Miembros (con un campo de
+  texto libre de respaldo si no está en la lista). Además, nueva sección "📋 Obligaciones
+  manuales adicionales" en el detalle de cada empresa: puedes agregar obligaciones que no estén
+  en el catálogo automático (nombre, institución, periodicidad mensual/anual, día de
+  vencimiento) — se suman al checklist normal.
+
+- **Nuevo: mejoras como líneas separadas en Activos Fijos** — cada mejora registrada en un
+  activo ahora se deprecia por su cuenta (con la misma vida útil del bien, contada desde la
+  fecha de la mejora) y aparece como su **propia línea** en un desglose de "Valor en libros",
+  junto con el bien base y un **total combinado** (bien + todas las mejoras). Ese total es el
+  que ahora se muestra en la tabla principal y en el reporte imprimible de activos.
+
+### Actualización de reglas de Firebase necesaria para "Miembros"
+
+Reemplaza la regla de `colaboradores` en tus reglas de Firebase por esta versión (reconoce
+tanto el área "cumpleanos" como "miembros" — cualquiera de las dos con "Acceso completo" permite
+editar; con cualquiera distinta de "Sin acceso" permite ver):
+
+```json
+"colaboradores": {
+  "$uid": {
+    ".read": "$uid === auth.uid || auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3' || root.child('roles_control_documental').child(auth.uid).val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('rol').val() === 'admin' || (root.child('roles_control_documental').child(auth.uid).exists() && (root.child('roles_control_documental').child(auth.uid).child('areas').child('cumpleanos').val() !== 'sin_acceso' || root.child('roles_control_documental').child(auth.uid).child('areas').child('miembros').val() !== 'sin_acceso'))",
+    ".write": "$uid === auth.uid || auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3' || root.child('roles_control_documental').child(auth.uid).val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('rol').val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('areas').child('cumpleanos').val() === 'completo' || root.child('roles_control_documental').child(auth.uid).child('areas').child('miembros').val() === 'completo'"
+  }
+}
+```
+
 - **Corregido: era fácil configurar mal "que solo vea un área" y terminar viendo todas** — el
   problema real: al guardar los permisos, se guarda el valor de **las 18 áreas a la vez**, y si
   no tocabas manualmente cada una (dejándolas en su valor por defecto "Solo lectura"), esas

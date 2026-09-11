@@ -198,6 +198,7 @@ tr:hover td{background:var(--panel2);}
     <h1>Control Documental<span id="userEmailLabel">Gestión de Auditoría</span></h1>
     <button class="navBtn active" data-view="dashboard" onclick="goTo('dashboard')">📊 Dashboard</button>
     <button class="navBtn" data-view="empresas" onclick="goTo('empresas')">🏢 Empresas y Cumplimiento</button>
+    <button class="navBtn" data-view="miembros" onclick="goTo('miembros')">🧑‍🤝‍🧑 Miembros</button>
     <button class="navBtn" data-view="publicos" onclick="goTo('publicos')">📨 Trámites Públicos</button>
     <button class="navBtn" data-view="privados" onclick="goTo('privados')">🔒 Trámites Privados</button>
     <button class="navBtn" data-view="revision" onclick="goTo('revision')">🧾 Revisión de Documentos</button>
@@ -337,6 +338,7 @@ let checklistMes = hoyInicial.getMonth()+1; // 1-12
 const AREAS_APP = {
   dashboard:    { label:"📊 Dashboard" },
   empresas:     { label:"🏢 Empresas y Cumplimiento" },
+  miembros:     { label:"🧑‍🤝‍🧑 Miembros" },
   publicos:     { label:"📨 Trámites Públicos" },
   privados:     { label:"🔒 Trámites Privados" },
   revision:     { label:"🧾 Revisión de Documentos" },
@@ -364,7 +366,7 @@ const AREAS_APP = {
   }},
   usuarios:     { label:"👥 Administración de Usuarios" },
 };
-const NIVELES_ACCESO = { sin_acceso:"Sin acceso", lectura:"Solo lectura", completo:"Acceso completo" };
+const NIVELES_ACCESO = { sin_acceso:"Sin acceso", lectura:"Solo lectura", crear:"Puede agregar, no editar/eliminar", completo:"Acceso completo" };
 
 // Nivel de acceso de un área para el usuario actual: 'sin_acceso' | 'lectura' | 'completo'.
 // admin siempre tiene 'completo' en todo. Si el área no tiene una entrada
@@ -476,12 +478,35 @@ function pintarNavSegunPermisos(){
 
 // Bloqueo de acciones de escritura por área: intercepta cualquier clic en un
 // botón/enlace cuyo onclick llame a una función cuyo nombre empiece con un
-// verbo de escritura (guardar, eliminar, agregar, crear, etc.) y lo cancela
-// con un aviso si el usuario no tiene "acceso completo" en el área (o
-// subárea, dentro de Dividendos) donde se encuentra — Firebase también lo
-// rechazaría (las reglas son la protección real), pero esto da un mensaje
-// claro en vez de un error críptico de permisos.
+// verbo de escritura y decide si permitirlo según el nivel de acceso del
+// área (o subárea, dentro de Dividendos) donde se encuentra el usuario:
+//   - "completo": permite todo.
+//   - "crear": permite agregar información NUEVA, pero bloquea editar/
+//     eliminar/actualizar lo que ya existe. Para funciones que sirven tanto
+//     para crear como para editar (el patrón más común en esta app es
+//     "guardarXForm(id)", donde el mismo botón crea si "id" viene vacío y
+//     edita si "id" trae un valor), se decide mirando el primer argumento de
+//     la llamada: si está vacío, se trata como creación y se permite.
+//   - "lectura"/"sin_acceso": bloquea todo lo de este patrón.
+// Firebase es la protección real (rechazaría el guardado de todas formas),
+// esto solo da un mensaje claro en vez de un error críptico de permisos.
+const VERBOS_SIEMPRE_CREACION = /^(agregar|crear)/i;
+const VERBOS_SIEMPRE_EDICION = /^(eliminar|editar|actualizar|confirmar|recalcular|sincronizar|marcar|registrar|toggleFormaPago|toggleMetodoPago|cambiarMetodoPago)/i;
 const PATRON_FUNCION_ESCRITURA = /^(guardar|eliminar|agregar|crear|actualizar|confirmar|recalcular|sincronizar|editar|marcar|registrar|toggleFormaPago|toggleMetodoPago|cambiarMetodoPago)/i;
+
+// Decide si una llamada de tipo botón-con-onclick que invoca una función con
+// argumentos representa
+// crear algo nuevo (permitido en nivel "crear") mirando su primer argumento
+// — vacío/nulo/sin argumentos se interpreta como creación.
+function esLlamadaDeCreacion(nombreFuncion, onclickAttr){
+  if(VERBOS_SIEMPRE_CREACION.test(nombreFuncion)) return true;
+  if(VERBOS_SIEMPRE_EDICION.test(nombreFuncion)) return false;
+  // Resto (típicamente "guardarXForm(id)"): mira el primer argumento.
+  const argsMatch = onclickAttr.match(/\(([^)]*)\)/);
+  const primerArg = (argsMatch ? argsMatch[1].split(",")[0] : "").trim();
+  return primerArg === "" || primerArg === "''" || primerArg === '""' || primerArg === "null" || primerArg === "undefined";
+}
+
 document.addEventListener("click", function(e){
   if(!usuarioPermisos || usuarioPermisos.rol === "admin") return;
   const nivelActual = (currentView==="dividendos")
@@ -492,13 +517,15 @@ document.addEventListener("click", function(e){
   if(!btn) return;
   const onclickAttr = btn.getAttribute("onclick") || "";
   const match = onclickAttr.match(/^\s*(\w+)\(/);
-  if(match && PATRON_FUNCION_ESCRITURA.test(match[1])){
-    e.preventDefault();
-    e.stopPropagation();
-    alert(nivelActual==="sin_acceso"
-      ? "No tienes acceso a esta área."
+  if(!match || !PATRON_FUNCION_ESCRITURA.test(match[1])) return;
+  if(nivelActual === "crear" && esLlamadaDeCreacion(match[1], onclickAttr)) return; // permitido: es una creación nueva
+  e.preventDefault();
+  e.stopPropagation();
+  alert(nivelActual==="sin_acceso"
+    ? "No tienes acceso a esta área."
+    : nivelActual==="crear"
+      ? "Tu permiso en esta área es solo para agregar información nueva — no puedes editar ni eliminar lo que ya existe."
       : "Tienes permiso de solo lectura en esta área — no puedes editar, guardar ni eliminar aquí.");
-  }
 }, true);
 
 
@@ -515,6 +542,7 @@ function goTo(view){
   const renderers = {
     dashboard: renderDashboard,
     empresas: renderEmpresas,
+    miembros: renderMiembros,
     publicos: () => renderTramites("publico"),
     privados: () => renderTramites("privado"),
     revision: renderRevisionDocumentos,
@@ -735,15 +763,47 @@ function calcularFechaVencimiento(obligacion, empresa, anio, mes){
 }
 
 // Genera SOLO las tareas mensuales aplicables para un año/mes específico
+// Genera las tareas de las obligaciones MANUALES (agregadas a mano por
+// empresa, además del catálogo automático) para un mes/año específico.
+function generarChecklistManualMensual(empresa, anio, mesIndex1a12){
+  return (empresa.obligacionesManuales||[]).filter(o=>o.periodicidad==="mensual").map(o => {
+    const ultimoDiaMes = new Date(anio, mesIndex1a12, 0).getDate();
+    const dia = Math.min(o.diaVencimiento||28, ultimoDiaMes);
+    const vencimiento = new Date(anio, mesIndex1a12-1, dia).getTime();
+    return {
+      obligacion: { id:o.id, nombre:o.nombre, institucion:o.institucion||"Manual", descripcion:o.descripcion||"", esManual:true },
+      vencimiento, periodoKey: `manual_${o.id}_${anio}-${String(mesIndex1a12).padStart(2,"0")}`
+    };
+  });
+}
+// Igual que la anterior, pero para las obligaciones manuales anuales.
+function generarChecklistManualAnual(empresa, anio){
+  const tareas = [];
+  (empresa.obligacionesManuales||[]).filter(o=>o.periodicidad==="anual").forEach(o => {
+    (o.mesesAnual&&o.mesesAnual.length ? o.mesesAnual : [1]).forEach(m => {
+      const ultimoDiaMes = new Date(anio, m, 0).getDate();
+      const dia = Math.min(o.diaVencimiento||28, ultimoDiaMes);
+      const vencimiento = new Date(anio, m-1, dia).getTime();
+      tareas.push({
+        obligacion: { id:o.id, nombre:o.nombre, institucion:o.institucion||"Manual", descripcion:o.descripcion||"", esManual:true },
+        vencimiento, periodoKey: `manual_${o.id}_${anio}-${String(m).padStart(2,"0")}`
+      });
+    });
+  });
+  return tareas;
+}
+
 function generarChecklistMensual(empresa, anio, mesIndex1a12){
   const obligacionesAplicables = CATALOGO_OBLIGACIONES.filter(o => {
     try { return o.periodicidad==="mensual" && o.aplicaSi(empresa); } catch(e){ return false; }
   });
-  return obligacionesAplicables.map(o => {
+  const tareas = obligacionesAplicables.map(o => {
     const vencimiento = calcularFechaVencimiento(o, empresa, anio, mesIndex1a12-1);
     const periodoKey = `${o.id}_${anio}-${String(mesIndex1a12).padStart(2,"0")}`;
     return { obligacion:o, vencimiento, periodoKey };
-  }).sort((a,b) => a.vencimiento - b.vencimiento);
+  });
+  tareas.push(...generarChecklistManualMensual(empresa, anio, mesIndex1a12));
+  return tareas.sort((a,b) => a.vencimiento - b.vencimiento);
 }
 
 // Genera SOLO las tareas anuales aplicables para un año específico
@@ -759,6 +819,7 @@ function generarChecklistAnual(empresa, anio){
       tareas.push({ obligacion:o, vencimiento, periodoKey });
     });
   });
+  tareas.push(...generarChecklistManualAnual(empresa, anio));
   tareas.sort((a,b) => a.vencimiento - b.vencimiento);
   return tareas;
 }
@@ -1582,10 +1643,86 @@ async function pintarDetalleEmpresa(id){
       <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;" id="selectoresPeriodo"></div>
       <div id="checklistWrap"></div>
     </div>
+    <div class="card">
+      <h3 style="margin-top:0;">📋 Obligaciones manuales adicionales</h3>
+      <p class="helpNote">Agrega aquí obligaciones que no estén en el catálogo automático — se suman al checklist mensual o anual según lo que elijas.</p>
+      <div id="listaObligacionesManuales"></div>
+      <div class="grid2">
+        <div class="field" style="margin:0;"><label>Nombre de la obligación</label><input id="obmNombre" placeholder="Ej. Reporte interno de gerencia"></div>
+        <div class="field" style="margin:0;"><label>Institución (opcional)</label><input id="obmInstitucion" placeholder="Ej. Directorio"></div>
+      </div>
+      <div class="field"><label>Descripción (opcional)</label><input id="obmDescripcion"></div>
+      <div class="grid3">
+        <div class="field" style="margin:0;"><label>Periodicidad</label>
+          <select id="obmPeriodicidad" onchange="document.getElementById('wrapObmMeses').style.display=this.value==='anual'?'':'none'">
+            <option value="mensual">Mensual</option>
+            <option value="anual">Anual</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0;"><label>Día del mes de vencimiento</label><input type="number" id="obmDia" min="1" max="31" value="15"></div>
+        <div class="field" style="margin:0;display:none;" id="wrapObmMeses"><label>Mes(es) del año (anual)</label>
+          <select id="obmMeses" multiple size="4">
+            ${NOMBRES_MESES.map((n,i)=>`<option value="${i+1}">${n}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <button class="btn small" onclick="agregarObligacionManual('${emp.id}')">+ Agregar obligación manual</button>
+    </div>
   `;
 
   pintarSelectoresPeriodo(emp.id);
+  pintarListaObligacionesManuales(emp);
   await pintarChecklistWrap(emp);
+}
+
+function pintarListaObligacionesManuales(emp){
+  const cont = document.getElementById("listaObligacionesManuales");
+  if(!cont) return;
+  const lista = emp.obligacionesManuales||[];
+  if(!lista.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin obligaciones manuales agregadas.</p>`; return; }
+  cont.innerHTML = `<table style="font-size:13px;"><thead><tr><th>Nombre</th><th>Institución</th><th>Periodicidad</th><th>Vencimiento</th><th></th></tr></thead><tbody>
+    ${lista.map((o,idx) => `<tr>
+      <td>${escapeHtml(o.nombre)}</td>
+      <td>${escapeHtml(o.institucion||'-')}</td>
+      <td>${o.periodicidad==='anual'?'Anual':'Mensual'}</td>
+      <td>${o.periodicidad==='anual' ? (o.mesesAnual||[]).map(m=>NOMBRES_MESES[m-1]).join(", ")+`, día ${o.diaVencimiento}` : `día ${o.diaVencimiento} de cada mes`}</td>
+      <td><button class="btn small danger" onclick="eliminarObligacionManual('${emp.id}',${idx})">Eliminar</button></td>
+    </tr>`).join("")}
+  </tbody></table>`;
+}
+
+async function agregarObligacionManual(empresaId){
+  const nombre = document.getElementById("obmNombre").value.trim();
+  if(!nombre){ alert("Ingresa el nombre de la obligación."); return; }
+  const periodicidad = document.getElementById("obmPeriodicidad").value;
+  const diaVencimiento = parseInt(document.getElementById("obmDia").value, 10) || 15;
+  const mesesAnual = periodicidad==="anual"
+    ? Array.from(document.getElementById("obmMeses").selectedOptions).map(o=>parseInt(o.value,10))
+    : [];
+  if(periodicidad==="anual" && !mesesAnual.length){ alert("Selecciona al menos un mes para una obligación anual."); return; }
+  const emp = empresasCache.find(e=>e.id===empresaId);
+  const nuevaObligacion = {
+    id: "obm_"+Date.now()+"_"+Math.floor(Math.random()*10000),
+    nombre, institucion: document.getElementById("obmInstitucion").value.trim(),
+    descripcion: document.getElementById("obmDescripcion").value.trim(),
+    periodicidad, diaVencimiento, mesesAnual,
+  };
+  const obligacionesManuales = [...(emp.obligacionesManuales||[]), nuevaObligacion];
+  await guardarEmpresa({ obligacionesManuales }, empresaId);
+  empresasCache = await cargarEmpresas();
+  document.getElementById("obmNombre").value = "";
+  document.getElementById("obmInstitucion").value = "";
+  document.getElementById("obmDescripcion").value = "";
+  pintarDetalleEmpresa(empresaId);
+}
+
+async function eliminarObligacionManual(empresaId, idx){
+  if(!confirm("¿Eliminar esta obligación manual?")) return;
+  const emp = empresasCache.find(e=>e.id===empresaId);
+  const obligacionesManuales = (emp.obligacionesManuales||[]).filter((_,i)=>i!==idx);
+  await guardarEmpresa({ obligacionesManuales }, empresaId);
+  empresasCache = await cargarEmpresas();
+  pintarDetalleEmpresa(empresaId);
 }
 
 function pintarSelectoresPeriodo(empresaId){
@@ -1728,7 +1865,8 @@ async function imprimirChecklist(empresaId){
   win.print();
 }
 
-function abrirModalEmpresa(id){
+async function abrirModalEmpresa(id){
+  if(!colaboradoresCache.length){ try{ colaboradoresCache = await cargarColaboradores(); }catch(e){ /* ignorar */ } }
   const emp = id ? empresasCache.find(e=>e.id===id) : null;
   const host = document.getElementById("modalEmpresaHost");
   host.innerHTML = `
@@ -1771,7 +1909,13 @@ function abrirModalEmpresa(id){
           </select>
         </div>
         <div class="field"><label>Actividad económica</label><input id="empActividad" value="${emp?escapeHtml(emp.actividad||''):''}"></div>
-        <div class="field"><label>Responsable de la empresa</label><input id="empResponsable" value="${emp?escapeHtml(emp.responsable||''):''}"></div>
+        <div class="field"><label>Miembro responsable de la empresa</label>
+          <select id="empResponsableId">
+            <option value="">-- Ninguno de la lista de Miembros / escribir abajo --</option>
+            ${colaboradoresCache.map(c=>`<option value="${c.id}" ${emp?.responsableId===c.id?'selected':''}>${escapeHtml(c.nombre)}${c.cargo?` (${escapeHtml(c.cargo)})`:''}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field"><label>Responsable (texto libre, si no está registrado en Miembros)</label><input id="empResponsable" value="${emp?escapeHtml(emp.responsable||''):''}"></div>
         <div class="grid2">
           <div class="field" style="flex-direction:row;align-items:center;gap:8px;">
             <input type="checkbox" id="empObligada" style="width:auto;" ${emp?.obligadaContabilidad?'checked':''}>
@@ -1812,7 +1956,12 @@ async function guardarEmpresaForm(id){
     region: document.getElementById("empRegion").value,
     clasificacionSri: document.getElementById("empClasificacion").value,
     actividad: document.getElementById("empActividad").value.trim(),
-    responsable: document.getElementById("empResponsable").value.trim(),
+    responsableId: document.getElementById("empResponsableId").value || null,
+    responsable: (() => {
+      const rid = document.getElementById("empResponsableId").value;
+      if(rid){ const m = colaboradoresCache.find(c=>c.id===rid); if(m) return m.nombre; }
+      return document.getElementById("empResponsable").value.trim();
+    })(),
     obligadaContabilidad: document.getElementById("empObligada").checked,
     reportaUafe: document.getElementById("empUafe").checked,
     sectorFinanciero: document.getElementById("empSectorFinanciero").checked,
@@ -5047,6 +5196,7 @@ async function renderEquipos(){
   `;
   try{
     equiposCache = await cargarEquipos();
+    if(!colaboradoresCache.length){ colaboradoresCache = await cargarColaboradores(); }
   }catch(e){
     document.getElementById("equiposVistaContenido").innerHTML = `<div class="card emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "equipos_trabajo" a las reglas de Realtime Database.</span></div>`;
     return;
@@ -5064,7 +5214,7 @@ function pintarAuditoriaEquipos(){
   const cont = document.getElementById("equiposVistaContenido");
   const hoy = new Date();
   const filas = [];
-  equiposCache.forEach(eq => {
+  equiposVisiblesParaUsuarioActual().forEach(eq => {
     (eq.miembros||[]).forEach(m => {
       if(!m.fechaTermino || m.estado==="terminado") return;
       const dias = diasEntre(hoy, new Date(m.fechaTermino));
@@ -5105,11 +5255,12 @@ function pintarAuditoriaEquipos(){
 
 function pintarTablaEquipos(){
   const cont = document.getElementById("equiposVistaContenido");
-  if(!equiposCache.length){ cont.innerHTML = `<div class="card emptyState">Aún no hay proyectos/equipos registrados.</div>`; return; }
+  const equiposVisibles = equiposVisiblesParaUsuarioActual();
+  if(!equiposVisibles.length){ cont.innerHTML = `<div class="card emptyState">Aún no hay proyectos/equipos registrados${equiposCache.length?' donde participes':''}.</div>`; return; }
   cont.innerHTML = `<div class="card"><table><thead><tr><th>Proyecto</th><th>Integrantes</th><th>Fechas</th><th></th></tr></thead><tbody>
-    ${equiposCache.map(eq => `<tr>
+    ${equiposVisibles.map(eq => `<tr>
       <td><b>${escapeHtml(eq.nombreProyecto||'-')}</b></td>
-      <td>${(eq.miembros||[]).length}</td>
+      <td>${(eq.miembros||[]).map(m=>escapeHtml(m.nombre||'(sin nombre)')).join(", ") || '<span style="color:var(--muted);">Sin integrantes</span>'}</td>
       <td>${fmtFecha(eq.fechaInicio)} → ${fmtFecha(eq.fechaTermino)}</td>
       <td>
         <button class="btn small" onclick="abrirDetalleEquipo('${eq.id}')">Abrir</button>
@@ -5117,6 +5268,17 @@ function pintarTablaEquipos(){
       </td>
     </tr>`).join("")}
   </tbody></table></div>`;
+}
+
+// Filtra los equipos visibles para el usuario actual: los administradores ven
+// todos; un usuario "solo lectura" vinculado a un Miembro (por su correo de
+// acceso) solo ve los equipos donde ese miembro participa — no los demás.
+function equiposVisiblesParaUsuarioActual(){
+  if(!usuarioPermisos || usuarioPermisos.rol==="admin") return equiposCache;
+  const miEmail = (currentUser?.email||"").toLowerCase();
+  const miMiembro = colaboradoresCache.find(c=>c.emailAcceso && c.emailAcceso===miEmail);
+  if(!miMiembro) return equiposCache; // no vinculado a ningún miembro: sin restricción adicional
+  return equiposCache.filter(eq => (eq.miembros||[]).some(m => m.miembroId===miMiembro.id));
 }
 
 
@@ -5176,7 +5338,15 @@ async function abrirDetalleEquipo(id){
 
         <h4>Integrantes y tareas</h4>
         <div id="listaMiembros"></div>
-        <button class="btn small" onclick="agregarMiembroEquipo('${id}')">+ Agregar integrante</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="selMiembroEquipo_${id}" style="max-width:220px;">
+            <option value="">-- Elegir de Miembros --</option>
+            ${colaboradoresCache.map(c=>`<option value="${c.id}">${escapeHtml(c.nombre)}${c.cargo?` (${escapeHtml(c.cargo)})`:''}</option>`).join("")}
+          </select>
+          <span style="color:var(--muted);font-size:12px;">o</span>
+          <input type="text" id="otroNombreEquipo_${id}" placeholder="Escribe otro nombre" style="max-width:200px;">
+          <button class="btn small" onclick="agregarMiembroEquipo('${id}')">+ Agregar integrante</button>
+        </div>
 
         <div class="card" style="margin-top:20px;">
           <h4 style="margin-top:0;">📄 Documento de respaldo del proyecto</h4>
@@ -5603,10 +5773,27 @@ function pintarListaMiembros(equipoId, miembros){
 }
 
 async function agregarMiembroEquipo(equipoId){
+  const selMiembro = document.getElementById(`selMiembroEquipo_${equipoId}`);
+  const inputOtro = document.getElementById(`otroNombreEquipo_${equipoId}`);
+  const miembroId = selMiembro ? selMiembro.value : "";
+  const nombreOtro = inputOtro ? inputOtro.value.trim() : "";
+  let nombre = "", miembroIdFinal = null;
+  if(miembroId){
+    const m = colaboradoresCache.find(c=>c.id===miembroId);
+    nombre = m ? m.nombre : "";
+    miembroIdFinal = miembroId;
+  } else if(nombreOtro){
+    nombre = nombreOtro;
+  } else {
+    alert("Elige un miembro de la lista o escribe un nombre.");
+    return;
+  }
   const eq = equiposCache.find(x=>x.id===equipoId);
-  const nuevosMiembros = [...(eq.miembros||[]), { nombre:"", tarea:"", fechaInicio:null, fechaTermino:null, estado:"en_proceso", observaciones:"" }];
+  const nuevosMiembros = [...(eq.miembros||[]), { nombre, miembroId: miembroIdFinal, tarea:"", fechaInicio:null, fechaTermino:null, estado:"en_proceso", observaciones:"" }];
   await guardarEquipo({ miembros: nuevosMiembros }, equipoId);
   equiposCache = await cargarEquipos();
+  if(selMiembro) selMiembro.value = "";
+  if(inputOtro) inputOtro.value = "";
   pintarListaMiembros(equipoId, nuevosMiembros);
 }
 
@@ -5766,10 +5953,11 @@ function pintarPanelPermisos(uid){
   fila.querySelector("td").innerHTML = `
     <div class="card" style="margin:6px 0;">
       <b style="font-size:12px;">Permisos por área — ${escapeHtml(u.email)}</b>
-      <p class="helpNote" style="margin-top:4px;">Si dejas un área en "Solo lectura", el usuario la ve pero no puede editar nada ahí. "Sin acceso" la oculta por completo del menú. <b>Consejo</b>: si quieres que solo vea 1 o 2 áreas, usa primero "🚫 Sin acceso a todas" y después habilita únicamente las que necesites — así no se te olvida ninguna.</p>
+      <p class="helpNote" style="margin-top:4px;">Si dejas un área en "Solo lectura", el usuario la ve pero no puede editar nada ahí. "Sin acceso" la oculta por completo del menú. "Puede agregar, no editar/eliminar" le permite guardar información NUEVA en esa área, pero bloquea tocar lo que ya existe. <b>Consejo</b>: si quieres que solo vea 1 o 2 áreas, usa primero "🚫 Sin acceso a todas" y después habilita únicamente las que necesites — así no se te olvida ninguna.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="btn small" onclick="aplicarNivelATodasLasAreas('${uid}','sin_acceso')">🚫 Sin acceso a todas</button>
         <button class="btn small" onclick="aplicarNivelATodasLasAreas('${uid}','lectura')">👁️ Solo lectura a todas</button>
+        <button class="btn small" onclick="aplicarNivelATodasLasAreas('${uid}','crear')">➕ Puede agregar (no editar) a todas</button>
         <button class="btn small" onclick="aplicarNivelATodasLasAreas('${uid}','completo')">✏️ Acceso completo a todas</button>
       </div>
       <table style="font-size:12px;"><thead><tr><th>Área</th><th>Nivel</th></tr></thead><tbody>
@@ -5786,6 +5974,7 @@ function pintarPanelPermisos(uid){
                       <option value="">(hereda del área: ${NIVELES_ACCESO[nivel]})</option>
                       <option value="sin_acceso" ${subareas[area]?.[sub]==='sin_acceso'?'selected':''}>Sin acceso</option>
                       <option value="lectura" ${subareas[area]?.[sub]==='lectura'?'selected':''}>Solo lectura</option>
+                      <option value="crear" ${subareas[area]?.[sub]==='crear'?'selected':''}>Puede agregar, no editar/eliminar</option>
                       <option value="completo" ${subareas[area]?.[sub]==='completo'?'selected':''}>Acceso completo</option>
                     </select></td>
                   </tr>`).join("")}
@@ -5797,6 +5986,7 @@ function pintarPanelPermisos(uid){
             <td><select id="permArea_${uid}_${area}" onchange="${cfg.subareas?`document.getElementById('subareasWrap_${uid}_${area}').classList.toggle('hidden', this.value==='sin_acceso')`:''}">
               <option value="sin_acceso" ${nivel==='sin_acceso'?'selected':''}>Sin acceso</option>
               <option value="lectura" ${nivel==='lectura'?'selected':''}>Solo lectura</option>
+              <option value="crear" ${nivel==='crear'?'selected':''}>Puede agregar, no editar/eliminar</option>
               <option value="completo" ${nivel==='completo'?'selected':''}>Acceso completo</option>
             </select></td>
           </tr>${filaSubareas}`;
@@ -5887,6 +6077,61 @@ async function ejecutarEliminarUsuario(uid, email){
   }catch(e){
     alert("No se pudo eliminar: " + e.message);
   }
+}
+
+/* =========================================================================
+   MÓDULO: MIEMBROS — directorio general de personas (integrantes, equipo,
+   accionistas de reuniones, etc.), compartido con Cumpleaños/Festejos (usa
+   los mismos datos "colaboradores"). Aquí además se vincula cada miembro con
+   su cuenta de acceso (si tiene una) para configurar sus permisos por área.
+   ========================================================================= */
+async function renderMiembros(){
+  const main = document.getElementById("main");
+  main.innerHTML = `
+    <div class="pageTitle"><div><h2>Miembros</h2><p>Directorio de personas — se usa en Cumpleaños, Reuniones, Equipo de Trabajo y como responsable de empresas</p></div>
+      <button class="btn primary" onclick="abrirFormularioColaborador()">+ Nuevo miembro</button></div>
+    <div class="card" id="tablaMiembros">Cargando...</div>
+    <div id="modalColaboradorHost"></div>
+  `;
+  try{
+    colaboradoresCache = await cargarColaboradores();
+  }catch(e){
+    document.getElementById("tablaMiembros").innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "colaboradores" a las reglas de Realtime Database.</span></div>`;
+    return;
+  }
+  // Si es admin, trae la lista de usuarios con acceso para poder vincular
+  // permisos por miembro (correo de acceso <-> cuenta de usuario).
+  if(usuarioRol==="admin"){
+    try{ const data = await llamarGestionUsuarios({ accion:"listar" }); usuariosAdminCache = data.usuarios||[]; }
+    catch(e){ usuariosAdminCache = []; }
+  }
+  pintarTablaMiembros();
+}
+
+function pintarTablaMiembros(){
+  const cont = document.getElementById("tablaMiembros");
+  if(!colaboradoresCache.length){ cont.innerHTML = `<div class="emptyState">Aún no hay miembros registrados.</div>`; return; }
+  cont.innerHTML = `<table><thead><tr><th>Nombre</th><th>Cargo</th><th>Correo de acceso</th><th>Permisos</th><th></th></tr></thead><tbody>
+    ${colaboradoresCache.map(c => {
+      const usuarioVinculado = c.emailAcceso ? usuariosAdminCache.find(u=>u.email?.toLowerCase()===c.emailAcceso) : null;
+      return `<tr>
+        <td><b>${escapeHtml(c.nombre)}</b></td>
+        <td>${escapeHtml(c.cargo||'-')}</td>
+        <td>${escapeHtml(c.emailAcceso||'-')}</td>
+        <td>${
+          !c.emailAcceso ? '<span class="pill muted">Sin cuenta de acceso</span>'
+          : usuarioVinculado ? `<span class="pill ok">Rol: ${usuarioVinculado.rol==='admin'?'Administrador':'Solo lectura'}</span>`
+          : (usuarioRol==="admin" ? '<span class="pill warn">Correo no coincide con ningún usuario creado</span>' : '')
+        }</td>
+        <td style="white-space:nowrap;">
+          <button class="btn small" onclick="abrirFormularioColaborador('${c.id}')">Editar</button>
+          ${usuarioVinculado ? `<button class="btn small" onclick="togglePermisosUsuario('${usuarioVinculado.uid}')">⚙️ Permisos</button>` : ''}
+          <button class="btn small danger" onclick="confirmarEliminarColaborador('${c.id}')">Eliminar</button>
+        </td>
+      </tr>
+      ${usuarioVinculado ? `<tr id="filaPermisos_${usuarioVinculado.uid}" class="hidden"><td colspan="5"></td></tr>` : ''}`;
+    }).join("")}
+  </tbody></table>`;
 }
 
 async function renderCumpleanos(){
@@ -6002,12 +6247,16 @@ function sortearResponsablesFestejo(){
 }
 
 async function confirmarEliminarColaborador(id){
-  if(!confirm("¿Eliminar este colaborador?")) return;
+  if(!confirm("¿Eliminar este miembro?")) return;
   await eliminarColaborador(id);
   colaboradoresCache = await cargarColaboradores();
-  pintarAlertasCumpleanos();
-  pintarTablaColaboradores();
-  pintarFestejosCumpleanos();
+  if(currentView==="miembros"){
+    pintarTablaMiembros();
+  } else {
+    pintarAlertasCumpleanos();
+    pintarTablaColaboradores();
+    pintarFestejosCumpleanos();
+  }
 }
 
 function abrirFormularioColaborador(id){
@@ -6017,10 +6266,11 @@ function abrirFormularioColaborador(id){
     <div class="modalBg">
       <div class="modalBox">
         <button class="closeX" onclick="document.getElementById('modalColaboradorHost').innerHTML=''">×</button>
-        <h3>${c?"Editar":"Nuevo"} colaborador</h3>
+        <h3>${c?"Editar":"Nuevo"} miembro</h3>
         <div class="field"><label>Nombre</label><input id="colNombre" value="${c?escapeHtml(c.nombre||''):''}"></div>
         <div class="field"><label>Cargo</label><input id="colCargo" value="${c?escapeHtml(c.cargo||''):''}"></div>
         <div class="field"><label>Fecha de nacimiento</label><input type="date" id="colFechaNac" value="${c?.fechaNacimiento?new Date(c.fechaNacimiento).toISOString().slice(0,10):''}"></div>
+        <div class="field"><label>Correo de acceso (opcional, solo si este miembro tiene login en la app)</label><input type="email" id="colEmailAcceso" value="${c?escapeHtml(c.emailAcceso||''):''}" placeholder="Debe coincidir con el correo creado en Administración de Usuarios"></div>
         <button class="btn primary" style="width:100%;margin-top:8px;" onclick="guardarColaboradorForm('${c?c.id:''}')">Guardar</button>
       </div>
     </div>`;
@@ -6033,13 +6283,18 @@ async function guardarColaboradorForm(id){
     nombre,
     cargo: document.getElementById("colCargo").value.trim(),
     fechaNacimiento: document.getElementById("colFechaNac").value ? new Date(document.getElementById("colFechaNac").value+"T00:00:00").getTime() : null,
+    emailAcceso: document.getElementById("colEmailAcceso").value.trim().toLowerCase(),
   };
   await guardarColaborador(datos, id||null);
   document.getElementById("modalColaboradorHost").innerHTML = "";
   colaboradoresCache = await cargarColaboradores();
-  pintarAlertasCumpleanos();
-  pintarTablaColaboradores();
-  pintarFestejosCumpleanos();
+  if(currentView==="miembros"){
+    pintarTablaMiembros();
+  } else {
+    pintarAlertasCumpleanos();
+    pintarTablaColaboradores();
+    pintarFestejosCumpleanos();
+  }
 }
 
 /* =========================================================================
@@ -6172,6 +6427,34 @@ function calcularDepreciacionActivo(activo){
   return { depreciacionAnual, depreciacionAcumulada, valorLibros, vidaUtilCumplida: aniosTranscurridos>=vidaUtil, aniosTranscurridos };
 }
 
+// Deprecia cada mejora por separado (línea aparte), usando la misma vida
+// útil del activo principal contada desde la fecha de CADA mejora (criterio
+// común: una mejora se deprecia en lo que resta de vida útil del bien).
+function calcularDepreciacionMejora(mejora, activo){
+  const costo = Number(mejora.costo||0);
+  const vidaUtil = Number(activo.vidaUtilAnios||0);
+  if(vidaUtil<=0 || !mejora.fecha) return { depreciacionAcumulada:0, valorLibros:costo };
+  const aniosTranscurridos = (Date.now()-new Date(mejora.fecha).getTime())/(365.25*86400000);
+  const depreciacionAnual = costo/vidaUtil;
+  const depreciacionAcumulada = Math.min(depreciacionAnual*Math.max(aniosTranscurridos,0), costo);
+  const valorLibros = Math.max(costo - depreciacionAcumulada, 0);
+  return { depreciacionAcumulada, valorLibros };
+}
+
+// Arma el desglose completo del "valor en libros" de un activo: el bien base
+// más una línea por cada mejora, y el total combinado — esto es lo que se
+// muestra en el detalle del activo y lo que alimenta el total de la tabla
+// principal.
+function calcularValorLibrosConMejoras(activo){
+  const base = calcularDepreciacionActivo(activo);
+  const mejorasDetalle = (activo.mejoras||[]).map(m => {
+    const dep = calcularDepreciacionMejora(m, activo);
+    return { ...m, ...dep };
+  });
+  const totalMejoras = mejorasDetalle.reduce((s,m)=>s+m.valorLibros, 0);
+  return { base, mejorasDetalle, totalMejoras, total: base.valorLibros + totalMejoras };
+}
+
 async function renderActivosFijos(){
   const main = document.getElementById("main");
   main.innerHTML = `
@@ -6228,15 +6511,15 @@ async function pintarListaActivos(){
 function pintarTablaActivos(){
   const cont = document.getElementById("tablaActivos");
   if(!activosFijosCache.length){ cont.innerHTML = `<div class="emptyState">Esta empresa no tiene activos registrados.</div>`; return; }
-  cont.innerHTML = `<table><thead><tr><th>Activo</th><th>Categoría</th><th>Compra</th><th>Costo</th><th>Valor en libros</th><th>Estado</th><th></th></tr></thead><tbody>
+  cont.innerHTML = `<table><thead><tr><th>Activo</th><th>Categoría</th><th>Compra</th><th>Costo</th><th>Valor en libros (con mejoras)</th><th>Estado</th><th></th></tr></thead><tbody>
     ${activosFijosCache.map(a => {
-      const dep = calcularDepreciacionActivo(a);
+      const val = calcularValorLibrosConMejoras(a);
       return `<tr>
         <td><b>${escapeHtml(a.nombre)}</b>${a.codigo?` <span class="pill muted">${escapeHtml(a.codigo)}</span>`:''}</td>
         <td>${escapeHtml(a.categoria||'-')}</td>
         <td>${fmtFecha(a.fechaCompra)}</td>
         <td>$${Number(a.costoCompra||0).toFixed(2)}</td>
-        <td>$${dep.valorLibros.toFixed(2)} ${dep.vidaUtilCumplida?'<span class="pill warn">Vida útil cumplida</span>':''}</td>
+        <td>$${val.total.toFixed(2)} ${val.mejorasDetalle.length?`<span class="pill muted">+${val.mejorasDetalle.length} mejora(s)</span>`:''} ${val.base.vidaUtilCumplida?'<span class="pill warn">Vida útil cumplida</span>':''}</td>
         <td>${a.estado==="dado_de_baja"?'<span class="pill danger">Dado de baja</span>':'<span class="pill ok">Activo</span>'}</td>
         <td>
           <button class="btn small" onclick="abrirDetalleActivo('${a.id}')">Abrir</button>
@@ -6329,12 +6612,16 @@ async function abrirDetalleActivo(id){
           <tr><th>Vida útil</th><td>${a.vidaUtilAnios} años ${dep.vidaUtilCumplida?'<span class="pill warn">Cumplida</span>':''}</td></tr>
           <tr><th>Depreciación anual</th><td>$${dep.depreciacionAnual.toFixed(2)}</td></tr>
           <tr><th>Depreciación acumulada</th><td>$${dep.depreciacionAcumulada.toFixed(2)}</td></tr>
-          <tr><th>Valor en libros actual</th><td><b>$${dep.valorLibros.toFixed(2)}</b></td></tr>
+          <tr><th>Valor en libros del bien base</th><td>$${dep.valorLibros.toFixed(2)}</td></tr>
           <tr><th>Ubicación</th><td>${escapeHtml(a.ubicacion||'-')}</td></tr>
           <tr><th>Responsable</th><td>${escapeHtml(a.responsable||'-')}</td></tr>
         </table>
         <div style="margin-top:10px;">
           <button class="btn small" onclick="abrirFormularioActivo('${id}')">✏️ Editar datos</button>
+        </div>
+        <div class="card" style="margin-top:12px;">
+          <h4 style="margin-top:0;">💰 Valor en libros — desglose por línea</h4>
+          <div id="valorLibrosDesglose"></div>
         </div>
         <h4>Mejoras registradas</h4>
         <div id="listaMejoras"></div>
@@ -6346,14 +6633,27 @@ async function abrirDetalleActivo(id){
         <button class="btn small" onclick="agregarMejoraActivo('${id}')">+ Agregar mejora</button>
       </div>
     </div>`;
-  pintarListaMejoras(a.mejoras||[]);
+  pintarValorLibrosDesglose(a);
+  pintarListaMejoras(a);
 }
 
-function pintarListaMejoras(mejoras){
+function pintarValorLibrosDesglose(activo){
+  const cont = document.getElementById("valorLibrosDesglose");
+  if(!cont) return;
+  const val = calcularValorLibrosConMejoras(activo);
+  cont.innerHTML = `<table style="font-size:13px;"><thead><tr><th>Línea</th><th>Fecha</th><th>Costo</th><th>Valor en libros</th></tr></thead><tbody>
+    <tr><td><b>${escapeHtml(activo.nombre)}</b> (bien base)</td><td>${fmtFecha(activo.fechaCompra)}</td><td>$${Number(activo.costoCompra||0).toFixed(2)}</td><td>$${val.base.valorLibros.toFixed(2)}</td></tr>
+    ${val.mejorasDetalle.map(m=>`<tr><td>↳ Mejora: ${escapeHtml(m.descripcion)}</td><td>${fmtFecha(m.fecha)}</td><td>$${Number(m.costo||0).toFixed(2)}</td><td>$${m.valorLibros.toFixed(2)}</td></tr>`).join("")}
+    <tr style="font-weight:bold;background:var(--panel2);border-top:2px solid var(--accent);"><td colspan="3">TOTAL DEL INMUEBLE (bien + mejoras)</td><td style="color:var(--accent2);">$${val.total.toFixed(2)}</td></tr>
+  </tbody></table>`;
+}
+
+function pintarListaMejoras(activo){
   const cont = document.getElementById("listaMejoras");
+  const mejoras = activo.mejoras||[];
   if(!mejoras.length){ cont.innerHTML = `<p style="color:var(--muted);font-size:13px;">Sin mejoras registradas.</p>`; return; }
-  cont.innerHTML = `<table><thead><tr><th>Fecha</th><th>Descripción</th><th>Costo</th></tr></thead><tbody>
-    ${mejoras.map(m=>`<tr><td>${fmtFecha(m.fecha)}</td><td>${escapeHtml(m.descripcion)}</td><td>$${Number(m.costo||0).toFixed(2)}</td></tr>`).join("")}
+  cont.innerHTML = `<table><thead><tr><th>Fecha</th><th>Descripción</th><th>Costo</th><th>Valor en libros</th><th></th></tr></thead><tbody>
+    ${mejoras.map((m,idx)=>{ const dep=calcularDepreciacionMejora(m, activo); return `<tr><td>${fmtFecha(m.fecha)}</td><td>${escapeHtml(m.descripcion)}</td><td>$${Number(m.costo||0).toFixed(2)}</td><td>$${dep.valorLibros.toFixed(2)}</td><td><button class="btn small danger" onclick="eliminarMejoraActivo('${activo.id}',${idx})">Eliminar</button></td></tr>`; }).join("")}
   </tbody></table>`;
 }
 
@@ -6366,8 +6666,21 @@ async function agregarMejoraActivo(activoId){
   const nuevasMejoras = [...(a.mejoras||[]), { fecha: new Date(fecha+"T00:00:00").getTime(), descripcion, costo }];
   await guardarActivoFijo({ mejoras: nuevasMejoras }, activoId);
   activosFijosCache = await cargarActivosFijos(empresaActivosSeleccionada);
-  pintarListaMejoras(nuevasMejoras);
+  const aActualizado = activosFijosCache.find(x=>x.id===activoId);
+  pintarListaMejoras(aActualizado);
+  pintarValorLibrosDesglose(aActualizado);
   document.getElementById("mejFecha").value=""; document.getElementById("mejDescripcion").value=""; document.getElementById("mejCosto").value="";
+}
+
+async function eliminarMejoraActivo(activoId, idx){
+  if(!confirm("¿Eliminar esta mejora?")) return;
+  const a = activosFijosCache.find(x=>x.id===activoId);
+  const nuevasMejoras = (a.mejoras||[]).filter((_,i)=>i!==idx);
+  await guardarActivoFijo({ mejoras: nuevasMejoras }, activoId);
+  activosFijosCache = await cargarActivosFijos(empresaActivosSeleccionada);
+  const aActualizado = activosFijosCache.find(x=>x.id===activoId);
+  pintarListaMejoras(aActualizado);
+  pintarValorLibrosDesglose(aActualizado);
 }
 
 function imprimirReporteActivos(modo){
@@ -6389,7 +6702,7 @@ function imprimirReporteActivos(modo){
       <h1>Reporte de Activos Fijos</h1>
       <p><b>Empresa:</b> ${escapeHtml(empresa?.nombre||'')} &nbsp; <b>Fecha:</b> ${fmtFecha(new Date())}</p>
       <table><thead><tr><th>Código</th><th>Activo</th><th>Categoría</th><th>Compra</th><th>Costo</th><th>Vida útil</th><th>Dep. acumulada</th><th>Valor en libros</th><th>Responsable</th></tr></thead>
-      <tbody>${activosFijosCache.map(a=>{ const dep=calcularDepreciacionActivo(a); return `<tr><td>${escapeHtml(a.codigo||'-')}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.categoria||'-')}</td><td>${fmtFecha(a.fechaCompra)}</td><td>$${Number(a.costoCompra||0).toFixed(2)}</td><td>${a.vidaUtilAnios} años</td><td>$${dep.depreciacionAcumulada.toFixed(2)}</td><td>$${dep.valorLibros.toFixed(2)}</td><td>${escapeHtml(a.responsable||'-')}</td></tr>`; }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;">Sin activos</td></tr>'}</tbody>
+      <tbody>${activosFijosCache.map(a=>{ const dep=calcularDepreciacionActivo(a); const val=calcularValorLibrosConMejoras(a); return `<tr><td>${escapeHtml(a.codigo||'-')}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.categoria||'-')}</td><td>${fmtFecha(a.fechaCompra)}</td><td>$${Number(a.costoCompra||0).toFixed(2)}</td><td>${a.vidaUtilAnios} años</td><td>$${dep.depreciacionAcumulada.toFixed(2)}</td><td>$${val.total.toFixed(2)}${val.mejorasDetalle.length?` (incl. ${val.mejorasDetalle.length} mejora(s))`:''}</td><td>${escapeHtml(a.responsable||'-')}</td></tr>`; }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;">Sin activos</td></tr>'}</tbody>
       </table></body></html>`);
   }
   win.document.close(); win.focus(); win.print();
@@ -7131,6 +7444,7 @@ async function renderReunionesEventos(){
   `;
   try{
     reunionesEventosCache = await cargarReunionesEventos();
+    if(!colaboradoresCache.length){ colaboradoresCache = await cargarColaboradores(); }
   }catch(e){
     document.getElementById("tablaReunionesEventos").innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "reuniones_eventos" a las reglas de Realtime Database.</span></div>`;
     return;
@@ -7142,7 +7456,7 @@ function pintarTablaReunionesEventos(){
   const cont = document.getElementById("tablaReunionesEventos");
   if(!reunionesEventosCache.length){ cont.innerHTML = `<div class="emptyState">Aún no hay reuniones ni eventos planificados.</div>`; return; }
   const hoy = new Date(); hoy.setHours(0,0,0,0);
-  cont.innerHTML = `<table><thead><tr><th>Nombre</th><th>Fecha y hora</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead><tbody>
+  cont.innerHTML = `<table><thead><tr><th>Nombre</th><th>Fecha y hora</th><th>Ubicación</th><th>Participantes</th><th>Estado</th><th></th></tr></thead><tbody>
     ${reunionesEventosCache.map(r => {
       const fechaEvento = new Date(r.fechaInicio+"T"+(r.horaInicio||"00:00"));
       const yaOcurrio = fechaEvento < new Date();
@@ -7151,6 +7465,7 @@ function pintarTablaReunionesEventos(){
         <td><b>${escapeHtml(r.nombre)}</b>${r.descripcion?`<div style="font-size:12px;color:var(--muted);">${escapeHtml(r.descripcion)}</div>`:''}</td>
         <td>${fmtFecha(fechaEvento.getTime())}${horario?' — '+horario:''}</td>
         <td>${escapeHtml(r.ubicacion||'-')}</td>
+        <td style="font-size:12px;">${escapeHtml(nombresParticipantesReunion(r).join(", ")) || '-'}</td>
         <td>${yaOcurrio?'<span class="pill muted">Realizada</span>':'<span class="pill ok">Próxima</span>'}</td>
         <td style="white-space:nowrap;">
           <button class="btn small" onclick="abrirFormularioReunionEvento('${r.id}')">Editar</button>
@@ -7184,6 +7499,15 @@ function abrirFormularioReunionEvento(id){
         </div>
         <div class="field" id="wrapReuHoraFin" style="${r?.incluyeHoraFin?'':'display:none;'}"><label>Hora de finalización</label><input type="time" id="reuHoraFin" value="${r?.horaFin||''}"></div>
         <div class="field"><label>Ubicación</label><input id="reuUbicacion" value="${r?escapeHtml(r.ubicacion||''):''}" placeholder="Ej. Sala de juntas, dirección, enlace virtual..."></div>
+        <div class="field"><label>Participantes</label>
+          <div style="max-height:140px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+            ${colaboradoresCache.length ? colaboradoresCache.map(c => `<label style="display:flex;gap:8px;align-items:center;padding:2px 0;cursor:pointer;">
+              <input type="checkbox" class="chkParticipanteReunion" value="${c.id}" ${(r?.participantesIds||[]).includes(c.id)?'checked':''} style="width:auto;">
+              ${escapeHtml(c.nombre)}${c.cargo?` (${escapeHtml(c.cargo)})`:''}
+            </label>`).join("") : `<span style="color:var(--muted);font-size:12px;">Sin miembros registrados — puedes agregarlos en "Miembros".</span>`}
+          </div>
+        </div>
+        <div class="field"><label>Otros participantes (no registrados en Miembros, separados por coma)</label><input id="reuParticipantesOtros" value="${r?escapeHtml((r.participantesOtros||[]).join(', ')):''}" placeholder="Ej. Juan Pérez, Invitado externo"></div>
         <button class="btn primary" style="width:100%;margin-top:8px;" onclick="guardarReunionEventoForm('${r?r.id:''}')">Guardar</button>
       </div>
     </div>`;
@@ -7208,6 +7532,8 @@ async function guardarReunionEventoForm(id){
     incluyeHoraFin,
     horaFin: incluyeHoraFin ? document.getElementById("reuHoraFin").value : null,
     ubicacion: document.getElementById("reuUbicacion").value.trim(),
+    participantesIds: Array.from(document.querySelectorAll(".chkParticipanteReunion:checked")).map(el=>el.value),
+    participantesOtros: document.getElementById("reuParticipantesOtros").value.split(",").map(s=>s.trim()).filter(Boolean),
   };
   await guardarReunionEvento(datos, id||null);
   document.getElementById("modalReunionEventoHost").innerHTML = "";
@@ -7258,14 +7584,24 @@ function linkGoogleCalendarReunion(r){
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
+// Devuelve la lista de nombres de participantes de una reunión/evento —
+// combina los miembros elegidos de la lista de Miembros y los "otros"
+// escritos a mano.
+function nombresParticipantesReunion(r){
+  const deMiembros = (r.participantesIds||[]).map(id => colaboradoresCache.find(c=>c.id===id)?.nombre).filter(Boolean);
+  return [...deMiembros, ...(r.participantesOtros||[])];
+}
+
 function textoReunionEvento(r){
   const fechaEvento = new Date(r.fechaInicio+"T00:00:00");
   const horario = r.horaInicio ? `${r.horaInicio}${r.incluyeHoraFin && r.horaFin ? ' a '+r.horaFin : ''}` : 'Sin hora definida';
+  const participantes = nombresParticipantesReunion(r);
   let txt = `📅 ${r.nombre}\n\n`;
   if(r.descripcion) txt += `${r.descripcion}\n\n`;
   txt += `🗓️ Fecha: ${fmtFecha(fechaEvento.getTime())}\n`;
   txt += `🕐 Hora: ${horario}\n`;
   if(r.ubicacion) txt += `📍 Ubicación: ${r.ubicacion}\n`;
+  if(participantes.length) txt += `👥 Participantes: ${participantes.join(", ")}\n`;
   txt += `\n📆 Agregar a mi calendario: ${linkGoogleCalendarReunion(r)}\n`;
   return txt;
 }
