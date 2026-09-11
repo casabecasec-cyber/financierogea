@@ -6696,14 +6696,78 @@ function imprimirReporteActivos(modo){
       <tbody>${activosFijosCache.map(a=>`<tr><td><span class="chk"></span></td><td>${escapeHtml(a.codigo||'-')}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.ubicacion||'-')}</td><td></td><td></td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#888;">Sin activos</td></tr>'}</tbody>
       </table></body></html>`);
   } else {
+    // Totales generales
+    const totCosto = activosFijosCache.reduce((s,a)=>s+Number(a.costoCompra||0),0);
+    const totDepAcum = activosFijosCache.reduce((s,a)=>s+calcularDepreciacionActivo(a).depreciacionAcumulada,0);
+    const totValorLibros = activosFijosCache.reduce((s,a)=>s+calcularValorLibrosConMejoras(a).total,0);
+    const totMejoras = activosFijosCache.reduce((s,a)=>s+calcularValorLibrosConMejoras(a).totalMejoras,0);
+    const activosVigentes = activosFijosCache.filter(a=>a.estado!=="dado_de_baja").length;
+    const activosDeBaja = activosFijosCache.filter(a=>a.estado==="dado_de_baja").length;
+
+    // Desglose por categoría
+    const categorias = [...new Set(activosFijosCache.map(a=>a.categoria||"Sin categoría"))].sort();
+    const filasCategoria = categorias.map(cat => {
+      const deLaCategoria = activosFijosCache.filter(a=>(a.categoria||"Sin categoría")===cat);
+      const cCosto = deLaCategoria.reduce((s,a)=>s+Number(a.costoCompra||0),0);
+      const cDep = deLaCategoria.reduce((s,a)=>s+calcularDepreciacionActivo(a).depreciacionAcumulada,0);
+      const cValorLibros = deLaCategoria.reduce((s,a)=>s+calcularValorLibrosConMejoras(a).total,0);
+      return `<tr>
+        <td>${escapeHtml(cat)}</td>
+        <td class="num">${deLaCategoria.length}</td>
+        <td class="num">$${cCosto.toFixed(2)}</td>
+        <td class="num">$${cDep.toFixed(2)}</td>
+        <td class="num"><b>$${cValorLibros.toFixed(2)}</b></td>
+      </tr>`;
+    }).join("");
+
     win.document.write(`<html><head><title>Activos Fijos - ${escapeHtml(empresa?.nombre||'')}</title>
-      <style>body{font-family:Arial,sans-serif;padding:28px;color:#111;} table{width:100%;border-collapse:collapse;margin-top:12px;} th,td{border:1px solid #ccc;padding:8px;font-size:11px;text-align:left;} th{background:#f0f0f0;}</style>
+      <style>
+        @page { size: A4; margin: 16mm; }
+        body{font-family:Arial,Helvetica,sans-serif;padding:0;color:#1a1a1a;line-height:1.5;}
+        .portada-linea{height:4px;background:linear-gradient(90deg,#1a2733,#3a4a5c);margin-bottom:14px;}
+        .encabezado{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1a2733;padding-bottom:10px;margin-bottom:18px;}
+        .encabezado h1{font-size:19px;margin:0 0 4px;color:#1a2733;}
+        .encabezado p{margin:0;font-size:12px;color:#555;}
+        .tarjetas{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+        .tarjeta{flex:1;min-width:140px;background:#f5f7fa;border:1px solid #dde3e9;border-radius:8px;padding:12px 14px;}
+        .tarjeta .label{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#667;margin-bottom:4px;}
+        .tarjeta .valor{font-size:18px;font-weight:800;color:#1a2733;}
+        h2.seccion{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:#1a2733;border-bottom:1px solid #ccc;padding-bottom:5px;margin:22px 0 10px;}
+        table{width:100%;border-collapse:collapse;margin-top:6px;}
+        th,td{border:1px solid #ccc;padding:7px;font-size:11px;text-align:left;}
+        th{background:#eef2f6;font-size:10px;text-transform:uppercase;letter-spacing:.3px;}
+        td.num, th.num{text-align:right;}
+        tfoot td{font-weight:700;background:#eef2f6;}
+        .pie{margin-top:26px;font-size:9px;color:#8ea2b3;border-top:1px solid #d7dee6;padding-top:8px;}
+      </style>
       </head><body>
-      <h1>Reporte de Activos Fijos</h1>
-      <p><b>Empresa:</b> ${escapeHtml(empresa?.nombre||'')} &nbsp; <b>Fecha:</b> ${fmtFecha(new Date())}</p>
-      <table><thead><tr><th>Código</th><th>Activo</th><th>Categoría</th><th>Compra</th><th>Costo</th><th>Vida útil</th><th>Dep. acumulada</th><th>Valor en libros</th><th>Responsable</th></tr></thead>
-      <tbody>${activosFijosCache.map(a=>{ const dep=calcularDepreciacionActivo(a); const val=calcularValorLibrosConMejoras(a); return `<tr><td>${escapeHtml(a.codigo||'-')}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.categoria||'-')}</td><td>${fmtFecha(a.fechaCompra)}</td><td>$${Number(a.costoCompra||0).toFixed(2)}</td><td>${a.vidaUtilAnios} años</td><td>$${dep.depreciacionAcumulada.toFixed(2)}</td><td>$${val.total.toFixed(2)}${val.mejorasDetalle.length?` (incl. ${val.mejorasDetalle.length} mejora(s))`:''}</td><td>${escapeHtml(a.responsable||'-')}</td></tr>`; }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;">Sin activos</td></tr>'}</tbody>
-      </table></body></html>`);
+      <div class="portada-linea"></div>
+      <div class="encabezado">
+        <div><h1>Reporte Ejecutivo de Activos Fijos</h1><p>${escapeHtml(empresa?.nombre||'')}</p></div>
+        <p>Generado el ${fmtFecha(new Date())}</p>
+      </div>
+
+      <div class="tarjetas">
+        <div class="tarjeta"><div class="label">Total de activos</div><div class="valor">${activosFijosCache.length}</div></div>
+        <div class="tarjeta"><div class="label">Vigentes / dados de baja</div><div class="valor">${activosVigentes} / ${activosDeBaja}</div></div>
+        <div class="tarjeta"><div class="label">Costo total de compra</div><div class="valor">$${totCosto.toFixed(2)}</div></div>
+        <div class="tarjeta"><div class="label">Depreciación acumulada</div><div class="valor">$${totDepAcum.toFixed(2)}</div></div>
+        <div class="tarjeta"><div class="label">Valor en libros total</div><div class="valor">$${totValorLibros.toFixed(2)}</div></div>
+      </div>
+      ${totMejoras>0 ? `<p style="font-size:11px;color:#555;">El valor en libros total incluye <b>$${totMejoras.toFixed(2)}</b> en mejoras registradas sobre los activos.</p>` : ''}
+
+      <h2 class="seccion">Totales por categoría</h2>
+      <table><thead><tr><th>Categoría</th><th class="num">N° activos</th><th class="num">Costo total</th><th class="num">Dep. acumulada</th><th class="num">Valor en libros</th></tr></thead>
+      <tbody>${filasCategoria || '<tr><td colspan="5" style="text-align:center;color:#888;">Sin activos</td></tr>'}</tbody>
+      <tfoot><tr><td>TOTAL GENERAL</td><td class="num">${activosFijosCache.length}</td><td class="num">$${totCosto.toFixed(2)}</td><td class="num">$${totDepAcum.toFixed(2)}</td><td class="num">$${totValorLibros.toFixed(2)}</td></tr></tfoot>
+      </table>
+
+      <h2 class="seccion">Detalle por activo</h2>
+      <table><thead><tr><th>Código</th><th>Activo</th><th>Categoría</th><th>Compra</th><th class="num">Costo</th><th>Vida útil</th><th class="num">Dep. acumulada</th><th class="num">Valor en libros</th><th>Responsable</th></tr></thead>
+      <tbody>${activosFijosCache.map(a=>{ const dep=calcularDepreciacionActivo(a); const val=calcularValorLibrosConMejoras(a); return `<tr><td>${escapeHtml(a.codigo||'-')}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.categoria||'-')}</td><td>${fmtFecha(a.fechaCompra)}</td><td class="num">$${Number(a.costoCompra||0).toFixed(2)}</td><td>${a.vidaUtilAnios} años</td><td class="num">$${dep.depreciacionAcumulada.toFixed(2)}</td><td class="num">$${val.total.toFixed(2)}${val.mejorasDetalle.length?` (incl. ${val.mejorasDetalle.length} mejora(s))`:''}</td><td>${escapeHtml(a.responsable||'-')}</td></tr>`; }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;">Sin activos</td></tr>'}</tbody>
+      </table>
+      <div class="pie">Reporte generado por Control Documental.</div>
+      </body></html>`);
   }
   win.document.close(); win.focus(); win.print();
 }

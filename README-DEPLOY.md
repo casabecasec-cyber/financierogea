@@ -226,6 +226,13 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: reporte ejecutivo de Activos Fijos con totales generales y por categoría** — el
+  reporte imprimible (el financiero, no el de toma física) ahora tiene formato profesional
+  (encabezado con línea de color, tarjetas de resumen) con: total de activos, vigentes vs. dados
+  de baja, costo total de compra, depreciación acumulada total y valor en libros total. Debajo,
+  una tabla de **totales por categoría** (N° de activos, costo, depreciación y valor en libros
+  de cada categoría, con fila de TOTAL GENERAL), y después el detalle por activo de siempre.
+
 - **🔴 Nuevo: 4° nivel de permiso "Puede agregar, no editar/eliminar"** — en Administración de
   Usuarios, además de Sin acceso/Solo lectura/Acceso completo, ahora hay un nivel intermedio:
   el usuario puede **guardar información nueva** en esa área, pero **no puede editar ni
