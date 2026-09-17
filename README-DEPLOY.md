@@ -226,6 +226,34 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: "Valor neto a pagar" en los informes individuales de retención (Dividendos →
+  Escenarios) restaba la retención del valor registrado completo, en vez de la base imponible**
+  — con franja exenta, la retención solo se calcula sobre la base imponible (lo que supera la
+  franja), así que el valor neto a pagar debe ser **base imponible − retención**, no
+  **valor registrado − retención**. Con el ejemplo real (valor registrado $57,731.58, franja
+  exenta $1,446.00, base imponible $56,285.58, retención $6,754.27), el valor neto a pagar
+  correcto es **$49,531.31** (antes salía $50,977.31, incorrecto). Afecta el informe generado
+  por IA y el registro guardado de la retención.
+
+- **Nuevo: "💵 Ingreso de Caja"** en Documentos Legales — comprobante profesional de ingreso de
+  caja, con desglose por forma de pago: **efectivo, cheque (con N° de cheque y banco) y
+  transferencia (con N° de referencia y banco)**, todo en el mismo comprobante y sumando
+  automáticamente el total recibido. Incluye N° de comprobante, recibido de, C.I./RUC (con
+  validación real), concepto, observaciones, y firmas de quien recibe y quien entrega. Se
+  guarda en el historial y se puede exportar a CSV, igual que los demás documentos.
+
+- **Nuevo: cédula del cónyuge en Pagaré y Letra de Cambio** — cuando se solicita la firma del
+  cónyuge (deudor/librado casado o en unión de hecho), ahora también se pide su **número de
+  cédula**, con la misma validación real (módulo 10) que el resto de identificaciones — se
+  incluye tanto en la cláusula de garantía conyugal como en su línea de firma en el documento
+  generado.
+
+- **Corregido: ahora se puede elegir MÁS DE UN miembro responsable por empresa** — antes era un
+  selector de uno solo; ahora es una lista de checkboxes donde puedes marcar varios miembros a
+  la vez, más un campo de texto libre aparte (separado por coma) para responsables que no estén
+  registrados en Miembros. Al reabrir una empresa para editar, cada campo muestra correctamente
+  lo suyo (los miembros marcados y el texto libre por separado), sin duplicarse entre sí.
+
 - **Nuevo: opción de firma del cónyuge también en Letra de Cambio** — el Pagaré ya tenía esto
   (estado civil del deudor + pregunta "¿Solicitar firma del cónyuge?"); ahora Letra de Cambio
   también lo tiene, para el **Librado** (quien debe pagar): si su estado civil es "Casado/a" o

@@ -175,6 +175,61 @@ tr:hover td{background:var(--panel2);}
 .toast-success{border-color:var(--accent2);}
 .toast-error{border-color:var(--danger);}
 .toast-warning{border-color:var(--warn);}
+
+/* ══ MÓDULOS AUDITORÍA PROFESIONAL Y TRIBUTACIÓN (variables mapeadas) ══ */
+#auditoriaProRoot, #tributacionRoot {
+  --bg-card2:var(--panel2); --gold:var(--accent); --gold-dim:var(--accent);
+  --text-primary:var(--text); --text-muted:var(--muted); --text-secondary:var(--muted);
+  --bg-hover:var(--panel2); --emerald:var(--accent2); --bg-main:var(--bg); --bg-deep:var(--bg);
+  --font-mono:'Courier New',monospace;
+}
+.trib-tabs,.doc-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+.trib-tab{padding:8px 16px;background:var(--panel);border:1px solid var(--border);color:var(--muted);border-radius:20px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;}
+.trib-tab.active{background:var(--accent);color:#0f1720;border-color:var(--accent);}
+.trib-content{display:none;}
+.trib-content.active{display:block;}
+table.trib-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;}
+table.trib-table th{background:var(--bg);color:var(--accent);font-weight:700;padding:10px 14px;text-align:left;border-bottom:2px solid var(--border);font-size:.75rem;text-transform:uppercase;}
+table.trib-table td{padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);vertical-align:top;}
+table.trib-table tr:hover td{background:var(--panel2);}
+table.trib-table .pct{font-family:'Courier New',monospace;font-weight:700;color:var(--accent);text-align:center;}
+
+.ap-tipo-card{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:18px;cursor:pointer;transition:all .2s;}
+.ap-tipo-card:hover,.ap-tipo-card.activo{border-color:var(--accent);background:rgba(59,167,255,.08);}
+.ap-tipo-icon{font-size:2rem;margin-bottom:8px;}
+.ap-tipo-nombre{font-size:.95rem;font-weight:700;color:var(--text);}
+.ap-tipo-desc{font-size:.75rem;color:var(--muted);margin-top:4px;line-height:1.5;}
+.ap-fase{background:var(--panel2);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden;}
+.ap-fase-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;}
+.ap-fase-header:hover{background:var(--panel);}
+.ap-fase-numero{font-size:.65rem;font-weight:700;padding:3px 8px;border-radius:10px;background:rgba(59,167,255,.15);color:var(--accent);text-transform:uppercase;letter-spacing:.5px;}
+.ap-fase-titulo{font-size:.88rem;font-weight:600;color:var(--text);margin-left:10px;flex:1;}
+.ap-fase-estado{font-size:.7rem;padding:3px 10px;border-radius:10px;font-weight:700;}
+.ap-fase-estado.pendiente{background:rgba(99,102,241,.15);color:#8b8bf5;}
+.ap-fase-estado.en-proceso{background:rgba(232,179,57,.15);color:var(--warn);}
+.ap-fase-estado.completada{background:rgba(34,197,139,.15);color:var(--accent2);}
+.ap-fase-body{display:none;padding:0 16px 16px;}
+.ap-fase-body.open{display:block;}
+.ap-cedula{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:'Courier New',monospace;font-size:.76rem;}
+.ap-cedula-header{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid var(--accent);}
+.ap-cedula-field{font-size:.7rem;}
+.ap-cedula-label{color:var(--muted);font-family:inherit;}
+.ap-cedula-value{color:var(--text);font-weight:700;}
+.ap-cedula-table{width:100%;border-collapse:collapse;font-size:.72rem;}
+.ap-cedula-table th{background:var(--panel2);color:var(--muted);text-transform:uppercase;font-size:.62rem;letter-spacing:.4px;padding:6px 8px;border:1px solid var(--border);}
+.ap-cedula-table td{padding:6px 8px;border:1px solid var(--border);color:var(--muted);}
+.ap-cedula-table td.num{text-align:right;font-family:'Courier New',monospace;}
+.ap-cedula-table tr.total{font-weight:700;background:rgba(59,167,255,.06);}
+.ap-marca{display:inline-block;width:18px;height:18px;background:var(--accent);color:#0f1720;border-radius:50%;font-size:.6rem;font-weight:700;text-align:center;line-height:18px;}
+.ap-hallazgo{padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:.8rem;}
+.ap-hallazgo.critico{background:rgba(239,90,90,.1);border-left:3px solid var(--danger);}
+.ap-hallazgo.moderado{background:rgba(232,179,57,.1);border-left:3px solid var(--warn);}
+.ap-hallazgo.leve{background:rgba(99,102,241,.1);border-left:3px solid #8b8bf5;}
+.ap-hallazgo.ok{background:rgba(34,197,139,.1);border-left:3px solid var(--accent2);}
+.benford-bar{display:flex;align-items:flex-end;gap:4px;height:80px;margin-top:10px;}
+.benford-col{flex:1;display:flex;flex-direction:column;align-items:center;}
+.benford-bar-real{background:var(--accent);border-radius:3px 3px 0 0;min-height:2px;}
+.benford-bar-esp{background:rgba(34,197,139,.3);border-radius:3px 3px 0 0;min-height:2px;}
 </style>
 </head>
 <body>
@@ -1909,13 +1964,15 @@ async function abrirModalEmpresa(id){
           </select>
         </div>
         <div class="field"><label>Actividad económica</label><input id="empActividad" value="${emp?escapeHtml(emp.actividad||''):''}"></div>
-        <div class="field"><label>Miembro responsable de la empresa</label>
-          <select id="empResponsableId">
-            <option value="">-- Ninguno de la lista de Miembros / escribir abajo --</option>
-            ${colaboradoresCache.map(c=>`<option value="${c.id}" ${emp?.responsableId===c.id?'selected':''}>${escapeHtml(c.nombre)}${c.cargo?` (${escapeHtml(c.cargo)})`:''}</option>`).join("")}
-          </select>
+        <div class="field"><label>Miembro(s) responsable(s) de la empresa</label>
+          <div style="max-height:140px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+            ${colaboradoresCache.length ? colaboradoresCache.map(c => `<label style="display:flex;gap:8px;align-items:center;padding:2px 0;cursor:pointer;">
+              <input type="checkbox" class="chkResponsableEmpresa" value="${c.id}" ${(emp?.responsablesIds||[]).includes(c.id)?'checked':''} style="width:auto;">
+              ${escapeHtml(c.nombre)}${c.cargo?` (${escapeHtml(c.cargo)})`:''}
+            </label>`).join("") : `<span style="color:var(--muted);font-size:12px;">Sin miembros registrados — puedes agregarlos en "Miembros".</span>`}
+          </div>
         </div>
-        <div class="field"><label>Responsable (texto libre, si no está registrado en Miembros)</label><input id="empResponsable" value="${emp?escapeHtml(emp.responsable||''):''}"></div>
+        <div class="field"><label>Otro(s) responsable(s) (texto libre, si no están registrados en Miembros)</label><input id="empResponsable" value="${emp?escapeHtml((emp.responsablesOtros||[]).join(', ')):''}" placeholder="Separados por coma si son varios"></div>
         <div class="grid2">
           <div class="field" style="flex-direction:row;align-items:center;gap:8px;">
             <input type="checkbox" id="empObligada" style="width:auto;" ${emp?.obligadaContabilidad?'checked':''}>
@@ -1956,11 +2013,13 @@ async function guardarEmpresaForm(id){
     region: document.getElementById("empRegion").value,
     clasificacionSri: document.getElementById("empClasificacion").value,
     actividad: document.getElementById("empActividad").value.trim(),
-    responsableId: document.getElementById("empResponsableId").value || null,
+    responsablesIds: Array.from(document.querySelectorAll(".chkResponsableEmpresa:checked")).map(el=>el.value),
+    responsablesOtros: document.getElementById("empResponsable").value.split(",").map(s=>s.trim()).filter(Boolean),
     responsable: (() => {
-      const rid = document.getElementById("empResponsableId").value;
-      if(rid){ const m = colaboradoresCache.find(c=>c.id===rid); if(m) return m.nombre; }
-      return document.getElementById("empResponsable").value.trim();
+      const idsElegidos = Array.from(document.querySelectorAll(".chkResponsableEmpresa:checked")).map(el=>el.value);
+      const nombresDeMiembros = idsElegidos.map(id => colaboradoresCache.find(c=>c.id===id)?.nombre).filter(Boolean);
+      const otros = document.getElementById("empResponsable").value.split(",").map(s=>s.trim()).filter(Boolean);
+      return [...nombresDeMiembros, ...otros].join(", ");
     })(),
     obligadaContabilidad: document.getElementById("empObligada").checked,
     reportaUafe: document.getElementById("empUafe").checked,
@@ -3390,6 +3449,7 @@ async function descargarWordElaboracion(categoria, id){
    ========================================================================= */
 const DOC_LEGAL_TIPOS = {
   pagare: "📜 Pagaré", letra: "📋 Letra de Cambio", recibo: "🧾 Recibo",
+  ingresocaja: "💵 Ingreso de Caja",
   servicios: "💼 Contrato Servicios", alquiler: "🏠 Contrato Alquiler",
   trabajo: "👷 Contrato Trabajo", mutuoempresas: "🏢 Mutuo entre Empresas",
   mutuopersonas: "🤝 Mutuo entre Personas",
@@ -3461,6 +3521,8 @@ async function renderDocumentosLegales(){
             <div class="form-group" id="pag-deudor-conyuge-nombre-box" style="display:none">
               <label>Nombre del Cónyuge</label>
               <input type="text" id="pag-deudor-conyuge" placeholder="Nombre completo del cónyuge">
+              <label style="margin-top:8px;">C.I. del Cónyuge</label>
+              <input type="text" id="pag-deudor-conyuge-ci" class="ci-validar" placeholder="10 dígitos">
             </div>
             <div class="form-group"><label>Domicilio del Deudor</label><input type="text" id="pag-domicilio" placeholder="Dirección completa"></div>
 
@@ -3548,6 +3610,8 @@ async function renderDocumentosLegales(){
             <div class="form-group" id="let-librado-conyuge-nombre-box" style="display:none">
               <label>Nombre del Cónyuge</label>
               <input type="text" id="let-librado-conyuge" placeholder="Nombre completo del cónyuge">
+              <label style="margin-top:8px;">C.I. del Cónyuge</label>
+              <input type="text" id="let-librado-conyuge-ci" class="ci-validar" placeholder="10 dígitos">
             </div>
             <div class="form-group"><label>Beneficiario</label><input type="text" id="let-beneficiario" placeholder="A la orden de..."></div>
             <div class="form-group"><label>C.I./RUC Beneficiario</label><input type="text" id="let-ci-beneficiario" class="ci-validar"></div>
@@ -3611,6 +3675,46 @@ async function renderDocumentosLegales(){
             </div>
           </div>
           <div class="doc-preview" id="recibo-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
+        </div>
+      </div>
+
+      <!-- INGRESO DE CAJA -->
+      <div class="doc-content" id="doc-ingresocaja">
+        <div class="doc-literatura">
+          <strong>Base Legal:</strong> El comprobante de ingreso de caja es un documento de control interno contable que respalda el registro de un cobro efectivamente recibido, conforme a los principios de la técnica contable (Normas Ecuatorianas de Contabilidad y NIIF para PYMES). Sustenta el asiento de caja/bancos y debe conservarse como parte del archivo contable de la empresa (Art. 39 del Reglamento a la Ley de Régimen Tributario Interno, sobre respaldo de registros contables). Cuando el pago se reciba mediante cheque o transferencia, se recomienda adjuntar el comprobante bancario correspondiente.
+        </div>
+        <div class="doc-form-preview">
+          <div class="doc-form">
+            <h3>Datos del Ingreso de Caja</h3>
+            <div class="form-group"><label>Ciudad</label><input type="text" id="ic-ciudad" value="Quito"></div>
+            <div class="form-group"><label>Fecha</label><input type="date" id="ic-fecha"></div>
+            <div class="form-group"><label>N° de comprobante</label><input type="text" id="ic-numero" placeholder="Ej. IC-2026-001"></div>
+            <div class="form-group"><label>Recibido de</label><input type="text" id="ic-de" placeholder="Nombre o razón social de quien paga"></div>
+            <div class="form-group"><label>C.I./RUC de quien paga</label><input type="text" id="ic-ci-de" class="ci-validar" placeholder="10 dígitos (cédula) o 13 (RUC)"></div>
+            <div class="form-group"><label>Concepto</label><input type="text" id="ic-concepto" placeholder="Descripción del ingreso"></div>
+            <h3 style="margin-top:16px;">Desglose por forma de pago</h3>
+            <div class="form-group"><label>Efectivo (USD)</label><input type="number" id="ic-efectivo" step="0.01" value="0"></div>
+            <div class="form-group"><label>Cheque (USD)</label><input type="number" id="ic-cheque" step="0.01" value="0"></div>
+            <div class="form-group" id="ic-cheque-detalle-box">
+              <label>N° de cheque</label><input type="text" id="ic-cheque-numero" placeholder="N° de cheque">
+              <label style="margin-top:8px;">Banco (cheque)</label><input type="text" id="ic-cheque-banco" placeholder="Nombre del banco">
+            </div>
+            <div class="form-group"><label>Transferencia (USD)</label><input type="number" id="ic-transferencia" step="0.01" value="0"></div>
+            <div class="form-group" id="ic-transferencia-detalle-box">
+              <label>N° de transferencia / referencia</label><input type="text" id="ic-transferencia-numero" placeholder="N° de referencia">
+              <label style="margin-top:8px;">Banco (transferencia)</label><input type="text" id="ic-transferencia-banco" placeholder="Nombre del banco">
+            </div>
+            <div class="form-group"><label>Recibido por (nombre)</label><input type="text" id="ic-receptor" placeholder="Nombre de quien recibe"></div>
+            <div class="form-group"><label>Cargo de quien recibe</label><input type="text" id="ic-receptor-cargo" placeholder="Ej. Cajero, Tesorero..."></div>
+            <div class="form-group"><label>Observaciones (opcional)</label><input type="text" id="ic-observaciones"></div>
+            <div class="doc-btn-row">
+              <button class="btn-calc" onclick="generarIngresoCaja()">👁 Vista Previa</button>
+              <button class="btn-secondary" onclick="imprimirDocumento('ingresocaja-preview')">🖨 Imprimir</button>
+              <button class="btn-secondary" onclick="exportarDocCSV('ingresocaja')">⬇ CSV</button>
+              <button class="btn-calc" onclick="terminarYGuardarDocumento('ingresocaja','Ingreso de Caja')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+            </div>
+          </div>
+          <div class="doc-preview" id="ingresocaja-preview"><div class="doc-placeholder">Complete los datos y haga clic en Vista Previa</div></div>
         </div>
       </div>
 
@@ -3927,6 +4031,7 @@ async function eliminarDocLegalGuardado(tipo, id){
 async function guardarHistorialDocumento(tipoDoc, descripcion, datos){
   const previewMap = {
     pagare:"pagare-preview", letra:"letra-preview", recibo:"recibo-preview",
+    ingresocaja:"ingresocaja-preview",
     servicios:"servicios-preview", alquiler:"alquiler-preview", trabajo:"trabajo-preview",
     mutuoempresas:"mutuoempresas-preview", mutuopersonas:"mutuopersonas-preview",
   };
@@ -4111,6 +4216,7 @@ function generarPagare() {
   const deudorCivil = document.getElementById('pag-deudor-civil')?.value || 'soltero';
   const deudorConyugeFirma = document.getElementById('pag-deudor-conyuge-firma')?.value || 'no';
   const deudorConyuge = document.getElementById('pag-deudor-conyuge')?.value || '';
+  const deudorConyugeCi = document.getElementById('pag-deudor-conyuge-ci')?.value.replace(/\D/g,'') || '';
 
   const acreedorTipo = document.getElementById('pag-acreedor-tipo')?.value || 'natural';
   const acreedor = document.getElementById('pag-acreedor').value;
@@ -4139,6 +4245,10 @@ function generarPagare() {
   if (acreedorTipo === 'juridica' && acreedorRepLegCi) {
     const v = validarCedulaEcuador(acreedorRepLegCi);
     if (!v.valido) { toast('Cédula del representante legal (acreedor) inválida: ' + v.msg, 'error'); return; }
+  }
+  if (deudorConyugeFirma === 'si' && deudorConyugeCi) {
+    const v = validarCedulaEcuador(deudorConyugeCi);
+    if (!v.valido) { toast('Cédula del cónyuge inválida: ' + v.msg, 'error'); return; }
   }
 
   const letras = montoEnLetrasUSD(monto);
@@ -4177,10 +4287,10 @@ function generarPagare() {
   let conyugeText = '';
   let conyugeFirmaHTML = '';
   if (deudorTipo === 'natural' && (deudorCivil === 'casado' || deudorCivil === 'union') && deudorConyugeFirma === 'si' && deudorConyuge) {
-    conyugeText = `<p>Comparece además <strong>${deudorConyuge}</strong>, en calidad de cónyuge del deudor, quien presta su consentimiento expreso a la presente obligación conforme al Art. 180 y siguientes del Código Civil, garantizando solidariamente el cumplimiento de la misma respecto de los bienes de la sociedad conyugal.</p>`;
+    conyugeText = `<p>Comparece además <strong>${deudorConyuge}</strong>${deudorConyugeCi ? ` (C.I.: <strong>${deudorConyugeCi}</strong>)` : ''}, en calidad de cónyuge del deudor, quien presta su consentimiento expreso a la presente obligación conforme al Art. 180 y siguientes del Código Civil, garantizando solidariamente el cumplimiento de la misma respecto de los bienes de la sociedad conyugal.</p>`;
     conyugeFirmaHTML = `<div class="doc-firma">
         <br><br><br>
-        <div class="doc-firma-line">${deudorConyuge}<br><em>Cónyuge del Deudor</em></div>
+        <div class="doc-firma-line">${deudorConyuge}<br>C.I.: ${deudorConyugeCi || '___'}<br><em>Cónyuge del Deudor</em></div>
       </div>`;
   }
 
@@ -4254,7 +4364,7 @@ function generarPagare() {
   toast('Pagaré generado correctamente', 'success');
   guardarHistorialDocumento('pagare', deudor + ' → ' + acreedor, {
     ciudad, fecha, monto, vencimiento, tasa, interesDesde,
-    deudorTipo, deudor, ciDeudor, deudorRepLeg, deudorCivil, deudorConyuge,
+    deudorTipo, deudor, ciDeudor, deudorRepLeg, deudorCivil, deudorConyuge, deudorConyugeCi,
     acreedorTipo, acreedor, ciAcreedor, acreedorRepLeg,
   });
 }
@@ -4271,6 +4381,7 @@ function generarLetra() {
   const libradoCivil = document.getElementById('let-librado-civil')?.value || 'soltero';
   const libradoConyugeFirma = document.getElementById('let-librado-conyuge-firma')?.value || 'no';
   const libradoConyuge = document.getElementById('let-librado-conyuge')?.value || '';
+  const libradoConyugeCi = document.getElementById('let-librado-conyuge-ci')?.value.replace(/\D/g,'') || '';
   const beneficiario = document.getElementById('let-beneficiario').value;
   const ciBeneficiario = document.getElementById('let-ci-beneficiario')?.value.replace(/\D/g,'') || '';
   const domicilio = document.getElementById('let-domicilio').value;
@@ -4285,6 +4396,10 @@ function generarLetra() {
       const v = validarIdentificacionEC(valor);
       if (!v.valido) { toast(`Cédula/RUC del ${label} inválido: ` + v.msg, 'error'); return; }
     }
+  }
+  if (libradoConyugeFirma === 'si' && libradoConyugeCi) {
+    const v = validarCedulaEcuador(libradoConyugeCi);
+    if (!v.valido) { toast('Cédula del cónyuge inválida: ' + v.msg, 'error'); return; }
   }
 
   const letras = montoEnLetrasUSD(monto);
@@ -4305,10 +4420,10 @@ function generarLetra() {
   let conyugeTextLetra = '';
   let conyugeFirmaHTMLLetra = '';
   if ((libradoCivil === 'casado' || libradoCivil === 'union') && libradoConyugeFirma === 'si' && libradoConyuge) {
-    conyugeTextLetra = `<p>Comparece además <strong>${libradoConyuge}</strong>, en calidad de cónyuge del librado, quien presta su consentimiento expreso a la presente obligación conforme al Art. 180 y siguientes del Código Civil, garantizando solidariamente el cumplimiento de la misma respecto de los bienes de la sociedad conyugal.</p>`;
+    conyugeTextLetra = `<p>Comparece además <strong>${libradoConyuge}</strong>${libradoConyugeCi ? ` (C.I.: <strong>${libradoConyugeCi}</strong>)` : ''}, en calidad de cónyuge del librado, quien presta su consentimiento expreso a la presente obligación conforme al Art. 180 y siguientes del Código Civil, garantizando solidariamente el cumplimiento de la misma respecto de los bienes de la sociedad conyugal.</p>`;
     conyugeFirmaHTMLLetra = `<div class="doc-firma">
         <br><br><br>
-        <div class="doc-firma-line">${libradoConyuge}<br><em>Cónyuge del Librado</em></div>
+        <div class="doc-firma-line">${libradoConyuge}<br>C.I.: ${libradoConyugeCi || '___'}<br><em>Cónyuge del Librado</em></div>
       </div>`;
   }
 
@@ -4362,7 +4477,7 @@ function generarLetra() {
   guardarHistorialDocumento('letra', librador + ' → ' + librado, {
     ciudad, fecha, monto, vencimiento, librador, ciLibrador, librado, ciLibrado,
     beneficiario, ciBeneficiario, domicilio, sinProtesto, mediacion,
-    libradoCivil, libradoConyugeFirma, libradoConyuge,
+    libradoCivil, libradoConyugeFirma, libradoConyuge, libradoConyugeCi,
   });
 }
 
@@ -4403,6 +4518,85 @@ function generarRecibo() {
     </div>
   `;
   toast('Recibo generado', 'success');
+}
+
+function generarIngresoCaja() {
+  const ciudad = document.getElementById('ic-ciudad').value;
+  const fecha = document.getElementById('ic-fecha').value;
+  const numero = document.getElementById('ic-numero').value.trim();
+  const de = document.getElementById('ic-de').value.trim();
+  const ciDe = document.getElementById('ic-ci-de').value.replace(/\D/g,'');
+  const concepto = document.getElementById('ic-concepto').value.trim();
+  const efectivo = parseFloat(document.getElementById('ic-efectivo').value) || 0;
+  const cheque = parseFloat(document.getElementById('ic-cheque').value) || 0;
+  const chequeNumero = document.getElementById('ic-cheque-numero').value.trim();
+  const chequeBanco = document.getElementById('ic-cheque-banco').value.trim();
+  const transferencia = parseFloat(document.getElementById('ic-transferencia').value) || 0;
+  const transferenciaNumero = document.getElementById('ic-transferencia-numero').value.trim();
+  const transferenciaBanco = document.getElementById('ic-transferencia-banco').value.trim();
+  const receptor = document.getElementById('ic-receptor').value.trim();
+  const receptorCargo = document.getElementById('ic-receptor-cargo').value.trim();
+  const observaciones = document.getElementById('ic-observaciones').value.trim();
+
+  if (!de || !concepto) { toast('Complete los campos obligatorios (Recibido de, Concepto)', 'error'); return; }
+  const total = efectivo + cheque + transferencia;
+  if (total <= 0) { toast('Ingresa al menos un monto en alguna forma de pago', 'error'); return; }
+  if (cheque > 0 && !chequeNumero) { toast('Ingresa el N° de cheque', 'error'); return; }
+  if (transferencia > 0 && !transferenciaNumero) { toast('Ingresa el N° de transferencia/referencia', 'error'); return; }
+  if (ciDe) {
+    const v = validarIdentificacionEC(ciDe);
+    if (!v.valido) { toast('Cédula/RUC inválido: ' + v.msg, 'error'); return; }
+  }
+
+  const letras = montoEnLetrasUSD(total);
+  const fI = fmtDate(fecha);
+
+  const filasFormaPago = [];
+  if (efectivo > 0) filasFormaPago.push(`<tr><td style="padding:4px;">Efectivo</td><td style="padding:4px;"></td><td class="num" style="text-align:right;padding:4px;">$${efectivo.toFixed(2)}</td></tr>`);
+  if (cheque > 0) filasFormaPago.push(`<tr><td style="padding:4px;">Cheque</td><td style="padding:4px;">N° ${chequeNumero || '___'}${chequeBanco?' · '+chequeBanco:''}</td><td class="num" style="text-align:right;padding:4px;">$${cheque.toFixed(2)}</td></tr>`);
+  if (transferencia > 0) filasFormaPago.push(`<tr><td style="padding:4px;">Transferencia</td><td style="padding:4px;">N° ${transferenciaNumero || '___'}${transferenciaBanco?' · '+transferenciaBanco:''}</td><td class="num" style="text-align:right;padding:4px;">$${transferencia.toFixed(2)}</td></tr>`);
+
+  document.getElementById('ingresocaja-preview').innerHTML = `
+    <div class="doc-header">
+      <div class="doc-title">INGRESO DE CAJA</div>
+      <div class="doc-subtitle">${numero ? 'Comprobante N° ' + numero + ' · ' : ''}${ciudad}, ${fI}</div>
+    </div>
+    <div class="doc-monto-box">VALOR TOTAL RECIBIDO: USD $ ${total.toLocaleString('es-EC', {minimumFractionDigits:2})}</div>
+    <div class="doc-body">
+      <p>RECIBIDO DE: <strong>${de}</strong>${ciDe ? ` · C.I./RUC: <strong>${ciDe}</strong>` : ''}</p>
+      <p>LA CANTIDAD DE: <em>${letras}</em></p>
+      <p>POR CONCEPTO DE: <strong>${concepto}</strong></p>
+      <br>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+        <thead><tr style="border-bottom:1px solid #333;"><th style="text-align:left;padding:4px;">Forma de pago</th><th style="text-align:left;padding:4px;">Referencia</th><th style="text-align:right;padding:4px;">Monto</th></tr></thead>
+        <tbody>${filasFormaPago.join('')}</tbody>
+        <tfoot><tr style="border-top:2px solid #333;font-weight:bold;"><td colspan="2" style="padding:4px;">TOTAL</td><td style="text-align:right;padding:4px;">$${total.toFixed(2)}</td></tr></tfoot>
+      </table>
+      ${observaciones ? `<br><p><strong>Observaciones:</strong> ${observaciones}</p>` : ''}
+      <br>
+      <p>Y para constancia de lo cual, se emite el presente comprobante en la ciudad de ${ciudad}, a ${fI}.</p>
+    </div>
+    <div class="doc-firma-row">
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${receptor || '___'}${receptorCargo ? '<br>'+receptorCargo : ''}<br><em>Recibí conforme · Caja</em></div>
+      </div>
+      <div class="doc-firma">
+        <br><br><br>
+        <div class="doc-firma-line">${de}<br>C.I./RUC: ${ciDe || '___'}<br><em>Entregué conforme</em></div>
+      </div>
+    </div>
+    <div class="doc-footer">
+      Documento generado por Control Documental · ${new Date().toLocaleDateString('es-EC')} · Comprobante de control interno — consérvese como respaldo contable.
+    </div>
+  `;
+  toast('Ingreso de caja generado', 'success');
+  guardarHistorialDocumento('ingresocaja', de + ' - $' + total.toFixed(2), {
+    ciudad, fecha, numero, de, ciDe, concepto,
+    efectivo, cheque, chequeNumero, chequeBanco,
+    transferencia, transferenciaNumero, transferenciaBanco,
+    total, receptor, receptorCargo, observaciones,
+  });
 }
 
 function imprimirDocumento(previewId) {
@@ -4716,6 +4910,7 @@ function generarMutuoPersonas() {
 function terminarYGuardarDocumento(tipoDoc, etiqueta) {
   const previewMap = {
     pagare:'pagare-preview', letra:'letra-preview', recibo:'recibo-preview',
+    ingresocaja:'ingresocaja-preview',
     servicios:'servicios-preview', alquiler:'alquiler-preview', trabajo:'trabajo-preview',
     mutuoempresas:'mutuoempresas-preview', mutuopersonas:'mutuopersonas-preview',
   };
@@ -4774,6 +4969,16 @@ function exportarDocCSV(tipo) {
       ['Monto USD', g('rec-monto')], ['Concepto', g('rec-concepto')],
       ['Forma de Pago', g('rec-forma')], ['Receptor', g('rec-receptor')],
       ['CI/RUC Receptor', g('rec-ci-receptor')]];
+  } else if (tipo === 'ingresocaja') {
+    rows = [['Campo','Valor'],
+      ['Ciudad', g('ic-ciudad')], ['Fecha', g('ic-fecha')], ['N° Comprobante', g('ic-numero')],
+      ['Recibido de', g('ic-de')], ['CI/RUC', g('ic-ci-de')], ['Concepto', g('ic-concepto')],
+      ['Efectivo', g('ic-efectivo')], ['Cheque', g('ic-cheque')],
+      ['N° Cheque', g('ic-cheque-numero')], ['Banco Cheque', g('ic-cheque-banco')],
+      ['Transferencia', g('ic-transferencia')],
+      ['N° Transferencia', g('ic-transferencia-numero')], ['Banco Transferencia', g('ic-transferencia-banco')],
+      ['Recibido por', g('ic-receptor')], ['Cargo Receptor', g('ic-receptor-cargo')],
+      ['Observaciones', g('ic-observaciones')]];
   } else if (tipo === 'servicios') {
     rows = [['Campo','Valor'],
       ['Ciudad', g('srv-ciudad')], ['Fecha', g('srv-fecha')],
@@ -9265,7 +9470,7 @@ function calcularRetencionAccionista(a, anio){
   const franjaRestante = Math.max(0, franja - franjaUsadaAnticipo);
   const baseImponible = Math.max(0, (a.valorPagar||0) - franjaRestante);
   const retencion = baseImponible * tarifa;
-  const neto = (a.valorPagar||0) - retencion;
+  const neto = baseImponible - retencion;
   return { franja, franjaRestante, baseImponible, retencion, neto, tarifa };
 }
 
