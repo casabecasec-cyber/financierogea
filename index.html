@@ -9934,16 +9934,32 @@ function pintarFormaPagoRetencion(id){
         <button class="btn small" onclick="agregarPagoBancoRetencion('${id}')">+ Agregar cheque/transferencia</button>
       ` : ''}
       ${r.metodoPago==="cuentasPorPagar" ? `
-        <p class="helpNote" style="margin-top:6px;">El monto se va acumulando cada vez que agregas una cuenta por pagar nueva (útil si el pago se hace en varias partes con el tiempo).</p>
+        <p class="helpNote" style="margin-top:6px;">El monto se va acumulando cada vez que agregas una cuenta por pagar nueva (útil si el pago se hace en varias partes con el tiempo). Si necesitas corregir el total acumulado (por ejemplo, tras recalcular una retención), usa "Corregir monto" para escribir el valor correcto directamente, en vez de sumar.</p>
         <div class="field"><label>Cuentas por pagar acumuladas hasta ahora</label>
-          <div style="display:flex;gap:6px;align-items:center;">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <b style="font-size:14px;">$${(r.cuentasPorPagarAcumulado||0).toFixed(2)}</b>
             <input type="number" id="montoNuevaCuentaPorPagar_${id}" style="width:110px;" placeholder="Monto a agregar">
             <button class="btn small" onclick="agregarCuentaPorPagarRetencion('${id}')">+ Agregar</button>
+            <button class="btn small" onclick="corregirCuentaPorPagarRetencion('${id}')">✏️ Corregir monto</button>
           </div>
         </div>
       ` : ''}
     </div>`;
+}
+
+async function corregirCuentaPorPagarRetencion(id){
+  const clave = empresaEscenarioSeleccionada;
+  const r = (datosDividendosCache.retenciones[clave]||[]).find(x=>x.id===id);
+  if(!r) return;
+  const actual = r.cuentasPorPagarAcumulado||0;
+  const nuevoTexto = prompt(`Escribe el monto correcto de cuentas por pagar acumuladas (actualmente $${actual.toFixed(2)}):`, actual.toFixed(2));
+  if(nuevoTexto===null) return; // canceló
+  const nuevoMonto = parseFloat(nuevoTexto);
+  if(isNaN(nuevoMonto) || nuevoMonto<0){ alert("Ingresa un monto válido (número mayor o igual a cero)."); return; }
+  r.cuentasPorPagarAcumulado = nuevoMonto;
+  await guardarDatosDividendos(datosDividendosCache);
+  pintarFormaPagoRetencion(id);
+  pintarListaRetencionesRealizadas();
 }
 
 async function actualizarMetodoPagoRetencion(id, metodo){

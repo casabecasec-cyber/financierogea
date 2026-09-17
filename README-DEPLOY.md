@@ -226,6 +226,12 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: botón "✏️ Corregir monto" en Cuentas por Pagar (Forma de Pago de una retención)** —
+  antes solo se podía SUMAR al monto acumulado ("+ Agregar"), sin forma de corregirlo si
+  quedaba mal (por ejemplo, tras recalcular una retención con la corrección del "valor neto a
+  pagar" — ver nota anterior). Este botón permite escribir directamente el monto correcto en
+  vez de tener que sumar/restar mentalmente la diferencia.
+
 - **Corregido: error "set failed: value argument contains undefined" al editar y recalcular una
   retención ya guardada** — al editar un registro de retención guardado antes de que existiera
   la función de "forma de pago" (pagosBanco), ese campo no existía en el registro viejo
