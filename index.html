@@ -1280,8 +1280,25 @@ async function cargarDatosDividendos(){
   const snap = await db.ref(`dividendos_data/${DATOS_UID}`).once("value");
   return snap.val();
 }
+// Firebase rechaza el guardado completo si CUALQUIER valor en todo el árbol
+// es undefined (no solo el campo directamente afectado) — dado lo grande y
+// profundamente anidada que es la estructura de datos de Dividendos (armada
+// a lo largo de muchas sesiones), se limpia recursivamente antes de cada
+// guardado en vez de perseguir cada campo posible uno por uno.
+function limpiarUndefined(valor){
+  if(Array.isArray(valor)) return valor.map(limpiarUndefined);
+  if(valor && typeof valor==="object" && !(valor instanceof Date)){
+    const limpio = {};
+    for(const k in valor){
+      if(valor[k]!==undefined) limpio[k] = limpiarUndefined(valor[k]);
+    }
+    return limpio;
+  }
+  return valor;
+}
+
 async function guardarDatosDividendos(datos){
-  await db.ref(`dividendos_data/${DATOS_UID}`).set(datos);
+  await db.ref(`dividendos_data/${DATOS_UID}`).set(limpiarUndefined(datos));
 }
 
 /* --- Historial de archivos de dividendos importados --- */
@@ -9609,10 +9626,14 @@ async function ejecutarCalculoRetencionAccionistas(){
     };
     const idxExistente = datosDividendosCache.retenciones[clave].findIndex(r=>r.id===registro.id);
     if(idxExistente>=0){
-      // conserva la forma de pago ya registrada si estaba editando
-      registro.metodoPago = datosDividendosCache.retenciones[clave][idxExistente].metodoPago;
-      registro.pagosBanco = datosDividendosCache.retenciones[clave][idxExistente].pagosBanco;
-      registro.cuentasPorPagarAcumulado = datosDividendosCache.retenciones[clave][idxExistente].cuentasPorPagarAcumulado;
+      // conserva la forma de pago ya registrada si estaba editando — con
+      // respaldo explícito, porque un registro guardado antes de que
+      // existiera esta función de "pago" puede no tener estos campos
+      // (undefined), y Firebase rechaza cualquier valor undefined al guardar.
+      const existente = datosDividendosCache.retenciones[clave][idxExistente];
+      registro.metodoPago = existente.metodoPago ?? null;
+      registro.pagosBanco = existente.pagosBanco ?? [];
+      registro.cuentasPorPagarAcumulado = existente.cuentasPorPagarAcumulado ?? 0;
       datosDividendosCache.retenciones[clave][idxExistente] = registro;
     } else {
       datosDividendosCache.retenciones[clave].push(registro);

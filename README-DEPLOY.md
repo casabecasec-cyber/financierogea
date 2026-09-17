@@ -226,6 +226,17 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: error "set failed: value argument contains undefined" al editar y recalcular una
+  retención ya guardada** — al editar un registro de retención guardado antes de que existiera
+  la función de "forma de pago" (pagosBanco), ese campo no existía en el registro viejo
+  (`undefined`), y al intentar preservarlo durante el recálculo, Firebase rechazaba el guardado
+  completo (Firebase no permite ningún valor `undefined` en ningún punto del árbol de datos).
+  Se corrigió con un respaldo explícito (`?? []`, `?? null`, `?? 0`) para ese caso puntual, y
+  además se agregó una **limpieza automática recursiva** antes de cada guardado de Dividendos
+  (`limpiarUndefined`) que elimina cualquier valor `undefined` en cualquier parte de la
+  estructura — una protección general, ya que esta estructura de datos es enorme y muy anidada
+  y sería fácil que apareciera un caso similar en otro campo más adelante.
+
 - **Corregido: "Valor neto a pagar" en los informes individuales de retención (Dividendos →
   Escenarios) restaba la retención del valor registrado completo, en vez de la base imponible**
   — con franja exenta, la retención solo se calcula sobre la base imponible (lo que supera la
