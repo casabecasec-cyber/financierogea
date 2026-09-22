@@ -232,6 +232,100 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: Flujo de Caja Proyectado Produbanco — filas de gasto en $0.00 mensual y "Imprimir
+  todo" mostrando solo un año (5ta iteración).** Dos bugs reales encontrados y corregidos tras
+  leer el motor de cálculo/impresión completo de punta a punta:
+  (1) **Gastos Administrativos, Gastos de Ventas, Gastos de Personal, Otros Gastos Operativos,
+  Impuestos, Participación Trabajadores y Otros Egresos Operacionales aparecían en $0.00 en
+  TODAS las celdas mensuales de los años proyectados (2026-2030)**, aunque el TOTAL de cada fila
+  y el resto de la cadena (TOTAL EGRESOS OPERACIONALES, FLUJO NETO OPERACIONAL, etc.) sí
+  reflejaban su aporte correctamente — comprobado a mano en Node: para 2030, Gastos
+  Administrativos calcula $51,064.21/mes (base 2025 de $43,600 compuesto por el % de
+  crecimiento propio de cada año 2026→2030), y el TOTAL anual mostrado en pantalla ($612,770.54)
+  ya reflejaba ese valor, pero la celda mensual mostraba "$0.00". Causa raíz: `pfPintarAnio()`
+  pintaba el TOTAL anual de estas 9 filas (`pfSetTxt` sobre `pf-out-{año}-{rubro}-tot`) pero
+  **nunca llamaba a `pfUpdateMonthly()`** para ellas (a diferencia del resto de filas, que sí se
+  pintan mes a mes) — quedó así desde el refactor que convirtió 2026 al mismo cálculo 100%
+  automático que 2027-2030. Arreglado agregando `pfUpdateMonthly(year,k,y[k])` a esas 9 filas,
+  igual que el resto; para el año base 2025 (donde son `<input>` editables, no celdas de
+  salida) la llamada es un no-op seguro, igual que ya ocurría con "ventas".
+  (2) El botón **"🖨 Imprimir todo"** podía terminar mostrando solo el último año impreso
+  individualmente (p.ej. 2030) en vez del documento completo de 6 años. El generador de
+  contenido (`pfContenidoCompletoHTML`) en sí mismo es correcto — se verificó con un script
+  Node/jsdom que simula la app completa con datos reales y confirma que siempre incluye los 6
+  encabezados (2025 Base + 2026-2030) con su tabla mensual completa cada uno, sin importar qué
+  tarjetas estén colapsadas en pantalla. La causa real está en `bpAbrirVentanaImpresion()`
+  (compartida por TODOS los botones de impresión de la app): no comprobaba si
+  `window.open()` tuvo éxito. Si el navegador bloquea o difiere la apertura de una ventana
+  nueva — algo común cuando se hacen varios clics de impresión seguidos, p.ej. "Imprimir 2030"
+  de una tarjeta individual y enseguida "Imprimir todo" —, `window.open()` devuelve `null` y el
+  `win.document.write(...)` siguiente lanzaba una excepción silenciosa (no visible para el
+  usuario): no se abría ninguna ventana nueva y la ÚLTIMA ventana de impresión que sí se había
+  logrado abrir (p.ej. la del año 2030) seguía siendo lo único visible en pantalla, dando la
+  falsa impresión de que "Imprimir todo" solo había impreso ese año. Arreglado con un chequeo
+  explícito (`if(!win){ toast/alert de aviso; return; }`) y un `win.focus()` tras escribir el
+  documento, para que la ventana de impresión correcta siempre quede al frente. Validado con
+  Node/jsdom: `node --check` sobre el `<script>` extraído, sin funciones duplicadas, todos los
+  `onclick/onchange/oninput` con su función definida, contenido de impresión completo con los 6
+  años presentes y con valores mensuales no-cero coincidiendo con el cálculo manual, y la cadena
+  de cascada por año (cambiar el % de 2028 no afecta 2026/2027, sí afecta 2029/2030) intacta.
+
+- **Nuevo (6ta iteración): paridad del panel 2025, verificación automática de consistencia y
+  pestaña de Índices Financieros — Flujo de Caja Proyectado Produbanco.**
+  (1) **Panel "⚙️ Supuestos / Porcentajes — Año Base 2025"** ahora muestra, además de los 4 %
+  de composición (contado, prov. nacional, prov. exterior, crédito directo), un bloque
+  informativo en vivo "% de Gastos sobre Ventas — 2025" con el total anual y el % sobre Ventas
+  de los mismos 7 rubros de gasto que 2026-2030 muestran como "% de crecimiento" (Gastos
+  Administrativos, de Ventas, de Personal, Otros Gastos Operativos, Impuestos, Participación
+  Trabajadores, Otros Egresos Operacionales). 2025 no tiene un "% de crecimiento" propiamente
+  dicho porque es el año base con montos mensuales reales digitados a mano (no existe un "2024"
+  dentro de esta herramienta del cual crecer — se revisó `pbPrefillDatos2024`, que carga datos
+  2024 para el Informe Básico de otra sub-sección, y no aporta montos mensuales de flujo de caja
+  utilizables aquí); en su lugar se calculó el ratio real de cada rubro sobre Ventas 2025, que
+  además sirve de referencia razonable al decidir el % de crecimiento de 2026. Esto resuelve el
+  reclamo "en el 2025 no aparece todos los porcentajes": ahora TODOS los años muestran el mismo
+  tipo de panel de Supuestos/Porcentajes con las mismas 7 categorías de gasto, con la única
+  diferencia lógica de que en 2025 es informativo/calculado (montos ya reales) y en 2026-2030 es
+  editable (define cuánto crece cada rubro).
+  (2) **Verificación automática de consistencia (`pfValidarFlujo()`).** Proceso 100%
+  determinístico (no es una llamada a IA — no hay backend propio para eso en esta app estática)
+  que recalcula, de forma independiente A PARTIR DE LAS CELDAS YA RENDERIZADAS EN PANTALLA (no
+  del objeto interno que las generó), cada total/subtotal del flujo de los 6 años: Recaudaciones
+  = Contado + Rec. Cartera; TOTAL INGRESOS/EGRESOS OPERACIONALES = suma de sus componentes;
+  FLUJO NETO OPERACIONAL = Ingresos − Egresos; lo mismo para Inversión, Financiamiento, FCF y
+  Flujo Neto Generado; Flujo Acumulado = Flujo Generado + Saldo Inicial, y Saldo Inicial(mes) =
+  Acumulado del mes anterior; columna TOTAL = suma de los 12 meses para 39 filas distintas
+  (detectaría de inmediato el mismo tipo de bug corregido en la iteración anterior); rangos de
+  %, incluida una advertencia de "posible error de escala" si un % de crecimiento luce como un
+  error de digitación (ej. "374" en vez de "3.74"); saldo de caja implausiblemente negativo
+  (advertencia); y la cadena de crecimiento interanual de ventas (Ventas(año) = Ventas(año-1) ×
+  (1+% propio), verificado al centavo). Se ejecuta automáticamente en cada recálculo, mostrando
+  una insignia persistente ("✅ Flujo consistente" / "⚠️ N inconsistencias detectadas"), y bajo
+  demanda con el botón **"✅ Verificar Consistencia del Flujo"**, que abre un reporte detallado
+  (esperado vs. actual, año/mes/concepto). Validado con Node/jsdom contra los datos reales por
+  defecto (0 inconsistencias, 0 advertencias) y, deliberadamente, corrompiendo celdas del DOM
+  (total mensual, columna TOTAL anual, cascada de ventas, % de crecimiento con error de escala):
+  el validador detectó las 4 corrupciones sin excepción. De paso, al construir este validador se
+  encontró y corrigió un bug real gemelo al de la iteración anterior: las 12 filas de
+  Inversión/Financiamiento (Venta de Activos Fijos, Aporte Accionistas, Préstamos Bancarios,
+  etc.) tampoco pintaban sus 12 celdas mensuales en los años proyectados (solo el TOTAL) —
+  corregido en `pfPintarAnio()` con el mismo patrón ya usado para los 9 rubros de gasto.
+  (3) **Nueva pestaña "📐 Índices Financieros"** (junto a "📅 Años Individuales" y "📊 Resumen
+  Comparativo"): tabla comparativa 2025-2030 con Liquidez/Flujo (Flujo Neto Operacional, margen
+  de caja operativa, cobertura de gastos operativos, días de cartera aproximados), Rentabilidad
+  desde el Estado de Resultados enlazado (márgenes Bruto/Operacional/Neto, Costo de Ventas/
+  Ventas), Estructura de Costos (cada rubro de gasto como % de Ventas y como % del Total de
+  Egresos Operacionales), Crecimiento interanual (Ventas, Utilidad Operacional, Utilidad Neta) y
+  Financiero (Gastos Financieros, Cobertura de Intereses) — con botón de impresión propio
+  (horizontal) e incluida como hoja "INDICES FINANCIEROS" en el Excel exportado. NO se calculan
+  índices de apalancamiento tipo Deuda/Patrimonio ni un Ciclo de Conversión de Efectivo completo
+  porque esta herramienta no registra saldos de Balance General ni plazos de pago a proveedores
+  — se documenta esa omisión en la propia pestaña en vez de inventar cifras. Verificado a mano
+  en Node contra los datos reales por defecto: Margen Bruto 2025, Margen Operacional 2026,
+  Gastos Administrativos/Ventas 2025, % Crecimiento de Ventas 2027, Días de Cartera 2025 y
+  Cobertura de Gastos Operativos 2025 coinciden al cuarto decimal con el cálculo manual
+  independiente.
+
 - **Mejorado: Flujo de Caja Proyectado Produbanco — impresión configurable por año y Resumen
   Comparativo en pestaña propia (4ta iteración).** Tres refinamientos sobre la herramienta:
   (1) el botón **"🖨 Imprimir todo"** ahora respeta un checkbox **"Incluir año base (2025) en

@@ -7511,6 +7511,24 @@ function bpAbrirVentanaImpresion(contentHtml, titulo, opciones){
   const colorTotBg = esProdubanco ? '#eaf7ee' : '#eef5fb';
   const logoTxt = esProdubanco ? '🏦 PRODUBANCO' : '🏦 BANCO DEL PACÍFICO S.A.';
   const win = window.open('', '_blank');
+  // BUGFIX: si el navegador bloquea/difiere la apertura de la ventana
+  // (bloqueador de pop-ups, o el límite que aplican Chrome/Firefox
+  // cuando se abren varias ventanas de impresión en rápida sucesión —
+  // p.ej. el usuario primero usa "Imprimir 2030" de una tarjeta y
+  // enseguida hace clic en "Imprimir todo"), window.open() devuelve
+  // null y, sin este chequeo, el win.document.write() de abajo lanzaba
+  // una excepción silenciosa (no capturada por el onclick inline): no se
+  // abría ninguna ventana nueva y la ÚLTIMA ventana de impresión que sí
+  // se alcanzó a abrir (p.ej. la del año 2030) seguía siendo lo único
+  // visible en pantalla — dando la falsa impresión de que "Imprimir
+  // todo" solo había impreso ese año. Ahora se avisa explícitamente y
+  // se enfoca la ventana nueva para que nunca quede una ventana vieja
+  // tapando el resultado correcto.
+  if(!win){
+    const msg = 'No se pudo abrir la ventana de impresión. Verifique que su navegador no esté bloqueando las ventanas emergentes (pop-ups) para este sitio y vuelva a intentar.';
+    if(typeof toast === 'function') toast(msg, 'warning'); else alert(msg);
+    return;
+  }
   win.document.write(`<html><head><title>${escapeHtml(titulo||'Documento')}</title><style>
     @page{ size:${landscape?'landscape':'A4'}; margin:${landscape?'10mm':'14mm'}; }
     body{font-family:Arial,Helvetica,sans-serif;padding:0;color:#111;font-size:11.5px;line-height:1.45;${landscape?'max-width:100%;':''}}
@@ -7548,6 +7566,7 @@ function bpAbrirVentanaImpresion(contentHtml, titulo, opciones){
     <script>window.onload=()=>setTimeout(()=>window.print(),300);<\/script>
   </body></html>`);
   win.document.close();
+  win.focus();
 }
 
 /* =========================================================================
@@ -9294,11 +9313,32 @@ function pfPintarAnio(year, y){
   ['contado','credito','recCartera','recaudaciones','totalIngOp','provNac','provExt','creditoDirecto','totalEgrOp','flujoNetoOp','totalIngInv','totalEgrInv','flujoNetoInv','fcf','totalIngFin','totalEgrFin','flujoNetoFin','flujoNetoGenerado'].forEach(k=>{
     pfUpdateMonthly(year,k,y[k]); pfSetTxt(`pf-out-${year}-${k}-tot`, y.tot[k]);
   });
+  // BUGFIX: estas 9 filas (rubros de gasto/ingreso "editables" en el año
+  // base pero 100% CALCULADOS en los años proyectados 2026-2030, ver
+  // pfFilaComputada/pfCeldaOut en pfTablaAnioHTML) antes solo pintaban el
+  // TOTAL anual y nunca las 12 celdas mensuales — por eso se veían en
+  // $0.00 en pantalla/impresión aun cuando el total (y el resto de la
+  // cadena que SÍ depende de ellas, como TOTAL EGRESOS OPERACIONALES y
+  // FLUJO NETO OPERACIONAL) reflejaba correctamente su aporte. Para el
+  // año base (2025) estas celdas son <input> con id pf-in-... (no
+  // pf-out-...-mN), así que pfUpdateMonthly/pfSetTxt simplemente no
+  // encuentra el elemento y no hace nada (pfSetTxt ya es un no-op seguro
+  // si el id no existe) — mismo patrón que 'ventas' arriba.
   ['otrosIngOp','cartasCredito','gastosAdmin','gastosVentas','gastosPersonal','otrosGastosOperativos','impuestos','participacionTrab','otrosEgresosOp'].forEach(k=>{
-    pfSetTxt(`pf-out-${year}-${k}-tot`, y.tot[k]);
+    pfUpdateMonthly(year,k,y[k]); pfSetTxt(`pf-out-${year}-${k}-tot`, y.tot[k]);
   });
+  // BUGFIX (mismo patrón que el bloque anterior): estas 12 filas de
+  // Inversión/Financiamiento son editables en el año base (2025, celdas
+  // <input> pf-in-...) y 100% CALCULADAS (carry-forward del año anterior,
+  // ver inputsOverride en pfCalcularAnioAuto) en los años proyectados
+  // 2026-2030 (celdas pf-out-...-mN vía pfFilaComputada/pfCeldaOut) —
+  // igual que las 9 filas de arriba, antes solo se pintaba el TOTAL anual
+  // y nunca las 12 celdas mensuales, por lo que si el año base tenía
+  // algún valor distinto de cero en estas filas, los años proyectados
+  // mostraban $0.00 en el detalle mensual aunque el TOTAL sí reflejara el
+  // valor correcto (arrastrado sin cambios de un año a otro).
   ['ingVentaActivos','ingVentaInversiones','egrInfraestructura','egrActivosFijos','egrInversionesPerm','finAporteAccionistas','finPrestamoAccionistas','finPrestamoBancario','finDividendos','finOtrosCapInt','finCapitalBanco','finInteresesBanco'].forEach(k=>{
-    pfSetTxt(`pf-out-${year}-${k}-tot`, pfSumArr(y[k]));
+    pfUpdateMonthly(year,k,y[k]); pfSetTxt(`pf-out-${year}-${k}-tot`, pfSumArr(y[k]));
   });
   pfUpdateMonthly(year,'saldoInicialM',y.saldoInicialM);
   pfUpdateMonthly(year,'flujoAcumulado',y.flujoAcumulado);
@@ -9363,10 +9403,113 @@ function pfEstadoResultadosTodosHTML(erTodos){
     ${fila('UTILIDAD DEL EJERCICIO','utilidadEjercicio',true)}
   </tbody></table></div>`;
 }
+
+/* =========================================================================
+   Tarea 3 — Pestaña "📐 Índices Financieros": calcula, para los 6 años
+   (2025 Base + 2026-2030 Proyectados) lado a lado, todos los índices que
+   pueden derivarse honestamente de los datos que esta herramienta
+   realmente tiene (Flujo de Caja + Estado de Resultados enlazado). NO se
+   calculan índices que requieran datos de Balance General (Activo total,
+   Patrimonio, Deuda total) porque esta herramienta no los registra — ver
+   nota al pie de pfIndicesFinancierosHTML.
+========================================================================= */
+function pfFmtPct2(v){ return (v===null||v===undefined||!isFinite(v)) ? 'N/A' : v.toFixed(2)+'%'; }
+function pfFmtRatioX(v){ return (v===null||v===undefined||!isFinite(v)) ? 'N/A' : v.toFixed(2)+'x'; }
+function pfFmtDias(v){ return (v===null||v===undefined||!isFinite(v)) ? 'N/A' : v.toFixed(0)+' días'; }
+function pfCalcularIndices(anios, erTodos, pctBase2025, pctPorAnio){
+  const out = {};
+  let prevY = null;
+  PF_TODOS_ANIOS.forEach(y=>{
+    const a = anios[y], er = erTodos[y];
+    const ventas = a.tot.ventas;
+    const contadoPct = y===2025 ? pctBase2025.contado : pctPorAnio[y].contado;
+    const creditoPct = 100-contadoPct;
+    const rubros = {};
+    PF_RATIO_BASE_KEYS.forEach(([key])=>{ rubros[key] = a.tot[key]; });
+    const gastosFinancieros = er.gastosFinancieros;
+    let crecVentas=null, crecUtilOp=null, crecUtilNeto=null;
+    if(prevY!==null){
+      const erPrev = erTodos[prevY];
+      crecVentas = erPrev.ingresos ? (er.ingresos-erPrev.ingresos)/erPrev.ingresos*100 : null;
+      crecUtilOp = erPrev.utilidadOperacional ? (er.utilidadOperacional-erPrev.utilidadOperacional)/Math.abs(erPrev.utilidadOperacional)*100 : null;
+      crecUtilNeto = erPrev.utilidadEjercicio ? (er.utilidadEjercicio-erPrev.utilidadEjercicio)/Math.abs(erPrev.utilidadEjercicio)*100 : null;
+    }
+    out[y] = {
+      ventas, flujoNetoOp: a.tot.flujoNetoOp,
+      margenCajaOperativa: ventas ? a.tot.flujoNetoOp/ventas*100 : 0,
+      coberturaGastosOp: a.tot.totalEgrOp ? a.tot.totalIngOp/a.tot.totalEgrOp : null,
+      diasCarteraAprox: creditoPct/100*30,
+      margenBruto: er.ingresos ? er.utilidadBruta/er.ingresos*100 : 0,
+      margenOperacional: er.ingresos ? er.utilidadOperacional/er.ingresos*100 : 0,
+      margenNeto: er.ingresos ? er.utilidadEjercicio/er.ingresos*100 : 0,
+      costoVentasPct: er.ingresos ? er.costoVentas/er.ingresos*100 : 0,
+      rubros, totalEgrOp: a.tot.totalEgrOp,
+      gastosFinancieros,
+      coberturaIntereses: gastosFinancieros ? er.utilidadOperacional/gastosFinancieros : null,
+      crecVentas, crecUtilOp, crecUtilNeto,
+    };
+    prevY = y;
+  });
+  return out;
+}
+function pfIndicesFinancierosHTML(idx){
+  const grupo = (titulo) => `<tr style="background:#0057A3;color:#fff"><td colspan="${PF_TODOS_ANIOS.length+1}">${titulo}</td></tr>`;
+  const filaFmt = (label, fn, bold) => `<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td>${PF_TODOS_ANIOS.map(y=>`<td class="num">${fn(idx[y])}</td>`).join('')}</tr>`;
+  let html = `<div style="overflow-x:auto"><table><thead><tr><th>Índice / Concepto</th>${PF_TODOS_ANIOS.map(y=>`<th class="num">${y===2025?y+' (Base)':y+' (Proy.)'}</th>`).join('')}</tr></thead><tbody>`;
+  html += grupo('💧 LIQUIDEZ / FLUJO');
+  html += filaFmt('Flujo Neto Operacional', r=>bpUSD(r.flujoNetoOp), true);
+  html += filaFmt('Flujo Neto Operacional / Ventas (margen de caja operativa)', r=>pfFmtPct2(r.margenCajaOperativa));
+  html += filaFmt('Cobertura de Gastos Operativos (Ingresos Op. / Egresos Op.)', r=>pfFmtRatioX(r.coberturaGastosOp));
+  html += filaFmt('Días de Cartera Aproximados (según mezcla contado/crédito del año)', r=>pfFmtDias(r.diasCarteraAprox));
+
+  html += grupo('📈 RENTABILIDAD (Estado de Resultados enlazado)');
+  html += filaFmt('Margen Bruto (Utilidad Bruta / Ventas)', r=>pfFmtPct2(r.margenBruto));
+  html += filaFmt('Margen Operacional (Utilidad Operacional / Ventas)', r=>pfFmtPct2(r.margenOperacional));
+  html += filaFmt('Margen Neto (Utilidad del Ejercicio / Ventas)', r=>pfFmtPct2(r.margenNeto));
+  html += filaFmt('Costo de Ventas / Ventas', r=>pfFmtPct2(r.costoVentasPct));
+
+  html += grupo('🧱 ESTRUCTURA DE COSTOS — % sobre VENTAS');
+  PF_RATIO_BASE_KEYS.forEach(([key,label])=>{
+    html += filaFmt(label, r=>pfFmtPct2(r.ventas ? r.rubros[key]/r.ventas*100 : 0));
+  });
+  html += grupo('🧱 ESTRUCTURA DE COSTOS — % sobre TOTAL EGRESOS OPERACIONALES');
+  PF_RATIO_BASE_KEYS.forEach(([key,label])=>{
+    html += filaFmt(label, r=>pfFmtPct2(r.totalEgrOp ? r.rubros[key]/r.totalEgrOp*100 : 0));
+  });
+
+  html += grupo('🚀 CRECIMIENTO INTERANUAL (vs. año anterior)');
+  html += filaFmt('% Crecimiento de Ventas', r=>pfFmtPct2(r.crecVentas));
+  html += filaFmt('% Crecimiento de Utilidad Operacional', r=>pfFmtPct2(r.crecUtilOp));
+  html += filaFmt('% Crecimiento de Utilidad Neta', r=>pfFmtPct2(r.crecUtilNeto));
+
+  html += grupo('🏦 FINANCIERO / ENDEUDAMIENTO (solo lo derivable de este flujo)');
+  html += filaFmt('Gastos Financieros (Intereses Préstamo Bancario)', r=>bpUSD(r.gastosFinancieros));
+  html += filaFmt('Cobertura de Intereses (Utilidad Operacional / Gastos Financieros)', r=>pfFmtRatioX(r.coberturaIntereses));
+
+  html += `</tbody></table></div>
+  <p class="helpNote">No se calculan índices de apalancamiento tipo Deuda/Patrimonio o Deuda/Activos, ni un Ciclo de Conversión de Efectivo completo, porque esta herramienta no registra saldos de Balance General (Activo, Pasivo, Patrimonio) ni el plazo de pago a proveedores — solo los flujos de desembolso/pago de préstamos bancarios y sus intereses (ya reflejados arriba en "Financiero/Endeudamiento") y la mezcla contado/crédito de las ventas (reflejada en "Días de Cartera Aproximados"). Mostrar esos índices con datos que la herramienta no tiene implicaría inventar cifras, por eso se omiten en vez de aproximarlos.</p>`;
+  return html;
+}
+function pfImprimirIndices(){
+  const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  pfRecalcularTodo();
+  const contenido = `
+    <div class="doc-header"><div class="doc-title">Índices Financieros 2025-2030</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Flujo de Caja Proyectado Produbanco</div></div>
+    <h4>📐 Índices Financieros Comparativo 2025-2030</h4>${pfSnapshotHTML('pfIndicesCont')}
+    <div class="doc-footer">Documento generado a partir del Flujo de Caja Proyectado y su Estado de Resultados enlazado — Produbanco.</div>
+  `;
+  bpAbrirVentanaImpresion(contenido, 'Índices Financieros — Produbanco', {banco:'produbanco', landscape:true});
+}
 function pfRecalcularTodo(){
   const r = pfCalcular();
   pfPintarAnio(2025, r.y2025);
   const credLblBase = document.getElementById('pf-pct-credito2025-lbl'); if(credLblBase) credLblBase.textContent = (100-r.pctBase2025.contado).toFixed(2)+'%';
+  PF_RATIO_BASE_KEYS.forEach(([key])=>{
+    const tot = r.y2025.tot[key];
+    const pct = r.y2025.tot.ventas ? (tot/r.y2025.tot.ventas*100) : 0;
+    const elPct = document.getElementById(`pf-ratio-2025-${key}-pct`); if(elPct) elPct.textContent = pct.toFixed(2)+'%';
+    const elTot = document.getElementById(`pf-ratio-2025-${key}-tot`); if(elTot) elTot.textContent = bpUSD(tot);
+  });
   PF_PROJ_YEARS.forEach(year=>{
     const y = r.anios[year];
     pfPintarAnio(year, y);
@@ -9379,8 +9522,227 @@ function pfRecalcularTodo(){
   const resumenCont = document.getElementById('pfResumenAnualCont');
   if(resumenCont) resumenCont.innerHTML = pfResumenAnualHTML(r);
   const erTodosCont = document.getElementById('pfEstadoResultadosTodosCont');
-  if(erTodosCont) erTodosCont.innerHTML = pfEstadoResultadosTodosHTML(pfCalcularEstadoResultadosTodos(r.anios));
+  const erTodos = pfCalcularEstadoResultadosTodos(r.anios);
+  if(erTodosCont) erTodosCont.innerHTML = pfEstadoResultadosTodosHTML(erTodos);
+  const indicesCont = document.getElementById('pfIndicesCont');
+  if(indicesCont) indicesCont.innerHTML = pfIndicesFinancierosHTML(pfCalcularIndices(r.anios, erTodos, r.pctBase2025, r.pctPorAnio));
+  // Verificación automática y silenciosa de consistencia (Tarea 2): se
+  // ejecuta en CADA recálculo (cada tecleo) para mantener la insignia
+  // (badge) de estado siempre al día, sin interrumpir al usuario con
+  // ningún diálogo — el reporte detallado solo se abre bajo demanda con
+  // el botón "✅ Verificar Consistencia del Flujo" (pfMostrarReporteValidacion).
+  pfActualizarBadgeValidacion(pfValidarFlujo());
   return r;
+}
+
+/* =========================================================================
+   Tarea 2 — Validación automática/determinística del Flujo de Caja
+   (pfValidarFlujo): NO es una llamada a un modelo de IA (no hay backend
+   propio para eso en esta app estática); es un proceso 100% determinístico
+   que recalcula, a partir de las celdas YA RENDERIZADAS EN PANTALLA (no
+   del objeto interno "r" que las generó), cada total/subtotal del flujo —
+   así, si algún día se repite el tipo de bug ya corregido una vez (una
+   fila que se calcula bien puertas adentro pero no se pinta en el DOM),
+   este proceso SÍ lo detecta, porque compara lo que el usuario realmente
+   ve en pantalla contra una suma independiente de sus componentes, en vez
+   de comparar el objeto "r" contra sí mismo. */
+const PF_EPS_MES = 0.05;  // tolerancia por celda mensual (redondeo a centavos en, hasta 9 sumandos)
+const PF_EPS_TOT = 0.15;  // tolerancia por columna TOTAL (suma de 12 celdas ya redondeadas independientemente)
+/* Convierte a número el texto YA FORMATEADO por bpUSD (locale es-EC: "." de
+   miles, "," decimal — ej. "$1.234,50" o "$-1.234,50") — el inverso de
+   bpUSD, para poder leer del DOM lo que el usuario ve en pantalla. */
+function pfParseUSD(s){
+  if(s==null) return 0;
+  let t = String(s).replace(/\$/g,'').trim();
+  if(!t) return 0;
+  t = t.replace(/\./g,'').replace(',', '.');
+  const n = parseFloat(t);
+  return isFinite(n) ? n : 0;
+}
+function pfLeerCeldaDom(id){
+  const el = document.getElementById(id);
+  if(!el) return null;
+  if(el.tagName==='INPUT'){ const n=parseFloat(el.value); return isFinite(n)?n:0; }
+  return pfParseUSD(el.textContent);
+}
+function pfLeerTotDom(year, key){ return pfLeerCeldaDom(`pf-out-${year}-${key}-tot`) || 0; }
+/* Lee, para (year,key), el arreglo de 12 valores MENSUALES tal como están
+   RENDERIZADOS EN PANTALLA — celda <input> en el año base, o celda de
+   salida (pf-out-...) en los años proyectados — igual criterio que usa
+   pfN/pfGetArr para leer valores, pero aquí sobre lo ya pintado, para una
+   verificación independiente del pintado mismo. Caso especial
+   'recCartera' mes 0 en el año base: es un input aparte
+   (pf-in-{year}-recCarteraApertura, sin sufijo "-m0"). */
+function pfLeerFilaMensualDom(year, key){
+  const out = [];
+  for(let i=0;i<12;i++){
+    if(key==='recCartera' && i===0){
+      const elApertura = document.getElementById(`pf-in-${year}-recCarteraApertura`);
+      if(elApertura){ const n=parseFloat(elApertura.value); out.push(isFinite(n)?n:0); continue; }
+    }
+    // Caso especial: mes 1 del Saldo Inicial de Caja del año BASE (2025)
+    // es un input independiente (pf-in-2025-saldoInicialCaja, sin el
+    // sufijo "-m0" habitual) — igual criterio que recCarteraApertura.
+    if(key==='saldoInicialM' && i===0 && year===2025){
+      const elSaldo = document.getElementById(`pf-in-${year}-saldoInicialCaja`);
+      if(elSaldo){ const n=parseFloat(elSaldo.value); out.push(isFinite(n)?n:0); continue; }
+    }
+    const elIn = document.getElementById(`pf-in-${year}-${key}-m${i}`);
+    if(elIn){ const n=parseFloat(elIn.value); out.push(isFinite(n)?n:0); continue; }
+    const elOut = document.getElementById(`pf-out-${year}-${key}-m${i}`);
+    out.push(elOut ? pfParseUSD(elOut.textContent) : 0);
+  }
+  return out;
+}
+/* Claves con fila mensual + columna TOTAL propia, presentes con el mismo
+   patrón de ids en TODOS los años (base y proyectados) — usadas para el
+   chequeo "columna TOTAL = suma de los 12 meses". */
+const PF_KEYS_TOTAL_SUMA = ['ventas','contado','credito','recCartera','otrosIngOp','recaudaciones','totalIngOp',
+  'provNac','provExt','cartasCredito','creditoDirecto','gastosAdmin','gastosVentas','gastosPersonal','otrosGastosOperativos',
+  'impuestos','participacionTrab','otrosEgresosOp','totalEgrOp','flujoNetoOp',
+  'totalIngInv','totalEgrInv','flujoNetoInv','fcf','totalIngFin','totalEgrFin','flujoNetoFin','flujoNetoGenerado',
+  'ingVentaActivos','ingVentaInversiones','egrInfraestructura','egrActivosFijos','egrInversionesPerm',
+  'finAporteAccionistas','finPrestamoAccionistas','finPrestamoBancario','finDividendos','finOtrosCapInt','finCapitalBanco','finInteresesBanco'];
+function pfValidarFlujo(){
+  const issues = [];      // inconsistencias duras: los números no cuadran
+  const advisories = [];  // advertencias: no son errores de cuadre, pero ameritan revisión
+  const add = (year, mes, concepto, esperado, actual) => {
+    issues.push({ year, mes, concepto, esperado: pfRound2(esperado), actual: pfRound2(actual), dif: pfRound2(actual-esperado) });
+  };
+  const addAdv = (year, mes, concepto, detalle) => { advisories.push({ year, mes, concepto, detalle }); };
+
+  PF_TODOS_ANIOS.forEach(year=>{
+    const meses = {};
+    ['ventas','contado','credito','recCartera','otrosIngOp','recaudaciones','totalIngOp',
+     'provNac','provExt','creditoDirecto','gastosAdmin','gastosVentas','gastosPersonal','otrosGastosOperativos',
+     'impuestos','participacionTrab','otrosEgresosOp','totalEgrOp','flujoNetoOp',
+     'ingVentaActivos','ingVentaInversiones','totalIngInv','egrInfraestructura','egrActivosFijos','egrInversionesPerm','totalEgrInv','flujoNetoInv','fcf',
+     'finAporteAccionistas','finPrestamoAccionistas','finPrestamoBancario','totalIngFin','finDividendos','finOtrosCapInt','finCapitalBanco','finInteresesBanco','totalEgrFin','flujoNetoFin','flujoNetoGenerado',
+     'saldoInicialM','flujoAcumulado',
+    ].forEach(k=>{ meses[k] = pfLeerFilaMensualDom(year,k); });
+
+    for(let i=0;i<12;i++){
+      const mesLbl = PF_MESES[i];
+      const espRecaud = meses.contado[i] + meses.recCartera[i];
+      if(Math.abs(meses.recaudaciones[i]-espRecaud) > PF_EPS_MES) add(year, mesLbl, 'Recaudaciones por Ventas (Contado + Rec. Cartera)', espRecaud, meses.recaudaciones[i]);
+      const espTotIng = meses.recaudaciones[i] + meses.otrosIngOp[i];
+      if(Math.abs(meses.totalIngOp[i]-espTotIng) > PF_EPS_MES) add(year, mesLbl, 'TOTAL INGRESOS OPERACIONALES', espTotIng, meses.totalIngOp[i]);
+      const espTotEgr = meses.provNac[i]+meses.provExt[i]+meses.gastosAdmin[i]+meses.gastosVentas[i]+meses.gastosPersonal[i]+meses.otrosGastosOperativos[i]+meses.impuestos[i]+meses.participacionTrab[i]+meses.otrosEgresosOp[i];
+      if(Math.abs(meses.totalEgrOp[i]-espTotEgr) > PF_EPS_MES) add(year, mesLbl, 'TOTAL EGRESOS OPERACIONALES', espTotEgr, meses.totalEgrOp[i]);
+      const espFlujoOp = meses.totalIngOp[i]-meses.totalEgrOp[i];
+      if(Math.abs(meses.flujoNetoOp[i]-espFlujoOp) > PF_EPS_MES) add(year, mesLbl, 'FLUJO NETO OPERACIONAL', espFlujoOp, meses.flujoNetoOp[i]);
+      const espTotIngInv = meses.ingVentaActivos[i]+meses.ingVentaInversiones[i];
+      if(Math.abs(meses.totalIngInv[i]-espTotIngInv) > PF_EPS_MES) add(year, mesLbl, 'Total Ingresos por Inversión', espTotIngInv, meses.totalIngInv[i]);
+      const espTotEgrInv = meses.egrInfraestructura[i]+meses.egrActivosFijos[i]+meses.egrInversionesPerm[i];
+      if(Math.abs(meses.totalEgrInv[i]-espTotEgrInv) > PF_EPS_MES) add(year, mesLbl, 'Total Egresos por Inversión', espTotEgrInv, meses.totalEgrInv[i]);
+      const espFlujoInv = meses.totalIngInv[i]-meses.totalEgrInv[i];
+      if(Math.abs(meses.flujoNetoInv[i]-espFlujoInv) > PF_EPS_MES) add(year, mesLbl, 'FLUJO NETO DE INVERSIÓN', espFlujoInv, meses.flujoNetoInv[i]);
+      const espFcf = meses.flujoNetoOp[i]+meses.flujoNetoInv[i];
+      if(Math.abs(meses.fcf[i]-espFcf) > PF_EPS_MES) add(year, mesLbl, 'FCF (Flujo de Caja Disponible)', espFcf, meses.fcf[i]);
+      const espTotIngFin = meses.finAporteAccionistas[i]+meses.finPrestamoAccionistas[i]+meses.finPrestamoBancario[i];
+      if(Math.abs(meses.totalIngFin[i]-espTotIngFin) > PF_EPS_MES) add(year, mesLbl, 'Total Ingresos por Financiamiento', espTotIngFin, meses.totalIngFin[i]);
+      const espTotEgrFin = meses.finDividendos[i]+meses.finOtrosCapInt[i]+meses.finCapitalBanco[i]+meses.finInteresesBanco[i];
+      if(Math.abs(meses.totalEgrFin[i]-espTotEgrFin) > PF_EPS_MES) add(year, mesLbl, 'Total Egresos por Financiamiento', espTotEgrFin, meses.totalEgrFin[i]);
+      const espFlujoFin = meses.totalIngFin[i]-meses.totalEgrFin[i];
+      if(Math.abs(meses.flujoNetoFin[i]-espFlujoFin) > PF_EPS_MES) add(year, mesLbl, 'FLUJO NETO POR FINANCIAMIENTO', espFlujoFin, meses.flujoNetoFin[i]);
+      const espFlujoGen = meses.fcf[i]+meses.flujoNetoFin[i];
+      if(Math.abs(meses.flujoNetoGenerado[i]-espFlujoGen) > PF_EPS_MES) add(year, mesLbl, 'FLUJO NETO GENERADO', espFlujoGen, meses.flujoNetoGenerado[i]);
+      const espAcum = meses.flujoNetoGenerado[i]+meses.saldoInicialM[i];
+      if(Math.abs(meses.flujoAcumulado[i]-espAcum) > PF_EPS_MES) add(year, mesLbl, 'FLUJO TOTAL ACUMULADO (Saldo Final de Caja)', espAcum, meses.flujoAcumulado[i]);
+      if(i>0 && Math.abs(meses.saldoInicialM[i]-meses.flujoAcumulado[i-1]) > PF_EPS_MES) add(year, mesLbl, 'Saldo Inicial de Caja (debe ser = saldo final del mes anterior)', meses.flujoAcumulado[i-1], meses.saldoInicialM[i]);
+      if(meses.flujoAcumulado[i] < 0){
+        const egrMensualProm = (meses.totalEgrOp.reduce((a,b)=>a+b,0)/12) || 0;
+        if(egrMensualProm>0 && meses.flujoAcumulado[i] < -3*egrMensualProm){
+          addAdv(year, mesLbl, 'Saldo de Caja', `Saldo acumulado ${bpUSD(meses.flujoAcumulado[i])} — equivale a más de 3 meses de egresos operacionales en negativo; revisar si es un escenario real o un dato mal digitado.`);
+        }
+      }
+    }
+
+    PF_KEYS_TOTAL_SUMA.forEach(key=>{
+      const arr = pfLeerFilaMensualDom(year, key);
+      const sumaMeses = arr.reduce((a,b)=>a+b,0);
+      const totDom = pfLeerTotDom(year, key);
+      if(Math.abs(totDom-sumaMeses) > PF_EPS_TOT) add(year, 'TOTAL', `Columna TOTAL de "${key}" ≠ suma de sus 12 meses`, sumaMeses, totDom);
+    });
+    const flujoAcumArr = pfLeerFilaMensualDom(year,'flujoAcumulado');
+    const flujoAcumTot = pfLeerTotDom(year,'flujoAcumulado');
+    if(Math.abs(flujoAcumTot - flujoAcumArr[11]) > PF_EPS_MES) add(year, 'TOTAL', 'Columna TOTAL de "flujoAcumulado" (debe ser el saldo de Diciembre, no una suma)', flujoAcumArr[11], flujoAcumTot);
+
+    const pctIds = year===2025
+      ? { contado:'pf-pct-contado2025', provNac:'pf-pct-provNac2025', provExt:'pf-pct-provExt2025', creditoDirecto:'pf-pct-creditoDirecto2025' }
+      : Object.fromEntries(PF_PCT_KEYS.map(k=>[k, `pf-pct-${year}-${k}`]));
+    Object.keys(pctIds).forEach(k=>{
+      const v = pfN(pctIds[k]);
+      if(['contado','provNac','provExt','creditoDirecto'].includes(k)){
+        if(v<0 || v>100) addAdv(year, '-', `% ${k} (${year})`, `Valor ${v.toFixed(2)}% fuera del rango 0%-100% esperado para un porcentaje de composición — revise si es un error de digitación.`);
+      } else if(k==='crecVentas' || k.endsWith('Growth')){
+        if(Math.abs(v) > 100) addAdv(year, '-', `% ${k} (${year})`, `Valor ${v.toFixed(2)}% luce fuera de rango para un % de crecimiento anual — verifique que no sea un error de escala (ej. "374" digitado en vez de "3.74").`);
+      }
+    });
+    const contadoPct = pfN(pctIds.contado);
+    const credLblId = year===2025 ? 'pf-pct-credito2025-lbl' : `pf-pct-credito-lbl-${year}`;
+    const credLblEl = document.getElementById(credLblId);
+    if(credLblEl){
+      const credLblVal = parseFloat(String(credLblEl.textContent).replace('%','').trim())||0;
+      if(Math.abs((contadoPct+credLblVal)-100) > 0.05) add(year, '-', '% Ventas al Contado + % Ventas a Crédito (rótulo)', 100, contadoPct+credLblVal);
+    }
+  });
+
+  PF_PROJ_YEARS.forEach(year=>{
+    const ventasAnt = pfLeerTotDom(year-1, 'ventas');
+    const ventasAct = pfLeerTotDom(year, 'ventas');
+    const crec = pfN(`pf-pct-${year}-crecVentas`);
+    const esperado = ventasAnt*(1+crec/100);
+    if(Math.abs(ventasAct-esperado) > Math.max(PF_EPS_TOT, Math.abs(esperado)*0.0005)){
+      add(year, 'TOTAL', `Ventas ${year} = Ventas ${year-1} × (1 + % crecimiento propio de ${year})`, esperado, ventasAct);
+    }
+  });
+
+  return { ok: issues.length===0, issues, advisories, generadoEn: Date.now() };
+}
+function pfActualizarBadgeValidacion(res){
+  const el = document.getElementById('pf-validacion-badge');
+  if(!el) return;
+  if(res.ok){
+    el.textContent = res.advisories.length ? `✅ Flujo consistente (${res.advisories.length} advertencia${res.advisories.length===1?'':'s'})` : '✅ Flujo consistente';
+    el.style.background = '#e6f4ea'; el.style.color = '#1e7e34'; el.style.border = '1px solid #1e7e34';
+  } else {
+    el.textContent = `⚠️ ${res.issues.length} inconsistencia${res.issues.length===1?'':'s'} detectada${res.issues.length===1?'':'s'}`;
+    el.style.background = '#fdecea'; el.style.color = '#c0392b'; el.style.border = '1px solid #c0392b';
+  }
+}
+function pfListaAdvertenciasHTML(advisories){
+  return `<h5 style="margin:14px 0 4px;">⚠️ Advertencias adicionales (no son errores de cuadre; criterio a revisar)</h5>
+  <div style="overflow-x:auto"><table><thead><tr><th>Año</th><th>Mes</th><th>Concepto</th><th>Detalle</th></tr></thead><tbody>
+    ${advisories.map(a=>`<tr><td>${a.year}</td><td>${escapeHtml(a.mes)}</td><td>${escapeHtml(a.concepto)}</td><td>${escapeHtml(a.detalle)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function pfReporteValidacionHTML(res){
+  if(res.ok){
+    return `<div class="helpNote" style="background:#e6f4ea;border-color:#1e7e34;color:#1e7e34;">✅ <b>Flujo consistente:</b> se verificaron los ${PF_TODOS_ANIOS.length} años (2025-2030) — recaudaciones, totales operacionales/de inversión/de financiamiento, flujo neto y flujo acumulado mes a mes, columnas TOTAL vs. suma de los 12 meses, y la cadena de crecimiento interanual de ventas — y no se encontró ninguna inconsistencia numérica.${res.advisories.length?` Se detectaron ${res.advisories.length} advertencia(s) de criterio (no son errores de cuadre, ver detalle abajo).`:''}</div>
+    ${res.advisories.length ? pfListaAdvertenciasHTML(res.advisories) : ''}`;
+  }
+  return `<div class="helpNote" style="background:#fdecea;border-color:#c0392b;color:#c0392b;">⚠️ Se encontraron <b>${res.issues.length}</b> inconsistencia(s) numérica(s). "Esperado" es una suma/resta recalculada de forma independiente a partir de las celdas YA MOSTRADAS EN PANTALLA para ese mismo mes/año; "Actual" es lo que efectivamente se muestra en la celda correspondiente.</div>
+  <div style="overflow-x:auto;max-height:420px;overflow-y:auto;"><table><thead><tr><th>Año</th><th>Mes</th><th>Concepto</th><th class="num">Esperado</th><th class="num">Actual</th><th class="num">Diferencia</th></tr></thead><tbody>
+    ${res.issues.map(it=>`<tr><td>${it.year}</td><td>${escapeHtml(it.mes)}</td><td>${escapeHtml(it.concepto)}</td><td class="num">${bpUSD(it.esperado)}</td><td class="num">${bpUSD(it.actual)}</td><td class="num" style="color:#c0392b;font-weight:700;">${bpUSD(it.dif)}</td></tr>`).join('')}
+  </tbody></table></div>
+  ${res.advisories.length ? pfListaAdvertenciasHTML(res.advisories) : ''}`;
+}
+function pfMostrarReporteValidacion(){
+  pfRecalcularTodo();
+  const res = pfValidarFlujo();
+  pfActualizarBadgeValidacion(res);
+  const host = document.getElementById('pfValidacionReporteHost');
+  if(!host) return;
+  host.innerHTML = `
+    <div class="modalBg">
+      <div class="modalBox" style="max-width:920px;">
+        <button class="closeX" onclick="document.getElementById('pfValidacionReporteHost').innerHTML=''">×</button>
+        <h3 style="margin-top:0;">✅ Verificación de Consistencia del Flujo de Caja (2025-2030)</h3>
+        <p class="helpNote">Proceso automático (determinístico, sin llamada a un modelo de IA — no hay backend propio para eso en esta app estática) que recalcula de forma independiente, a partir de las celdas ya renderizadas en pantalla, cada total/subtotal del flujo, y revisa además rangos de porcentajes, saldo de caja y la cadena de crecimiento interanual de ventas. Se ejecuta automáticamente en cada recálculo (insignia arriba) y también aquí, bajo demanda, con el detalle completo.</p>
+        <div id="pfReporteValidacionCont">${pfReporteValidacionHTML(res)}</div>
+      </div>
+    </div>`;
 }
 
 /* --- Datos de referencia reales (SOLO se aplican si la empresa coincide
@@ -9492,6 +9854,19 @@ function pfResumenAnualHTML(r){
     }).join('')}</tr>`).join('')}
   </tbody></table></div>`;
 }
+/* Rubros de gasto para los que 2025 tiene monto MENSUAL real editable
+   (no un % de crecimiento, porque no existe un "2024" del que crecer
+   dentro de esta herramienta) pero de los que sí conviene mostrar,
+   igual que en los años proyectados, un indicador en % — aquí:
+   participación de cada rubro sobre el Total de Ventas 2025, calculado
+   en vivo a partir de los montos mensuales ya digitados. Mismas 7
+   claves que PF_PCT_KEYS de "...Growth" en los años 2026-2030. */
+const PF_RATIO_BASE_KEYS = [
+  ['gastosAdmin','Gastos Administrativos'], ['gastosVentas','Gastos de Ventas'],
+  ['gastosPersonal','Gastos de Personal'], ['otrosGastosOperativos','Otros Gastos Operativos'],
+  ['impuestos','Impuestos'], ['participacionTrab','Participación Trabajadores'],
+  ['otrosEgresosOp','Otros Egresos Operacionales'],
+];
 function pfSupuestosBaseHTML(){
   const camp = (id, label, step) => `<div class="form-group"><label>${label}</label><input type="number" step="${step||'0.01'}" id="${id}" oninput="pfRecalcularTodo()"></div>`;
   return `
@@ -9503,6 +9878,11 @@ function pfSupuestosBaseHTML(){
       ${camp('pf-pct-provNac2025','% Proveedores Nacionales / Ventas — 2025','0.0001')}
       ${camp('pf-pct-provExt2025','% Proveedores Exterior / Ventas — 2025','0.0001')}
       ${camp('pf-pct-creditoDirecto2025','% Crédito Directo / Proveedores Exterior — 2025','0.01')}
+    </div>
+    <h5 style="margin-bottom:4px;margin-top:14px;">% de Gastos sobre Ventas — 2025 (informativo, calculado en vivo de los montos mensuales digitados abajo)</h5>
+    <p class="helpNote" style="margin-top:0;">2025 es el año base: estos 7 rubros se digitan como monto mensual real (no como % de crecimiento, porque no existe un año anterior dentro de esta herramienta del cual crecer). Aquí se muestra, para referencia y para que 2025 tenga la MISMA visibilidad de porcentajes que 2026-2030, cuánto representa cada rubro sobre el Total de Ventas 2025 — sirve además como punto de partida razonable para decidir el "% de crecimiento" que se digite en el panel de 2026.</p>
+    <div class="grid3">
+      ${PF_RATIO_BASE_KEYS.map(([key,label])=>`<div class="form-group"><label>${label} / Ventas — 2025</label><div style="padding:8px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;font-size:13px;"><b id="pf-ratio-2025-${key}-pct">0.00%</b> &nbsp;(<span id="pf-ratio-2025-${key}-tot">$0.00</span>)</div></div>`).join('')}
     </div>
   </div>`;
 }
@@ -9587,11 +9967,17 @@ function pfFlujoFormHTML(){
   return `
     <div class="doc-literatura"><strong>Guía Metodológica:</strong> Replica fila por fila la hoja de trabajo real "FLUJO DE CAJA PROYECTADO PRODUBANCO" (hoja 2025 base + Estado de Resultados Proyectado). El año 2025 es la base editable mes a mes; a partir de ahí se proyectan <b>automáticamente 5 años (2026-2030)</b>, cada uno con su PROPIO juego de % (ventas = año anterior × (1+%crecimiento propio de ese año); igual para los ratios de proveedores y el % de crecimiento de cada rubro de gasto) — cambiar el % de un año recalcula ese año y todos los posteriores, sin tocar los anteriores. Cada año proyectado se puede contraer a un resumen de una línea o expandir para ver el detalle mensual completo.</p>
     </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;">
+      <span id="pf-validacion-badge" style="padding:5px 12px;border-radius:20px;font-size:12.5px;font-weight:700;">⏳ Verificando...</span>
+      <button class="btn-secondary" onclick="pfMostrarReporteValidacion()">✅ Verificar Consistencia del Flujo</button>
+    </div>
+    <div id="pfValidacionReporteHost"></div>
     ${pfSupuestosBaseHTML()}
 
     <div class="doc-tab-row" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px;">
       <button class="doc-tab pf-vista-tab active" onclick="pfCambiarVistaAnios('anios', this)">📅 Años Individuales</button>
       <button class="doc-tab pf-vista-tab" onclick="pfCambiarVistaAnios('resumen', this)">📊 Resumen Comparativo</button>
+      <button class="doc-tab pf-vista-tab" onclick="pfCambiarVistaAnios('indices', this)">📐 Índices Financieros</button>
     </div>
 
     <div id="pf-vista-anios" class="pf-vista-content doc-content active">
@@ -9615,6 +10001,15 @@ function pfFlujoFormHTML(){
         <h3 style="margin-top:0;">📊 Estado de Resultados Proyectado — Comparativo 2025-2030</h3>
         <p class="helpNote">Mismo Estado de Resultados derivado del Flujo de Caja, ahora con los 6 años (base + 5 proyectados) lado a lado.</p>
         <div id="pfEstadoResultadosTodosCont"></div>
+      </div>
+    </div>
+
+    <div id="pf-vista-indices" class="pf-vista-content doc-content">
+      <div class="card" style="border:2px solid #0057A3;">
+        <h3 style="margin-top:0;color:#0057A3;">📐 Índices Financieros 2025-2030</h3>
+        <p class="helpNote">Índices de liquidez/flujo, rentabilidad, estructura de costos, crecimiento interanual y financiero/endeudamiento, calculados en vivo a partir del Flujo de Caja y su Estado de Resultados enlazado — solo se muestran los índices que esta herramienta puede respaldar con datos reales (ver nota al pie de la tabla).</p>
+        <div id="pfIndicesCont"></div>
+        <div class="doc-btn-row"><button class="btn-secondary" onclick="pfImprimirIndices()">🖨️ Imprimir Índices Financieros</button></div>
       </div>
     </div>
 
@@ -9658,6 +10053,7 @@ function pfContenidoCompletoHTML(emp, incluirBase){
     ${PF_PROJ_YEARS.map(y=>`<h4>Flujo de Caja ${y} (Proyectado)</h4>${pfSnapshotHTML('pfTabla'+y)}`).join('\n    ')}
     <h4>Estado de Resultados Proyectado (2025 vs 2026)</h4>${pfSnapshotHTML('pfERDetalleCont')}
     <h4>Estado de Resultados Proyectado — Comparativo 2025-2030</h4>${pfSnapshotHTML('pfEstadoResultadosTodosCont')}
+    <h4>📐 Índices Financieros Comparativo 2025-2030</h4>${pfSnapshotHTML('pfIndicesCont')}
     <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco. Cada año proyectado (2026-2030) tiene su propio juego de porcentajes de crecimiento/decrecimiento y de composición (ventas, proveedores, gastos), 100% editable de forma independiente; un cambio en el % de un año se propaga solo hacia adelante (años posteriores), nunca hacia atrás.</div>
   `;
 }
@@ -9773,6 +10169,37 @@ function pfExportarExcel(){
   pushER('Gastos Financieros','gastosFinancieros'); pushER('Participación Trabajadores','participacionTrabajadores');
   pushER('Impuestos','impuestos'); pushER('UTILIDAD DEL EJERCICIO','utilidadEjercicio');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(erCompFilas), 'ESTADO RESULT. 2025-2030');
+
+  // Hoja "Índices Financieros" (Tarea 3): mismos índices de la pestaña
+  // 📐 Índices Financieros, en formato hoja de cálculo (% como número
+  // decimal *100 con 2 decimales, igual que se ve en pantalla; "N/A"
+  // cuando el dato no aplica, ej. división por cero).
+  const indices = pfCalcularIndices(r.anios, erTodos, r.pctBase2025, r.pctPorAnio);
+  const idxFilas = [['ÍNDICE / CONCEPTO', ...PF_TODOS_ANIOS.map(y=>String(y))]];
+  const idxNum = v => (v===null||v===undefined||!isFinite(v)) ? 'N/A' : pfRound2(v);
+  const pushIdx = (label, fn) => idxFilas.push([label, ...PF_TODOS_ANIOS.map(y=>fn(indices[y]))]);
+  idxFilas.push(['💧 LIQUIDEZ / FLUJO']);
+  pushIdx('Flujo Neto Operacional ($)', r2=>idxNum(r2.flujoNetoOp));
+  pushIdx('Flujo Neto Operacional / Ventas (%)', r2=>idxNum(r2.margenCajaOperativa));
+  pushIdx('Cobertura de Gastos Operativos (x)', r2=>idxNum(r2.coberturaGastosOp));
+  pushIdx('Días de Cartera Aproximados', r2=>idxNum(r2.diasCarteraAprox));
+  idxFilas.push(['📈 RENTABILIDAD']);
+  pushIdx('Margen Bruto (%)', r2=>idxNum(r2.margenBruto));
+  pushIdx('Margen Operacional (%)', r2=>idxNum(r2.margenOperacional));
+  pushIdx('Margen Neto (%)', r2=>idxNum(r2.margenNeto));
+  pushIdx('Costo de Ventas / Ventas (%)', r2=>idxNum(r2.costoVentasPct));
+  idxFilas.push(['🧱 ESTRUCTURA DE COSTOS — % sobre VENTAS']);
+  PF_RATIO_BASE_KEYS.forEach(([key,label])=>pushIdx(label, r2=>idxNum(r2.ventas ? r2.rubros[key]/r2.ventas*100 : 0)));
+  idxFilas.push(['🧱 ESTRUCTURA DE COSTOS — % sobre TOTAL EGRESOS OPERACIONALES']);
+  PF_RATIO_BASE_KEYS.forEach(([key,label])=>pushIdx(label, r2=>idxNum(r2.totalEgrOp ? r2.rubros[key]/r2.totalEgrOp*100 : 0)));
+  idxFilas.push(['🚀 CRECIMIENTO INTERANUAL (%)']);
+  pushIdx('% Crecimiento de Ventas', r2=>idxNum(r2.crecVentas));
+  pushIdx('% Crecimiento de Utilidad Operacional', r2=>idxNum(r2.crecUtilOp));
+  pushIdx('% Crecimiento de Utilidad Neta', r2=>idxNum(r2.crecUtilNeto));
+  idxFilas.push(['🏦 FINANCIERO / ENDEUDAMIENTO']);
+  pushIdx('Gastos Financieros ($)', r2=>idxNum(r2.gastosFinancieros));
+  pushIdx('Cobertura de Intereses (x)', r2=>idxNum(r2.coberturaIntereses));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(idxFilas), 'INDICES FINANCIEROS');
 
   const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
   XLSX.writeFile(wb, `Flujo_Caja_Produbanco_${(emp?emp.nombre:'empresa')}`.replace(/\s+/g,'_').replace(/[^a-z0-9_]+/gi,'')+'.xlsx');
