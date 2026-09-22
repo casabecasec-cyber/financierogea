@@ -321,6 +321,47 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
   criterio que `pbPrefillDatos2024`); para cualquier otra empresa el formulario nace en blanco.
   **Requiere agregar la ruta nueva `banco_produbanco_flujo` a las reglas de Realtime Database.**
 
+- **Corregido/Mejorado: Flujo de Caja Proyectado Produbanco — 3 ajustes.** (1) **Branding:** la
+  impresión de este flujo de caja y del Informe Básico del Cliente Produbanco reutilizaba, por
+  copiar la función `bpAbrirVentanaImpresion` del Banco del Pacífico, el mismo membrete "🏦 BANCO
+  DEL PACÍFICO S.A." — ahora esa función acepta un parámetro de banco y para todo lo de
+  Produbanco imprime "🏦 PRODUBANCO" con paleta verde propia; el resto de documentos reales del
+  Banco Pacífico (Guía de Flujo de Caja, Anexo CxC/Inventarios/CxP, Información Básica, Avalúo,
+  Solicitud Jurídica) no se tocaron y siguen mostrando el membrete del Pacífico. (2) **Proyección
+  automática a 5 años:** además de 2025 (base) y 2026 (editable, como antes), el flujo ahora
+  proyecta automáticamente **2027, 2028, 2029 y 2030**, cada año compuesto sobre el anterior con
+  los mismos % del panel de Supuestos (ventas = año anterior × (1+%crecimiento), mismos ratios de
+  proveedores/crédito directo, y cada rubro de gasto crece con su propio % de la sección "%
+  Crecimiento/Decrecimiento de Gastos") — se agregó una tabla **"Resumen Anual Comparativo
+  2025-2030"** con los totales de cada año lado a lado, pestañas para ver el detalle mensual de
+  cualquiera de los 4 años auto-proyectados (2027-2030, sin celdas editables porque son 100%
+  calculados), y el Estado de Resultados Proyectado ahora también tiene una tabla comparativa de
+  los 6 años además de la vista de detalle 2025 vs 2026 que ya existía; todo se recalcula en vivo
+  al cambiar cualquier % de Supuestos, incluidos los 5 años proyectados. La exportación a Excel
+  ganó una hoja por cada año 2025-2030, una hoja "RESUMEN ANUAL 2025-2030" y una hoja "ESTADO
+  RESULT. 2025-2030". (3) **Impresión horizontal:** tanto la impresión de este flujo de caja como
+  la reimpresión desde el historial ahora usan `@page{ size:landscape }` (antes A4 vertical), con
+  fuente más compacta para que quepan los 12 meses + columna TOTAL sin desbordarse; además se
+  corrigió que la impresión y el guardado en historial regeneraban una tabla en blanco (con
+  "$0.00" en cada celda) en vez de tomar los valores ya calculados en pantalla — ahora ambos
+  toman una "foto" del HTML ya calculado de la tabla visible, igual que el resto de documentos
+  bancarios de la app.
+
+- **Corregido: Flujo de Caja Proyectado Produbanco — "&nbsp;" visible en pantalla e impresión.**
+  Las filas "Ventas al Contado" y "Ventas a Crédito (informativo)" se indentan como sub-filas de
+  "Recaudaciones por Ventas"; esa indentación estaba codificada como el entity HTML `&nbsp;&nbsp;`
+  dentro del texto de la etiqueta, pero esa etiqueta pasa por `escapeHtml()` (para proteger contra
+  caracteres especiales), la cual convierte el `&` de `&nbsp;` en `&amp;`, y el navegador termina
+  mostrando literalmente el texto "&nbsp;&nbsp;Ventas al Contado" en vez de una sangría — tanto en
+  pantalla como en el documento impreso/guardado (que toma una foto del mismo HTML ya renderizado).
+  Se reemplazó el entity `&nbsp;` por el carácter Unicode de espacio irrompible real (U+00A0)
+  directamente en el texto de la etiqueta, el cual `escapeHtml()` no toca (solo escapa `& < > " '`)
+  y el navegador renderiza como una sangría visual normal, sin depender de que el HTML se inserte
+  sin escapar. Se revisó el archivo completo por el mismo patrón (una etiqueta con `&nbsp;` literal
+  que termine pasando por `escapeHtml`) y no se encontraron más casos: el resto de usos de
+  `&nbsp;` en la app está escrito directamente en plantillas HTML (fuera de cualquier llamada a
+  `escapeHtml`) y se inserta correctamente vía `innerHTML`.
+
 - **Nuevo: Estados Financieros (dentro de Área Bancaria → pestaña "📊 Estados Financieros")** —
   plan de cuentas editable en tabla (código, nombre, tipo Activo/Pasivo/Patrimonio/Ingreso/
   Costo/Gasto, corriente Sí/No, nivel para la jerarquía) que se puede escribir a mano o

@@ -7499,24 +7499,34 @@ function terminarYGuardarBP(tipoDoc, etiqueta, previewId, formSelector){
 
 /* Ventana de impresión con estilo "papel del banco" (barra de color
    corporativa) — misma convención de imprimirDocumento()/imprimirReporteActivos(). */
-function bpAbrirVentanaImpresion(contentHtml, titulo){
+function bpAbrirVentanaImpresion(contentHtml, titulo, opciones){
+  const opts = opciones || {};
+  const banco = (opts.banco||'pacifico').toLowerCase();
+  const landscape = !!opts.landscape;
+  const esProdubanco = banco==='produbanco';
+  const colorPrim = esProdubanco ? '#00833E' : '#0057A3';
+  const colorSec = esProdubanco ? '#4CAF50' : '#0091D5';
+  const colorBorde = esProdubanco ? '#8fcfa8' : '#8fb3cf';
+  const colorThBg = esProdubanco ? '#e6f5eb' : '#e8f2fa';
+  const colorTotBg = esProdubanco ? '#eaf7ee' : '#eef5fb';
+  const logoTxt = esProdubanco ? '🏦 PRODUBANCO' : '🏦 BANCO DEL PACÍFICO S.A.';
   const win = window.open('', '_blank');
   win.document.write(`<html><head><title>${escapeHtml(titulo||'Documento')}</title><style>
-    @page{ size:A4; margin:14mm; }
-    body{font-family:Arial,Helvetica,sans-serif;padding:0;color:#111;font-size:11.5px;line-height:1.45;}
-    .bp-header{background:linear-gradient(135deg,#0057A3,#0091D5);color:#fff;padding:14px 18px;border-radius:6px;margin-bottom:14px;}
+    @page{ size:${landscape?'landscape':'A4'}; margin:${landscape?'10mm':'14mm'}; }
+    body{font-family:Arial,Helvetica,sans-serif;padding:0;color:#111;font-size:11.5px;line-height:1.45;${landscape?'max-width:100%;':''}}
+    .bp-header{background:linear-gradient(135deg,${colorPrim},${colorSec});color:#fff;padding:14px 18px;border-radius:6px;margin-bottom:14px;}
     .bp-header .bp-logo{font-size:16px;font-weight:900;letter-spacing:.4px;}
     .bp-header .bp-sub{font-size:11px;opacity:.9;margin-top:2px;}
-    h1.bp-titulo{font-size:15px;text-transform:uppercase;letter-spacing:1px;text-align:center;margin:10px 0 4px;color:#0057A3;}
+    h1.bp-titulo{font-size:15px;text-transform:uppercase;letter-spacing:1px;text-align:center;margin:10px 0 4px;color:${colorPrim};}
     h2.bp-sub2{font-size:12px;text-align:center;color:#555;margin:0 0 14px;font-weight:400;}
-    table{width:100%;border-collapse:collapse;margin:8px 0 14px;}
-    th,td{border:1px solid #8fb3cf;padding:5px 6px;font-size:10.5px;text-align:left;vertical-align:top;}
-    th{background:#e8f2fa;font-weight:700;color:#0057A3;}
+    table{width:100%;border-collapse:collapse;margin:8px 0 14px;${landscape?'font-size:10px;':''}}
+    th,td{border:1px solid ${colorBorde};padding:5px 6px;font-size:${landscape?'9.5px':'10.5px'};text-align:left;vertical-align:top;}
+    th{background:${colorThBg};font-weight:700;color:${colorPrim};}
     td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
-    .bp-seccion{background:#0057A3;color:#fff;font-weight:700;font-size:11.5px;padding:5px 10px;margin:14px 0 0;border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:.4px;}
+    .bp-seccion{background:${colorPrim};color:#fff;font-weight:700;font-size:11.5px;padding:5px 10px;margin:14px 0 0;border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:.4px;}
     .bp-seccion + table{margin-top:0;border-top:none;}
     .bp-campo{margin-bottom:6px;font-size:11px;}
-    .bp-campo b{color:#0057A3;}
+    .bp-campo b{color:${colorPrim};}
     .bp-chk{display:inline-block;width:11px;height:11px;border:1px solid #333;text-align:center;line-height:10px;font-size:9px;margin-right:5px;}
     .bp-chk-item{display:block;margin:3px 0;font-size:10.5px;}
     .bp-firma-row{display:flex;justify-content:space-around;margin-top:50px;flex-wrap:wrap;gap:20px;}
@@ -7526,12 +7536,13 @@ function bpAbrirVentanaImpresion(contentHtml, titulo){
     .bp-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;}
     .bp-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 16px;}
     .doc-header{text-align:center;margin-bottom:16px;}
-    .doc-title{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#0057A3;margin-bottom:4px;}
+    .doc-title{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:${colorPrim};margin-bottom:4px;}
     .doc-subtitle{font-size:11px;color:#555;}
     .doc-footer{border-top:1px solid #ccc;padding-top:7px;font-size:9px;color:#888;margin-top:18px;}
-    tr.tot td{font-weight:700;background:#eef5fb;}
+    tr.tot td{font-weight:700;background:${colorTotBg};}
+    ${landscape?'div[style*="min-width:1200px"]{min-width:100% !important;}':''}
   </style></head><body>
-    <div class="bp-header"><div class="bp-logo">🏦 BANCO DEL PACÍFICO S.A.</div><div class="bp-sub">${escapeHtml(titulo||'')}</div></div>
+    <div class="bp-header"><div class="bp-logo">${logoTxt}</div><div class="bp-sub">${escapeHtml(titulo||'')}</div></div>
     ${contentHtml}
     <div class="bp-footer">Documento generado internamente para gestión de trámites bancarios — no reemplaza el formato oficial descargable del banco.</div>
     <script>window.onload=()=>setTimeout(()=>window.print(),300);<\/script>
@@ -8947,7 +8958,7 @@ function generarPBInforme(){
 function pbImprimirInforme(){
   const el = document.getElementById('pb-preview');
   if(!el || el.querySelector('.doc-placeholder')){ toast('Genere el informe primero', 'warning'); return; }
-  bpAbrirVentanaImpresion(el.innerHTML, 'Informe Básico del Cliente - Produbanco');
+  bpAbrirVentanaImpresion(el.innerHTML, 'Informe Básico del Cliente - Produbanco', {banco:'produbanco'});
 }
 async function terminarYGuardarProdubanco(){
   const preview = document.getElementById('pb-preview');
@@ -8982,7 +8993,7 @@ async function pintarPBHistLista(){
 }
 function verPBDocGuardado(id){
   const d = pbDocsGuardados.find(x=>x.id===id); if(!d) return;
-  bpAbrirVentanaImpresion(d.contenidoHtml||'<p>Sin contenido.</p>', d.descripcion||'Informe Básico del Cliente');
+  bpAbrirVentanaImpresion(d.contenidoHtml||'<p>Sin contenido.</p>', d.descripcion||'Informe Básico del Cliente', {banco:'produbanco'});
 }
 async function eliminarPBDocGuardado(id){
   if(!confirm('¿Eliminar este informe guardado?')) return;
@@ -9116,38 +9127,39 @@ function pfRound2(n){ return Math.round((Number(n)||0)*100)/100; }
 /* Calcula un año completo (2025 o 2026) a partir de las ventas base, los
    % de la sección y el saldo inicial de caja — misma cadena de fórmulas
    que la hoja real (filas 14,17-22,25-36,38,41-53,56-73,75,78). */
-function pfCalcularAnio(year, ventas, contadoPct, provNacPct, provExtPct, creditoDirectoPct, recCarteraApertura, saldoInicial){
+function pfCalcularAnio(year, ventas, contadoPct, provNacPct, provExtPct, creditoDirectoPct, recCarteraApertura, saldoInicial, inputsOverride){
   const n=12;
+  const getArr = (key) => (inputsOverride && inputsOverride[key]) ? inputsOverride[key] : pfGetArr(year,key);
   const contado = ventas.map(v=>v*contadoPct/100);
   const credito = ventas.map(v=>v*(100-contadoPct)/100);
   const recCartera = []; for(let i=0;i<n;i++) recCartera.push(i===0?recCarteraApertura:credito[i-1]);
-  const otrosIngOp = pfGetArr(year,'otrosIngOp');
+  const otrosIngOp = getArr('otrosIngOp');
   const recaudaciones = contado.map((v,i)=>v+recCartera[i]);
   const totalIngOp = recaudaciones.map((v,i)=>v+otrosIngOp[i]);
   const provNac = ventas.map(v=>v*provNacPct/100);
   const provExt = ventas.map(v=>v*provExtPct/100);
-  const cartasCredito = pfGetArr(year,'cartasCredito');
+  const cartasCredito = getArr('cartasCredito');
   const creditoDirecto = provExt.map(v=>v*creditoDirectoPct/100);
-  const gastosAdmin = pfGetArr(year,'gastosAdmin');
-  const gastosVentas = pfGetArr(year,'gastosVentas');
-  const gastosPersonal = pfGetArr(year,'gastosPersonal');
-  const otrosGastosOperativos = pfGetArr(year,'otrosGastosOperativos');
-  const impuestos = pfGetArr(year,'impuestos');
-  const participacionTrab = pfGetArr(year,'participacionTrab');
-  const otrosEgresosOp = pfGetArr(year,'otrosEgresosOp');
+  const gastosAdmin = getArr('gastosAdmin');
+  const gastosVentas = getArr('gastosVentas');
+  const gastosPersonal = getArr('gastosPersonal');
+  const otrosGastosOperativos = getArr('otrosGastosOperativos');
+  const impuestos = getArr('impuestos');
+  const participacionTrab = getArr('participacionTrab');
+  const otrosEgresosOp = getArr('otrosEgresosOp');
   const totalEgrOp = provNac.map((_,i)=>provNac[i]+provExt[i]+gastosAdmin[i]+gastosVentas[i]+gastosPersonal[i]+otrosGastosOperativos[i]+impuestos[i]+participacionTrab[i]+otrosEgresosOp[i]);
   const flujoNetoOp = totalIngOp.map((v,i)=>v-totalEgrOp[i]);
 
-  const ingVentaActivos = pfGetArr(year,'ingVentaActivos'), ingVentaInversiones = pfGetArr(year,'ingVentaInversiones');
+  const ingVentaActivos = getArr('ingVentaActivos'), ingVentaInversiones = getArr('ingVentaInversiones');
   const totalIngInv = ingVentaActivos.map((v,i)=>v+ingVentaInversiones[i]);
-  const egrInfraestructura = pfGetArr(year,'egrInfraestructura'), egrActivosFijos = pfGetArr(year,'egrActivosFijos'), egrInversionesPerm = pfGetArr(year,'egrInversionesPerm');
+  const egrInfraestructura = getArr('egrInfraestructura'), egrActivosFijos = getArr('egrActivosFijos'), egrInversionesPerm = getArr('egrInversionesPerm');
   const totalEgrInv = egrInfraestructura.map((v,i)=>v+egrActivosFijos[i]+egrInversionesPerm[i]);
   const flujoNetoInv = totalIngInv.map((v,i)=>v-totalEgrInv[i]);
   const fcf = flujoNetoOp.map((v,i)=>v+flujoNetoInv[i]);
 
-  const finAporteAccionistas = pfGetArr(year,'finAporteAccionistas'), finPrestamoAccionistas = pfGetArr(year,'finPrestamoAccionistas'), finPrestamoBancario = pfGetArr(year,'finPrestamoBancario');
+  const finAporteAccionistas = getArr('finAporteAccionistas'), finPrestamoAccionistas = getArr('finPrestamoAccionistas'), finPrestamoBancario = getArr('finPrestamoBancario');
   const totalIngFin = finAporteAccionistas.map((v,i)=>v+finPrestamoAccionistas[i]+finPrestamoBancario[i]);
-  const finDividendos = pfGetArr(year,'finDividendos'), finOtrosCapInt = pfGetArr(year,'finOtrosCapInt'), finCapitalBanco = pfGetArr(year,'finCapitalBanco'), finInteresesBanco = pfGetArr(year,'finInteresesBanco');
+  const finDividendos = getArr('finDividendos'), finOtrosCapInt = getArr('finOtrosCapInt'), finCapitalBanco = getArr('finCapitalBanco'), finInteresesBanco = getArr('finInteresesBanco');
   const totalEgrFin = finDividendos.map((v,i)=>v+finOtrosCapInt[i]+finCapitalBanco[i]+finInteresesBanco[i]);
   const flujoNetoFin = totalIngFin.map((v,i)=>v-totalEgrFin[i]);
   const flujoNetoGenerado = fcf.map((v,i)=>v+flujoNetoFin[i]);
@@ -9165,6 +9177,50 @@ function pfCalcularAnio(year, ventas, contadoPct, provNacPct, provExtPct, credit
       totalIngFin:pfSumArr(totalIngFin), totalEgrFin:pfSumArr(totalEgrFin), flujoNetoFin:pfSumArr(flujoNetoFin), flujoNetoGenerado:pfSumArr(flujoNetoGenerado) },
   };
 }
+/* Años que se proyectan automáticamente más allá de 2026, compuestos
+   año sobre año con los MISMOS % del panel de Supuestos (2026): cada
+   año N = año N-1 × (1+%crecimiento) para ventas, y cada rubro de
+   gasto con "Growth" crece sobre el año anterior con su mismo %. */
+const PF_ANIOS_AUTO = [2027,2028,2029,2030];
+const PF_TODOS_ANIOS = [2025,2026,...PF_ANIOS_AUTO];
+function pfLeerGrowthPcts(){
+  return {
+    gastosAdminGrowth: pfN('pf-pct-gastosAdminGrowth'),
+    gastosVentasGrowth: pfN('pf-pct-gastosVentasGrowth'),
+    gastosPersonalGrowth: pfN('pf-pct-gastosPersonalGrowth'),
+    otrosGastosOperativosGrowth: pfN('pf-pct-otrosGastosOperativosGrowth'),
+    impuestosGrowth: pfN('pf-pct-impuestosGrowth'),
+    participacionGrowth: pfN('pf-pct-participacionGrowth'),
+    otrosEgresosGrowth: pfN('pf-pct-otrosEgresosGrowth'),
+  };
+}
+/* Calcula un año auto-proyectado (2027+) a partir del año anterior ya
+   calculado ("prev"), aplicando el mismo % de crecimiento de ventas y
+   los mismos % de composición (contado/prov.nac/prov.ext/créd.directo)
+   usados en 2026, y creciendo cada rubro de gasto con su % de la
+   sección de Supuestos — es decir, generaliza en un loop la misma
+   fórmula 2025→2026 para 2026→2027→2028→2029→2030 (compuesto). */
+function pfCalcularAnioAuto(year, prev, pct, growthPcts){
+  const growArr = (arr,p) => (arr||[]).map(v=>v*(1+(p||0)/100));
+  const ventas = prev.ventas.map(v=>v*(1+pct.crecVentas/100));
+  const recCarteraApertura = prev.credito[11]; // = ventas a crédito de dic. del año anterior
+  const saldoInicial = prev.flujoAcumulado[11]; // = saldo final de caja del año anterior
+  const inputsOverride = {
+    otrosIngOp: prev.otrosIngOp, cartasCredito: prev.cartasCredito,
+    gastosAdmin: growArr(prev.gastosAdmin, growthPcts.gastosAdminGrowth),
+    gastosVentas: growArr(prev.gastosVentas, growthPcts.gastosVentasGrowth),
+    gastosPersonal: growArr(prev.gastosPersonal, growthPcts.gastosPersonalGrowth),
+    otrosGastosOperativos: growArr(prev.otrosGastosOperativos, growthPcts.otrosGastosOperativosGrowth),
+    impuestos: growArr(prev.impuestos, growthPcts.impuestosGrowth),
+    participacionTrab: growArr(prev.participacionTrab, growthPcts.participacionGrowth),
+    otrosEgresosOp: growArr(prev.otrosEgresosOp, growthPcts.otrosEgresosGrowth),
+    ingVentaActivos: prev.ingVentaActivos, ingVentaInversiones: prev.ingVentaInversiones,
+    egrInfraestructura: prev.egrInfraestructura, egrActivosFijos: prev.egrActivosFijos, egrInversionesPerm: prev.egrInversionesPerm,
+    finAporteAccionistas: prev.finAporteAccionistas, finPrestamoAccionistas: prev.finPrestamoAccionistas, finPrestamoBancario: prev.finPrestamoBancario,
+    finDividendos: prev.finDividendos, finOtrosCapInt: prev.finOtrosCapInt, finCapitalBanco: prev.finCapitalBanco, finInteresesBanco: prev.finInteresesBanco,
+  };
+  return pfCalcularAnio(year, ventas, pct.contado2026, pct.provNac2026, pct.provExt2026, pct.creditoDirecto2026, recCarteraApertura, saldoInicial, inputsOverride);
+}
 function pfCalcular(){
   const pct = {
     crecVentas: pfN('pf-pct-crecVentas'),
@@ -9173,6 +9229,7 @@ function pfCalcular(){
     provExt2025: pfN('pf-pct-provExt2025'), provExt2026: pfN('pf-pct-provExt2026'),
     creditoDirecto2025: pfN('pf-pct-creditoDirecto2025'), creditoDirecto2026: pfN('pf-pct-creditoDirecto2026'),
   };
+  const growthPcts = pfLeerGrowthPcts();
   const ventas2025 = pfGetArr(2025,'ventas');
   const recCarteraApertura2025 = pfN('pf-in-2025-recCarteraApertura');
   const saldoInicial2025 = pfN('pf-in-2025-saldoInicialCaja');
@@ -9182,34 +9239,51 @@ function pfCalcular(){
   const recCarteraApertura2026 = pfN('pf-in-2026-recCarteraApertura');
   const saldoInicial2026 = y2025.flujoAcumulado[11]; // = saldo final dic-2025 (misma fórmula que B75 real: '+M78 del año anterior')
   const y2026 = pfCalcularAnio(2026, ventas2026, pct.contado2026, pct.provNac2026, pct.provExt2026, pct.creditoDirecto2026, recCarteraApertura2026, saldoInicial2026);
-  return { y2025, y2026, pct, saldoInicial2026 };
+
+  // Auto-proyección compuesta 2027-2030 (mismos % del panel de Supuestos,
+  // aplicados año sobre año a partir del resultado del año anterior).
+  const anios = { 2025: y2025, 2026: y2026 };
+  let prev = y2026;
+  PF_ANIOS_AUTO.forEach(year=>{
+    const y = pfCalcularAnioAuto(year, prev, pct, growthPcts);
+    anios[year] = y;
+    prev = y;
+  });
+  return { y2025, y2026, y2027:anios[2027], y2028:anios[2028], y2029:anios[2029], y2030:anios[2030], anios, pct, growthPcts, saldoInicial2026 };
 }
 /* Estado de Resultados Proyectado — se deriva 100% de los totales del
    flujo de caja (misma fórmula exacta de la hoja real, incluida la
    particularidad de que "Participación Trabajadores" en 2026 toma el
    valor del mes de abril (fila 34, col E) en vez de la suma anual, tal
    cual la fórmula original ='FLUJO DE CAJA 2026'!E34). */
+function pfEstadoResultadosAnio(y, esProyectado){
+  const ingresos = y.tot.ventas;
+  const costoVentas = y.tot.provNac + y.tot.provExt;
+  const utilidadBruta = ingresos - costoVentas;
+  const gAdmin = y.tot.gastosAdmin, gVentas = y.tot.gastosVentas;
+  const otrosGOp = y.tot.gastosPersonal + y.tot.otrosGastosOperativos + y.tot.otrosEgresosOp;
+  const totalGastosOp = gAdmin + gVentas + otrosGOp;
+  const utilidadOperacional = utilidadBruta - totalGastosOp;
+  const gastosFinancieros = esProyectado ? pfSumArr(y.finInteresesBanco) : y.tot.totalIngFin;
+  const participacionTrabajadores = esProyectado ? (y.participacionTrab[3]||0) : y.tot.participacionTrab;
+  const impuestos = y.tot.impuestos;
+  const utilidadEjercicio = utilidadOperacional - gastosFinancieros - participacionTrabajadores - impuestos;
+  return { ingresos, costoVentas, utilidadBruta, gAdmin, gVentas, otrosGOp, totalGastosOp, utilidadOperacional, gastosFinancieros, participacionTrabajadores, impuestos, utilidadEjercicio };
+}
 function pfCalcularEstadoResultados(y2025, y2026){
-  function er(y, esProyectado){
-    const ingresos = y.tot.ventas;
-    const costoVentas = y.tot.provNac + y.tot.provExt;
-    const utilidadBruta = ingresos - costoVentas;
-    const gAdmin = y.tot.gastosAdmin, gVentas = y.tot.gastosVentas;
-    const otrosGOp = y.tot.gastosPersonal + y.tot.otrosGastosOperativos + y.tot.otrosEgresosOp;
-    const totalGastosOp = gAdmin + gVentas + otrosGOp;
-    const utilidadOperacional = utilidadBruta - totalGastosOp;
-    const gastosFinancieros = esProyectado ? pfSumArr(y.finInteresesBanco) : y.tot.totalIngFin;
-    const participacionTrabajadores = esProyectado ? (y.participacionTrab[3]||0) : y.tot.participacionTrab;
-    const impuestos = y.tot.impuestos;
-    const utilidadEjercicio = utilidadOperacional - gastosFinancieros - participacionTrabajadores - impuestos;
-    return { ingresos, costoVentas, utilidadBruta, gAdmin, gVentas, otrosGOp, totalGastosOp, utilidadOperacional, gastosFinancieros, participacionTrabajadores, impuestos, utilidadEjercicio };
-  }
-  return { e2025: er(y2025,false), e2026: er(y2026,true) };
+  // Firma original conservada (usada en Excel/impresión con solo 2025/2026);
+  // para el comparativo de 5 años se usa pfCalcularEstadoResultadosTodos().
+  return { e2025: pfEstadoResultadosAnio(y2025,false), e2026: pfEstadoResultadosAnio(y2026,true) };
+}
+function pfCalcularEstadoResultadosTodos(anios){
+  const out = {};
+  PF_TODOS_ANIOS.forEach(y=>{ out[y] = pfEstadoResultadosAnio(anios[y], y!==2025); });
+  return out;
 }
 
 function pfUpdateMonthly(year, key, arr){ arr.forEach((v,i)=>pfSetTxt(`pf-out-${year}-${key}-m${i}`, v)); }
 function pfPintarAnio(year, y){
-  if(year===2026) pfUpdateMonthly(2026,'ventas',y.ventas);
+  if(year!==2025) pfUpdateMonthly(year,'ventas',y.ventas);
   pfSetTxt(`pf-out-${year}-ventas-tot`, y.tot.ventas);
   ['contado','credito','recCartera','recaudaciones','totalIngOp','provNac','provExt','creditoDirecto','totalEgrOp','flujoNetoOp','totalIngInv','totalEgrInv','flujoNetoInv','fcf','totalIngFin','totalEgrFin','flujoNetoFin','flujoNetoGenerado'].forEach(k=>{
     pfUpdateMonthly(year,k,y[k]); pfSetTxt(`pf-out-${year}-${k}-tot`, y.tot[k]);
@@ -9230,13 +9304,48 @@ function pfPintarEstadoResultados(y2025, y2026){
   Object.keys(er.e2026).forEach(k=>pfSetTxt(`pf-er-2026-${k}`, er.e2026[k]));
   return er;
 }
+let pfAnioAutoSeleccionado = 2027;
+function pfRenderAnioAutoSkeleton(){
+  const cont = document.getElementById('pfAnioAutoTabla');
+  if(!cont) return;
+  cont.innerHTML = pfTablaAnioHTML(pfAnioAutoSeleccionado, 'auto');
+}
+function pfCambiarAnioAuto(year, btn){
+  pfAnioAutoSeleccionado = year;
+  document.querySelectorAll('.pf-anio-auto-tab').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  pfRenderAnioAutoSkeleton();
+  pfRecalcularTodo();
+}
+function pfEstadoResultadosTodosHTML(erTodos){
+  const fila = (label,key,bold) => `<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td>${PF_TODOS_ANIOS.map(y=>`<td class="num">${bpUSD(erTodos[y][key])}</td>`).join('')}</tr>`;
+  return `<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th>${PF_TODOS_ANIOS.map(y=>`<th class="num">${y===2025?y+' (Base)':y+' (Proy.)'}</th>`).join('')}</tr></thead><tbody>
+    ${fila('INGRESOS','ingresos',true)}
+    ${fila('COSTO DE VENTAS','costoVentas')}
+    ${fila('UTILIDAD BRUTA EN VENTA','utilidadBruta',true)}
+    ${fila('Gastos Administrativos','gAdmin')}
+    ${fila('Gastos de Ventas','gVentas')}
+    ${fila('Otros Gastos Operacionales','otrosGOp')}
+    ${fila('TOTAL GASTOS OPERACIONALES','totalGastosOp',true)}
+    ${fila('UTILIDAD OPERACIONAL','utilidadOperacional',true)}
+    ${fila('Gastos Financieros','gastosFinancieros')}
+    ${fila('Participación Trabajadores','participacionTrabajadores')}
+    ${fila('Impuestos','impuestos')}
+    ${fila('UTILIDAD DEL EJERCICIO','utilidadEjercicio',true)}
+  </tbody></table></div>`;
+}
 function pfRecalcularTodo(){
   const r = pfCalcular();
   pfPintarAnio(2025, r.y2025);
   pfPintarAnio(2026, r.y2026);
+  if(r.anios[pfAnioAutoSeleccionado]) pfPintarAnio(pfAnioAutoSeleccionado, r.anios[pfAnioAutoSeleccionado]);
   const credLbl2025 = document.getElementById('pf-pct-credito2025-lbl'); if(credLbl2025) credLbl2025.textContent = (100-r.pct.contado2025).toFixed(2)+'%';
   const credLbl2026 = document.getElementById('pf-pct-credito2026-lbl'); if(credLbl2026) credLbl2026.textContent = (100-r.pct.contado2026).toFixed(2)+'%';
   pfPintarEstadoResultados(r.y2025, r.y2026);
+  const resumenCont = document.getElementById('pfResumenAnualCont');
+  if(resumenCont) resumenCont.innerHTML = pfResumenAnualHTML(r);
+  const erTodosCont = document.getElementById('pfEstadoResultadosTodosCont');
+  if(erTodosCont) erTodosCont.innerHTML = pfEstadoResultadosTodosHTML(pfCalcularEstadoResultadosTodos(r.anios));
   return r;
 }
 /* Recalcula los 12 meses de 2026 de un rubro de gastos aplicando su %
@@ -9289,40 +9398,46 @@ function pfFilaEditable(year, key, label){
 function pfFilaComputada(year, key, label, bold){
   return `<tr${bold?' style="background:#f7fafc;font-weight:700"':''}><td>${escapeHtml(label)}</td>${PF_MESES.map((_,i)=>pfCeldaOut(year,key,i,bold)).join('')}${pfTotOut(year,key,bold)}</tr>`;
 }
-function pfTablaAnioHTML(year){
-  const esBase = year===2025;
+function pfTablaAnioHTML(year, modo){
+  // modo: 'base' (2025, todo editable) | 'editable' (2026, ventas/proveedores
+  // calculados pero rubros de gasto editables mes a mes) | 'auto' (2027-2030,
+  // 100% calculado a partir del año anterior + % de Supuestos — sin inputs).
+  modo = modo || (year===2025?'base':(year===2026?'editable':'auto'));
+  const esBase = modo==='base';
+  const esAuto = modo==='auto';
+  const filaRubro = (key,label) => esAuto ? pfFilaComputada(year,key,label) : pfFilaEditable(year,key,label);
   let html = `<div style="overflow-x:auto"><table style="min-width:1200px"><thead><tr><th>Concepto</th>${PF_MESES.map(m=>`<th class="num">${m}</th>`).join('')}<th class="num">TOTAL</th></tr></thead><tbody>`;
   html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">INGRESOS OPERACIONALES</td></tr>`;
   html += esBase
     ? `<tr><td><b>Ventas Valoradas</b></td>${PF_MESES.map((_,i)=>pfInputMes(2025,'ventas',i)).join('')}${pfTotOut(2025,'ventas',true)}</tr>`
-    : pfFilaComputada(2026,'ventas','Ventas Valoradas (2025 × (1 + % crecimiento))',true);
+    : pfFilaComputada(year,'ventas',`Ventas Valoradas (${year-1} × (1 + % crecimiento))`,true);
   html += pfFilaComputada(year,'recaudaciones','Recaudaciones por Ventas (Contado + Recuperación Cartera)',true);
-  html += pfFilaComputada(year,'contado','&nbsp;&nbsp;Ventas al Contado');
-  html += pfFilaComputada(year,'credito','&nbsp;&nbsp;Ventas a Crédito (informativo)');
-  html += esBase
-    ? `<tr><td>Recuperación Cartera Periodo Anterior (mes 1 = saldo inicial CxC)</td><td><input type="number" step="0.01" id="pf-in-2025-recCarteraApertura" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>${PF_MESES.slice(1).map((_,i)=>pfCeldaOut(2025,'recCartera',i+1)).join('')}${pfTotOut(2025,'recCartera')}</tr>`
-    : `<tr><td>Recuperación Cartera Periodo Anterior (mes 1 = saldo inicial CxC)</td><td><input type="number" step="0.01" id="pf-in-2026-recCarteraApertura" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>${PF_MESES.slice(1).map((_,i)=>pfCeldaOut(2026,'recCartera',i+1)).join('')}${pfTotOut(2026,'recCartera')}</tr>`;
-  html += pfFilaEditable(year,'otrosIngOp','Otros Ingresos Operacionales');
+  html += pfFilaComputada(year,'contado','  Ventas al Contado');
+  html += pfFilaComputada(year,'credito','  Ventas a Crédito (informativo)');
+  html += (esBase || modo==='editable')
+    ? `<tr><td>Recuperación Cartera Periodo Anterior (mes 1 = saldo inicial CxC)</td><td><input type="number" step="0.01" id="pf-in-${year}-recCarteraApertura" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>${PF_MESES.slice(1).map((_,i)=>pfCeldaOut(year,'recCartera',i+1)).join('')}${pfTotOut(year,'recCartera')}</tr>`
+    : pfFilaComputada(year,'recCartera','Recuperación Cartera Periodo Anterior (mes 1 = crédito dic. año anterior, automático)');
+  html += filaRubro('otrosIngOp','Otros Ingresos Operacionales');
   html += pfFilaComputada(year,'totalIngOp','TOTAL INGRESOS OPERACIONALES',true);
 
   html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">EGRESOS OPERACIONALES</td></tr>`;
   html += pfFilaComputada(year,'provNac','Proveedores Nacionales (% de Ventas Valoradas)');
   html += pfFilaComputada(year,'provExt','Proveedores Exterior (% de Ventas Valoradas)');
-  html += pfFilaEditable(year,'cartasCredito','Cartas de Crédito');
+  html += filaRubro('cartasCredito','Cartas de Crédito');
   html += pfFilaComputada(year,'creditoDirecto','Crédito Directo (% de Proveedores Exterior)');
-  PF_FILAS_EDITABLES.slice(2,9).forEach(([key,label])=>{ html += pfFilaEditable(year,key,label); });
+  PF_FILAS_EDITABLES.slice(2,9).forEach(([key,label])=>{ html += filaRubro(key,label); });
   html += pfFilaComputada(year,'totalEgrOp','TOTAL EGRESOS OPERACIONALES',true);
   html += pfFilaComputada(year,'flujoNetoOp','FLUJO NETO OPERACIONAL',true);
 
   html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">ACTIVIDADES DE INVERSIÓN</td></tr>`;
-  PF_FILAS_EDITABLES.slice(9,14).forEach(([key,label])=>{ html += pfFilaEditable(year,key,label); });
+  PF_FILAS_EDITABLES.slice(9,14).forEach(([key,label])=>{ html += filaRubro(key,label); });
   html += pfFilaComputada(year,'totalIngInv','Total Ingresos por Inversión');
   html += pfFilaComputada(year,'totalEgrInv','Total Egresos por Inversión');
   html += pfFilaComputada(year,'flujoNetoInv','FLUJO NETO DE INVERSIÓN',true);
   html += pfFilaComputada(year,'fcf','FLUJO DE CAJA DISPONIBLE PARA ACREEDORES (FCF)',true);
 
   html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">ACTIVIDADES DE FINANCIAMIENTO</td></tr>`;
-  PF_FILAS_EDITABLES.slice(14,20).forEach(([key,label])=>{ html += pfFilaEditable(year,key,label); });
+  PF_FILAS_EDITABLES.slice(14,20).forEach(([key,label])=>{ html += filaRubro(key,label); });
   html += pfFilaComputada(year,'totalIngFin','Total Ingresos por Financiamiento');
   html += pfFilaComputada(year,'totalEgrFin','Total Egresos por Financiamiento');
   html += pfFilaComputada(year,'flujoNetoFin','FLUJO NETO POR FINANCIAMIENTO',true);
@@ -9330,17 +9445,35 @@ function pfTablaAnioHTML(year){
 
   html += esBase
     ? `<tr><td>Saldo Inicial de Caja (mes 1 editable; meses 2-12 = saldo final del mes anterior)</td><td><input type="number" step="0.01" id="pf-in-2025-saldoInicialCaja" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>${PF_MESES.slice(1).map((_,i)=>pfCeldaOut(2025,'saldoInicialM',i+1)).join('')}<td></td></tr>`
-    : `<tr><td>Saldo Inicial de Caja (mes 1 = saldo final Dic-2025, automático)</td>${PF_MESES.map((_,i)=>pfCeldaOut(2026,'saldoInicialM',i)).join('')}<td></td></tr>`;
+    : `<tr><td>Saldo Inicial de Caja (mes 1 = saldo final ${year-1}, automático)</td>${PF_MESES.map((_,i)=>pfCeldaOut(year,'saldoInicialM',i)).join('')}<td></td></tr>`;
   html += pfFilaComputada(year,'flujoAcumulado','FLUJO TOTAL ACUMULADO (Saldo Final de Caja)',true);
   html += `</tbody></table></div>`;
   return html;
+}
+/* Tabla-resumen anual comparativo 2025-2030: totales anuales de cada
+   rubro clave, uno al lado del otro, para ver de un vistazo cómo
+   evoluciona el flujo compuesto a lo largo de los 5 años proyectados. */
+function pfResumenAnualHTML(r){
+  const filas = [
+    ['ventas','Ventas Valoradas',true], ['totalIngOp','Total Ingresos Operacionales'],
+    ['totalEgrOp','Total Egresos Operacionales'], ['flujoNetoOp','Flujo Neto Operacional',true],
+    ['flujoNetoInv','Flujo Neto de Inversión'], ['flujoNetoFin','Flujo Neto por Financiamiento'],
+    ['flujoNetoGenerado','Flujo Neto Generado',true], ['flujoAcumulado','Saldo Final de Caja (Dic.)',true],
+  ];
+  const anioLbl = y => y===2025?`${y} (Base)`:`${y} (Proyectado)`;
+  return `<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th>${PF_TODOS_ANIOS.map(y=>`<th class="num">${anioLbl(y)}</th>`).join('')}</tr></thead><tbody>
+    ${filas.map(([key,label,bold])=>`<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td>${PF_TODOS_ANIOS.map(y=>{
+      const val = key==='flujoAcumulado' ? r.anios[y].flujoAcumulado[11] : r.anios[y].tot[key];
+      return `<td class="num" id="pf-resumen-${y}-${key}">${bpUSD(val)}</td>`;
+    }).join('')}</tr>`).join('')}
+  </tbody></table></div>`;
 }
 function pfSupuestosHTML(){
   const camp = (id, label, def, step) => `<div class="form-group"><label>${label}</label><input type="number" step="${step||'0.01'}" id="${id}" oninput="pfRecalcularTodo()"></div>`;
   return `
   <div class="card" style="border:2px solid #0057A3;">
     <h3 style="margin-top:0;color:#0057A3;">⚙️ Supuestos / Porcentajes (100% editables — recalculan todo en vivo)</h3>
-    <p class="helpNote">Estos son los mismos porcentajes/ratios reales de la hoja de trabajo de Produbanco (crecimiento de ventas, mezcla contado/crédito, proveedores nacional/exterior, crédito directo y el % de crecimiento de cada rubro de gasto). Cambia cualquier valor y el Flujo de Caja 2025/2026 y el Estado de Resultados Proyectado se recalculan automáticamente.</p>
+    <p class="helpNote">Estos son los mismos porcentajes/ratios reales de la hoja de trabajo de Produbanco (crecimiento de ventas, mezcla contado/crédito, proveedores nacional/exterior, crédito directo y el % de crecimiento de cada rubro de gasto). Cambia cualquier valor y el Flujo de Caja se recalcula automáticamente para los 5 años proyectados (2026-2030, compuestos año sobre año con estos mismos % aplicados por igual a partir de 2026) y el Estado de Resultados Proyectado también se actualiza en vivo.</p>
     <div class="grid3">
       ${camp('pf-pct-crecVentas','% Crecimiento de Ventas (2025 → 2026)',3.74,'0.0001')}
       <div class="form-group"><label>% Ventas al Contado — 2025 (Crédito = <span id="pf-pct-credito2025-lbl">20.00%</span>)</label><input type="number" step="0.0001" id="pf-pct-contado2025" oninput="pfRecalcularTodo()"></div>
@@ -9389,12 +9522,30 @@ function pfEstadoResultadosHTML(){
 }
 function pfFlujoFormHTML(){
   return `
-    <div class="doc-literatura"><strong>Guía Metodológica:</strong> Replica fila por fila la hoja de trabajo real "FLUJO DE CAJA PROYECTADO PRODUBANCO" (hojas 2025/2026 + Estado de Resultados Proyectado). El año 2025 es la base editable mes a mes; el año 2026 se calcula en vivo a partir de 2025 y de los porcentajes del panel de Supuestos.</p>
+    <div class="doc-literatura"><strong>Guía Metodológica:</strong> Replica fila por fila la hoja de trabajo real "FLUJO DE CAJA PROYECTADO PRODUBANCO" (hoja 2025 base + Estado de Resultados Proyectado). El año 2025 es la base editable mes a mes; a partir de ahí se proyectan <b>automáticamente 5 años (2026-2030)</b>, cada uno compuesto sobre el anterior con los mismos % del panel de Supuestos (ventas = año anterior × (1+%crecimiento); igual para los ratios de proveedores y el % de crecimiento de cada rubro de gasto). El año 2026 conserva además sus celdas mensuales editables a mano (igual que la hoja original); 2027-2030 se calculan 100% automáticamente y se recalculan en vivo al cambiar cualquier % de Supuestos.</p>
     </div>
     ${pfSupuestosHTML()}
-    <div class="card"><h3 style="margin-top:0;">📅 Flujo de Caja 2025 (Año Base)</h3>${pfTablaAnioHTML(2025)}</div>
-    <div class="card"><h3 style="margin-top:0;">📈 Flujo de Caja 2026 (Proyectado)</h3>${pfTablaAnioHTML(2026)}</div>
-    ${pfEstadoResultadosHTML()}
+    <div class="card" style="border:2px solid #0057A3;">
+      <h3 style="margin-top:0;color:#0057A3;">📊 Resumen Anual Comparativo 2025-2030</h3>
+      <p class="helpNote">Totales anuales de cada rubro clave, año por año, para ver de un vistazo la evolución compuesta de los 5 años proyectados.</p>
+      <div id="pfResumenAnualCont"></div>
+    </div>
+    <div class="card"><h3 style="margin-top:0;">📅 Flujo de Caja 2025 (Año Base)</h3><div id="pfTabla2025">${pfTablaAnioHTML(2025)}</div></div>
+    <div class="card"><h3 style="margin-top:0;">📈 Flujo de Caja 2026 (Proyectado, editable)</h3><div id="pfTabla2026">${pfTablaAnioHTML(2026)}</div></div>
+    <div class="card">
+      <h3 style="margin-top:0;">🗓️ Detalle Mensual — Años Proyectados 2027-2030 (automático)</h3>
+      <p class="helpNote">Estos 4 años se calculan solos a partir del año anterior y de los % del panel de Supuestos — no tienen celdas editables porque son 100% compuestos. Use las pestañas para ver el detalle mensual de cada uno.</p>
+      <div class="tabs" style="margin-bottom:10px;">
+        ${PF_ANIOS_AUTO.map(y=>`<button class="tabBtn pf-anio-auto-tab ${y===pfAnioAutoSeleccionado?'active':''}" onclick="pfCambiarAnioAuto(${y}, this)">${y}</button>`).join('')}
+      </div>
+      <div id="pfAnioAutoTabla">${pfTablaAnioHTML(pfAnioAutoSeleccionado,'auto')}</div>
+    </div>
+    <div id="pfERDetalleCont">${pfEstadoResultadosHTML()}</div>
+    <div class="card">
+      <h3 style="margin-top:0;">📊 Estado de Resultados Proyectado — Comparativo 2025-2030</h3>
+      <p class="helpNote">Mismo Estado de Resultados derivado del Flujo de Caja, ahora con los 6 años (base + 5 proyectados) lado a lado.</p>
+      <div id="pfEstadoResultadosTodosCont"></div>
+    </div>
     <div class="doc-btn-row">
       <button class="btn-secondary" onclick="pfImprimir()">🖨 Imprimir</button>
       <button class="btn-secondary" onclick="pfExportarExcel()">⬇ Exportar Excel</button>
@@ -9404,18 +9555,30 @@ function pfFlujoFormHTML(){
 }
 
 /* --- Impresión (mismo estilo "papel del banco" que bpAbrirVentanaImpresion) --- */
+/* Toma el HTML YA RENDERIZADO Y CALCULADO de los contenedores en vivo
+   (igual que el resto de impresiones del módulo bancario, que usan
+   el.innerHTML de un nodo visible) — así el documento impreso/guardado
+   siempre refleja los valores calculados en pantalla, nunca una tabla
+   en blanco regenerada desde cero. */
+function pfSnapshotHTML(id){ const el = document.getElementById(id); return el ? el.innerHTML : ''; }
+function pfContenidoCompletoHTML(emp){
+  return `
+    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado 2025-2030</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado</div></div>
+    <h4>📊 Resumen Anual Comparativo 2025-2030</h4>${pfSnapshotHTML('pfResumenAnualCont')}
+    <h4>Flujo de Caja 2025 (Base)</h4>${pfSnapshotHTML('pfTabla2025')}
+    <h4>Flujo de Caja 2026 (Proyectado, editable)</h4>${pfSnapshotHTML('pfTabla2026')}
+    <h4>Flujo de Caja ${pfAnioAutoSeleccionado} (Proyectado, automático)</h4>${pfSnapshotHTML('pfAnioAutoTabla')}
+    <p style="font-size:11px;color:#666;">Nota: se muestra el detalle mensual del año proyectado seleccionado (${pfAnioAutoSeleccionado}); los otros años proyectados (${PF_ANIOS_AUTO.filter(y=>y!==pfAnioAutoSeleccionado).join(', ')}) se resumen en la tabla comparativa anual de arriba. Para ver el detalle mensual de otro año, selecciónelo en las pestañas antes de imprimir/guardar.</p>
+    <h4>Estado de Resultados Proyectado (2025 vs 2026)</h4>${pfSnapshotHTML('pfERDetalleCont')}
+    <h4>Estado de Resultados Proyectado — Comparativo 2025-2030</h4>${pfSnapshotHTML('pfEstadoResultadosTodosCont')}
+    <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco. Todos los porcentajes de crecimiento/decrecimiento y de composición (ventas, proveedores, gastos) son parámetros editables por el usuario; los años 2027-2030 se proyectan automáticamente componiendo los mismos porcentajes año sobre año.</div>
+  `;
+}
 function pfImprimir(){
   const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
-  const r = pfRecalcularTodo();
-  const contenido = `
-    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado 2025-2026</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado</div></div>
-    <h4>Flujo de Caja 2025 (Base)</h4>${pfTablaAnioHTML(2025)}
-    <h4>Flujo de Caja 2026 (Proyectado)</h4>${pfTablaAnioHTML(2026)}
-    ${pfEstadoResultadosHTML()}
-    <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco. Todos los porcentajes de crecimiento/decrecimiento y de composición (ventas, proveedores, gastos) son parámetros editables por el usuario.</div>
-  `;
-  bpAbrirVentanaImpresion(contenido, 'Flujo de Caja Proyectado Produbanco');
-  setTimeout(()=>{ pfRecalcularTodo(); }, 400); // repinta la tabla original (la de impresión es una copia del innerHTML)
+  pfRecalcularTodo();
+  const contenido = pfContenidoCompletoHTML(emp);
+  bpAbrirVentanaImpresion(contenido, 'Flujo de Caja Proyectado Produbanco', {banco:'produbanco', landscape:true});
 }
 
 /* --- Exportar a Excel (SheetJS, mismo patrón que efExportarExcel) --- */
@@ -9452,8 +9615,22 @@ function pfExportarExcel(){
     const ws = XLSX.utils.aoa_to_sheet(filas);
     XLSX.utils.book_append_sheet(wb, ws, nombre);
   }
-  hojaAnio('FLUJO DE CAJA 2025', r.y2025);
-  hojaAnio('FLUJO DE CAJA 2026', r.y2026);
+  PF_TODOS_ANIOS.forEach(y=>hojaAnio(`FLUJO DE CAJA ${y}`, r.anios[y]));
+
+  // Hoja resumen anual comparativo 2025-2030
+  const resumenFilas = [['CONCEPTO', ...PF_TODOS_ANIOS.map(y=>String(y))]];
+  const pushResumen = (label, key) => resumenFilas.push([label, ...PF_TODOS_ANIOS.map(y=>pfRound2(key==='flujoAcumulado'?r.anios[y].flujoAcumulado[11]:r.anios[y].tot[key]))]);
+  pushResumen('VENTAS VALORADAS','ventas');
+  pushResumen('TOTAL INGRESOS OPERACIONALES','totalIngOp');
+  pushResumen('TOTAL EGRESOS OPERACIONALES','totalEgrOp');
+  pushResumen('FLUJO NETO OPERACIONAL','flujoNetoOp');
+  pushResumen('FLUJO NETO DE INVERSIÓN','flujoNetoInv');
+  pushResumen('FLUJO NETO POR FINANCIAMIENTO','flujoNetoFin');
+  pushResumen('FLUJO NETO GENERADO','flujoNetoGenerado');
+  pushResumen('SALDO FINAL DE CAJA (DIC.)','flujoAcumulado');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumenFilas), 'RESUMEN ANUAL 2025-2030');
+
+  const erTodos = pfCalcularEstadoResultadosTodos(r.anios);
   const erFilas = [
     ['CONCEPTO','2025 (Base)','2026 (Proyectado)'],
     ['INGRESOS', pfRound2(er.e2025.ingresos), pfRound2(er.e2026.ingresos)],
@@ -9470,6 +9647,16 @@ function pfExportarExcel(){
     ['UTILIDAD DEL EJERCICIO', pfRound2(er.e2025.utilidadEjercicio), pfRound2(er.e2026.utilidadEjercicio)],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(erFilas), 'ESTADO DE RESULTADOS');
+
+  const erCompFilas = [['CONCEPTO', ...PF_TODOS_ANIOS.map(y=>String(y))]];
+  const pushER = (label, key) => erCompFilas.push([label, ...PF_TODOS_ANIOS.map(y=>pfRound2(erTodos[y][key]))]);
+  pushER('INGRESOS','ingresos'); pushER('COSTO DE VENTAS','costoVentas'); pushER('UTILIDAD BRUTA EN VENTA','utilidadBruta');
+  pushER('Gastos Administrativos','gAdmin'); pushER('Gastos de Ventas','gVentas'); pushER('Otros Gastos Operacionales','otrosGOp');
+  pushER('TOTAL GASTOS OPERACIONALES','totalGastosOp'); pushER('UTILIDAD OPERACIONAL','utilidadOperacional');
+  pushER('Gastos Financieros','gastosFinancieros'); pushER('Participación Trabajadores','participacionTrabajadores');
+  pushER('Impuestos','impuestos'); pushER('UTILIDAD DEL EJERCICIO','utilidadEjercicio');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(erCompFilas), 'ESTADO RESULT. 2025-2030');
+
   const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
   XLSX.writeFile(wb, `Flujo_Caja_Produbanco_${(emp?emp.nombre:'empresa')}`.replace(/\s+/g,'_').replace(/[^a-z0-9_]+/gi,'')+'.xlsx');
 }
@@ -9510,7 +9697,7 @@ async function pintarPFHistLista(){
 }
 function verPFDocGuardado(id){
   const d = pfDocsGuardados.find(x=>x.id===id); if(!d) return;
-  bpAbrirVentanaImpresion(d.contenidoHtml||'<p>Sin contenido.</p>', d.descripcion||'Flujo de Caja Proyectado Produbanco');
+  bpAbrirVentanaImpresion(d.contenidoHtml||'<p>Sin contenido.</p>', d.descripcion||'Flujo de Caja Proyectado Produbanco', {banco:'produbanco', landscape:true});
 }
 async function eliminarPFDocGuardado(id){
   if(!confirm('¿Eliminar este flujo de caja guardado?')) return;
@@ -9520,16 +9707,11 @@ async function eliminarPFDocGuardado(id){
 async function terminarYGuardarPF(){
   if(!empresaBancariaSeleccionada){ toast('Seleccione una empresa primero', 'warning'); return; }
   const r = pfRecalcularTodo();
-  const er = pfCalcularEstadoResultados(r.y2025, r.y2026);
   const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
   const datos = {};
   document.querySelectorAll('#pfDocsRoot input').forEach(inp=>{ if(inp.id) datos[inp.id] = inp.value; });
-  const contenidoHtml = `
-    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado 2025-2026</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')}</div></div>
-    <h4>Flujo de Caja 2025 (Base)</h4>${pfTablaAnioHTML(2025)}
-    <h4>Flujo de Caja 2026 (Proyectado)</h4>${pfTablaAnioHTML(2026)}
-    ${pfEstadoResultadosHTML()}`;
-  const descripcion = `Flujo de Caja Proyectado — Total Ventas 2025: ${bpUSD(r.y2025.tot.ventas)} / 2026: ${bpUSD(r.y2026.tot.ventas)}`;
+  const contenidoHtml = pfContenidoCompletoHTML(emp);
+  const descripcion = `Flujo de Caja Proyectado 2025-2030 — Total Ventas 2025: ${bpUSD(r.y2025.tot.ventas)} / 2030: ${bpUSD(r.y2030.tot.ventas)}`;
   await guardarPFFlujo({ descripcion, datos, contenidoHtml, empresaId: empresaBancariaSeleccionada });
   await registrarCambio("Área Bancaria", "generar", `Flujo de Caja Proyectado Produbanco: ${descripcion}`);
   toast('Flujo de Caja guardado en historial ✓', 'success');
@@ -9538,8 +9720,9 @@ async function terminarYGuardarPF(){
 
 async function pintarPFFlujoProdubanco(){
   const cont = document.getElementById("vistaBancariaInterna");
+  pfAnioAutoSeleccionado = 2027;
   cont.innerHTML = `
-    <p class="helpNote">📈 Flujo de Caja Proyectado 2025-2026 (Produbanco) — replica la hoja de trabajo real, con todos los porcentajes de crecimiento/composición 100% editables y el Estado de Resultados Proyectado enlazado automáticamente.</p>
+    <p class="helpNote">📈 Flujo de Caja Proyectado 2025-2030 (Produbanco) — replica la hoja de trabajo real y proyecta automáticamente 5 años (2026-2030), con todos los porcentajes de crecimiento/composición 100% editables y el Estado de Resultados Proyectado enlazado automáticamente.</p>
     ${pbEmpresaCoincideDatos2024() ? '<p class="helpNote" style="background:#fff8e1;border-color:#f0c419;">⚠️ Datos reales 2025/2026 precargados para esta empresa (hoja de trabajo real de Flujo de Caja Proyectado Produbanco). Verifique y ajuste los supuestos según corresponda.</p>' : ''}
     <div id="pfDocsRoot">
       ${pfFlujoFormHTML()}
