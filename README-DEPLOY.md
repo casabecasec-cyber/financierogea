@@ -251,7 +251,49 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
   ejemplo de la guía original) en vez de leerse de un archivo; algunos campos repetitivos se
   limitaron a un número fijo de filas (por ejemplo 3 a 5 registros por tabla) en vez de filas
   ilimitadas. **Requiere agregar la ruta nueva `banco_pacifico_docs` a las reglas de Realtime
-  Database** (mismo patrón `$uid` que las demás, ver el bloque de reglas más abajo).
+  Database** (mismo patrón `$uid` que las demás, ver el bloque de reglas más abajo). Los
+  documentos guardados de esta sección ahora también quedan **etiquetados con el `empresaId`**
+  de la empresa seleccionada en el selector de "Área Bancaria" (los documentos guardados antes
+  de este cambio, sin `empresaId`, se siguen mostrando para cualquier empresa).
+
+- **Nuevo: Informe Básico del Cliente — Produbanco (dentro de Área Bancaria → pestaña "📋 Informe
+  Básico Produbanco")** — reproduce el formulario oficial "IBC_Corp_Emp" de Produbanco (hoja
+  "Informe_Clientes" del Excel original, 341 filas), con sus 9 secciones completas:
+  1. Generalidades; 2. Información Accionarial/Administradores/Directores/Compañías
+  Relacionadas (2.1 Accionistas Finales, 2.2 Administradores/Ejecutivos, 2.3 Directores, 2.4
+  Compañías Relacionadas del Exterior, 2.5 Gobierno Corporativo/Empresa Familiar); 3. Recursos
+  Humanos (3.1 Número de Empleados, 3.2 Políticas de SSO); 4. Datos del Negocio (4.1 Mix de
+  Ventas o Líneas de Productos/Servicios — con **% de participación en ventas y totales
+  calculados en vivo**, igual que el Excel original —, 4.1.1 Otras Variables de los Ingresos,
+  4.2 Canales de Distribución, 4.3 Participación de Mercado, 4.4 Clientes/Proveedores);
+  5. Principales Eventos Internos/Externos; 6. Aspectos Ambientales y de Calidad;
+  7. Instalaciones y Seguros; 8. Mercado de Valores y Líneas de Crédito; 9. Estrategias Futuras
+  del Cliente. Los desplegables de nacionalidad, país de domicilio y cargo se llenaron con el
+  catálogo real del Excel (hoja "Catalogo": 236 países, 7 cargos). Vista previa, impresión con
+  el mismo estilo "papel del banco" y guardado en historial (`banco_produbanco_docs`, con
+  `empresaId`). Simplificación: las tablas repetitivas (accionistas, administradores,
+  directores, compañías relacionadas, líneas de negocio) se limitaron a 5-6 filas en vez de
+  filas ilimitadas, y algunas secciones muy descriptivas del formulario original (instalaciones,
+  líneas de crédito, eventos, estrategias) se capturan como texto libre en vez de sub-tablas
+  exactas, para mantener el formulario manejable. **Requiere agregar la ruta nueva
+  `banco_produbanco_docs` a las reglas de Realtime Database.**
+
+- **Nuevo: Estados Financieros (dentro de Área Bancaria → pestaña "📊 Estados Financieros")** —
+  plan de cuentas editable en tabla (código, nombre, tipo Activo/Pasivo/Patrimonio/Ingreso/
+  Costo/Gasto, corriente Sí/No, nivel para la jerarquía) que se puede escribir a mano o
+  **importar desde un CSV o Excel** (columnas código/nombre/tipo, con parser propio para CSV y
+  SheetJS para .xlsx/.xls — sin agregar ninguna librería nueva, xlsx.full.min.js ya estaba
+  cargado en la app). Sobre ese plan de cuentas se capturan valores manuales para **hasta 5
+  estados** (periodos/años/escenarios) en paralelo, y se generan automáticamente el **Estado de
+  Situación Financiera** (Activo = Pasivo + Patrimonio + Utilidad, con agrupación corriente/no
+  corriente e indicador visual de cuadre/descuadre) y el **Estado de Resultados** (Ingresos −
+  Costos − Gastos = Utilidad), con subtotales y una vista de **comparación lado a lado** de los
+  5 estados. Presentación ejecutiva reutilizando las mismas convenciones CSS del reporte de
+  Activos Fijos (`.tarjetas`, `.tarjeta`, `h2.seccion`, `tfoot`, `@page`), con **impresión a
+  PDF** vía la ventana de impresión del navegador y **exportación a un archivo .xlsx real**
+  (SheetJS, 3 hojas: Situación Financiera, Resultados y Plan de Cuentas). Datos guardados en
+  `estados_financieros/{uid}/{empresaId}` (plan de cuentas + los hasta 5 estados). **Requiere
+  agregar la ruta nueva `estados_financieros` a las reglas de Realtime Database.**
 
 - **Nuevo: botón "✏️ Corregir monto" en Cuentas por Pagar (Forma de Pago de una retención)** —
   antes solo se podía SUMAR al monto acumulado ("+ Agregar"), sin forma de corregirlo si

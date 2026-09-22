@@ -7087,12 +7087,16 @@ async function pintarAreaBancaria(){
       <button class="tabBtn ${vistaBancariaActual==='bancos'?'active':''}" onclick="cambiarVistaBancaria('bancos')">Bancos</button>
       <button class="tabBtn ${vistaBancariaActual==='flujo'?'active':''}" onclick="cambiarVistaBancaria('flujo')">Flujo de Caja</button>
       <button class="tabBtn ${vistaBancariaActual==='docspacifico'?'active':''}" onclick="cambiarVistaBancaria('docspacifico')">📄 Documentos Banco Pacífico</button>
+      <button class="tabBtn ${vistaBancariaActual==='docsprodubanco'?'active':''}" onclick="cambiarVistaBancaria('docsprodubanco')">📋 Informe Básico Produbanco</button>
+      <button class="tabBtn ${vistaBancariaActual==='estadosfinancieros'?'active':''}" onclick="cambiarVistaBancaria('estadosfinancieros')">📊 Estados Financieros</button>
     </div>
     <div id="vistaBancariaInterna">Cargando...</div>
   `;
   if(vistaBancariaActual==="bancos") await pintarListaBancos();
   else if(vistaBancariaActual==="flujo") await pintarFlujoCaja();
-  else await pintarDocsBancoPacifico();
+  else if(vistaBancariaActual==="docspacifico") await pintarDocsBancoPacifico();
+  else if(vistaBancariaActual==="docsprodubanco") await pintarDocsBancoProdubanco();
+  else await pintarEstadosFinancieros();
 }
 
 async function cambiarVistaBancaria(vista){
@@ -7359,10 +7363,12 @@ let bpDocsGuardados = {};
 let bpDocHistTipoActual = "flujocaja";
 
 /* --- Firebase: historial de documentos Banco del Pacífico --- */
-async function cargarDocsBancoPacifico(tipo){
+async function cargarDocsBancoPacifico(tipo, empresaId){
   const snap = await db.ref(`banco_pacifico_docs/${DATOS_UID}`).once("value");
   const val = snap.val() || {};
-  return Object.keys(val).map(id=>({id,...val[id]})).filter(d=>d.tipo===tipo).sort((a,b)=>(b.creado||0)-(a.creado||0));
+  return Object.keys(val).map(id=>({id,...val[id]}))
+    .filter(d=>d.tipo===tipo && (!empresaId || !d.empresaId || d.empresaId===empresaId))
+    .sort((a,b)=>(b.creado||0)-(a.creado||0));
 }
 async function guardarDocBancoPacifico(datos, id){
   const payload = limpiarUndefined({...datos, actualizado: Date.now()});
@@ -7442,7 +7448,7 @@ async function pintarBPHistLista(tipo){
   const cont = document.getElementById("bpHistLista");
   if(!cont) return;
   cont.innerHTML = `<div class="emptyState">Cargando...</div>`;
-  try{ bpDocsGuardados[tipo] = await cargarDocsBancoPacifico(tipo); }
+  try{ bpDocsGuardados[tipo] = await cargarDocsBancoPacifico(tipo, empresaBancariaSeleccionada); }
   catch(e){
     cont.innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "banco_pacifico_docs" a las reglas de Realtime Database.</span></div>`;
     return;
@@ -7473,7 +7479,7 @@ async function eliminarBPDocGuardado(tipo, id){
 async function guardarHistorialBP(tipoDoc, descripcion, datos, previewId){
   const previewEl = document.getElementById(previewId);
   const contenidoHtml = previewEl ? previewEl.innerHTML : "";
-  await guardarDocBancoPacifico({ tipo: tipoDoc, descripcion, datos, contenidoHtml }, null);
+  await guardarDocBancoPacifico({ tipo: tipoDoc, descripcion, datos, contenidoHtml, empresaId: empresaBancariaSeleccionada }, null);
   await registrarCambio("Área Bancaria", "generar", `${BANCO_PACIFICO_DOC_TIPOS[tipoDoc]||tipoDoc}: ${descripcion}`);
   if(bpDocHistTipoActual===tipoDoc) await pintarBPHistLista(tipoDoc);
 }
@@ -8486,6 +8492,21 @@ async function pintarDocsBancoPacifico(){
   if(document.getElementById('fc2-resumen-live')) bpFlujoCajaLive();
   if(document.getElementById('anx-cart-total')) bpAnexosLive();
   if(document.getElementById('ib-total-personal')) bpInfoBasicaLive();
+  bpPrefillEmpresaEnDocs();
+}
+
+/* Pre-llena nombre/RUC de la empresa seleccionada en Área Bancaria dentro
+   de los formularios de documentos bancarios actualmente visibles
+   (no sobrescribe campos que el usuario ya haya llenado). */
+function bpPrefillEmpresaEnDocs(){
+  const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  if(!emp) return;
+  const pares = [['ib-nombre','ib-ruc'], ['pj-razonsocial','pj-ruc'], ['pb-nombre','pb-ruc']];
+  pares.forEach(([nid,rid])=>{
+    const n = document.getElementById(nid), r = document.getElementById(rid);
+    if(n && !n.value) n.value = emp.nombre||'';
+    if(r && !r.value) r.value = emp.ruc||'';
+  });
 }
 function pintarBPDocTabs(){
   const cont = document.getElementById("bpDocTabsBar");
@@ -8493,6 +8514,792 @@ function pintarBPDocTabs(){
   cont.innerHTML = Object.keys(BANCO_PACIFICO_DOC_TIPOS).map((tipo,idx)=>
     `<button class="doc-tab ${idx===0?'active':''}" onclick="showBancoDocTab('${tipo}', this)">${BANCO_PACIFICO_DOC_TIPOS[tipo]}</button>`
   ).join("");
+}
+
+/* =========================================================================
+   MÓDULO: DOCUMENTO PRODUBANCO — INFORME BÁSICO DEL CLIENTE
+   Reproduce el formulario oficial "IBC_Corp_Emp" (Informe Básico del
+   Cliente Corporativo/Empresa) de Produbanco, leído directamente de la
+   hoja "Informe_Clientes" (filas 1-341) y su catálogo de listas
+   desplegables (hoja "Catalogo": nacionalidad/país de domicilio y cargo).
+   9 secciones: 1. Generalidades; 2. Información Accionarial/
+   Administradores/Directores/Compañías Relacionadas (2.1 a 2.5);
+   3. Recursos Humanos (3.1 Empleados, 3.2 SSO); 4. Datos del Negocio
+   (4.1 Mix de Ventas con % participación EN VIVO + 4.1.1 a 4.4);
+   5. Eventos internos/externos; 6. Aspectos Ambientales y de Calidad;
+   7. Instalaciones y Seguros; 8. Mercado de Valores y Líneas de Crédito;
+   9. Estrategias Futuras. Guarda historial en banco_produbanco_docs,
+   con el mismo patrón de banco_pacifico_docs (limpiarUndefined, toast,
+   ventana de impresión bpAbrirVentanaImpresion).
+   ========================================================================= */
+const PB_PAISES = ["AFGANISTAN", "ALBANIA", "ALEMANIA", "ANDORRA", "ANGOLA", "ANGUILA", "ANTIGUA", "ANTILLAS NEERLANDESAS", "ARABIA SAUDITA", "ARGELIA", "ARGENTINA", "ARMENIA", "ARUBA", "AUSTRALIA", "AUSTRIA", "AZERBAIJAN", "BAHAMAS", "BAHREIN", "BANGADESH", "BARBADOS", "BELGICA", "BELICE", "BENIN", "BERMUDAS", "BOLIVIA", "BOSNIA-HERCEGOVINA", "BOTSWANA", "BRASIL", "BRUNEI", "BULGARIA", "BURMA", "BURQUINA FASO", "BURUNDI", "BUTAN", "CABO VERDE", "CAMBOYA", "CAMERUN", "CAMORAS", "CANADA", "CHAD", "CHECOSLOVAQUIA", "CHILE", "CHINA", "CHIPRE", "CIUDAD DEL VATICANO", "COLOMBIA", "CONGO", "COSTA DE MARFIL", "COSTA RICA", "CROACIA", "CUBA", "DAHOMEY", "DINAMARCA", "DOMINICA", "ECUADOR", "EGIPTO", "EL SALVADOR", "EMIRATOS ARABES UNIDOS", "ESLOVAQUIA", "ESLOVENIA", "ESPAÑA", "ESTADOS UNIDOS", "ESTONIA", "ETIOPIA", "EUROPA", "FIJI", "FILIPINAS", "FINLADIA", "FRANCIA", "GABON", "GEORGIA", "GHANA", "GIBRALTAR", "GINEA", "GINEA BISSAU", "GINEA ECUATORIAL", "GRANADA", "GRECIA", "GROENLANDIA", "GUADALUPE", "GUAM", "GUATEMALA", "GUAYANA FRANCESA", "GUYANA", "HAITI", "HONDURAS", "HONG KONG", "HUNGRIA", "INDIA", "INDONESIA", "IRAN", "IRAQ", "IRLANDA", "ISLA DE PASCUA", "ISLA JOHNSTON", "ISLA NIUE", "ISLA NORFOLF", "ISLA SAN MARTIN", "ISLA WAKE", "ISLANDIA", "ISLAS CAIMAN", "ISLAS CANTON Y ENDERBURY", "ISLAS COCOS", "ISLAS COOK", "ISLAS DEL PACIFICO", "ISLAS DEL PACIFICO (EE.UU)", "ISLAS FEROE", "ISLAS GILBERT ELLICE", "ISLAS HEARD Y MCDONALD", "ISLAS MALVINAS", "ISLAS MIDWAY", "ISLAS PITCAIRN", "ISLAS SOLOMON BRITANICAS", "ISLAS SVALBART Y JAN MAYEN", "ISLAS TOKELAU", "ISLAS TURCAS Y CAICOS", "ISLAS VIRGENES BRITANICAS", "ISLAS WALLIS FUTUNA", "ISRAEL", "ITALIA", "JAMAICA", "JAPON", "JORDANIA", "KAMPUCHEA DEMOCRATICA", "KAZAJST-N", "KENIA", "KOREA DEL NORTE", "KOREA DEL SUR", "KUWAIT", "LAOS", "LATVIA", "LESOTHO", "LIBANO", "LIBERIA", "LIBIA", "LIECHTENSTEIN", "LITHUANIA", "LUXEMBURGO", "MACAO", "MACEDONIA", "MADAGASCAR", "MALASIA", "MALAWI", "MALDIVAS", "MALI", "MALTA", "MARRUECOS", "MARTINICA", "MAURICIO", "MAURITANIA", "MEXICO", "MICRONESIA", "MOLDOVA", "MONACO", "MONGOLIA", "MONTENEGRO", "MONTSERRAT", "MOZAMBIQUE", "MYANMAR", "NAMIBIA", "NAURU", "NEPAL", "NICARAGUA", "NIGER", "NIGERIA", "NORUEGA", "NUEVA CALEDONIA", "NUEVA ZELANDIA", "NUEVAS H+BRIDAS", "OMAN", "PAISES BAJOS", "PAKISTAN", "PALESTINA", "PANAMA", "PAPUA NUEVA GUINEA", "PARAGUAY", "PERU", "POLINESIA FRANCESA", "POLONIA", "PORTUGAL", "PUERTO RICO", "QATAR", "REINO UNIDO", "REPUBLICA CENTROAFRICANA", "REPUBLICA DE KOSOVO", "REPUBLICA DOMINICANA", "REUNION", "RHODESIA DEL SUR", "RSS DE BIOLORRUSIA", "RUMANIA", "RUSIA", "RWANDA", "S. PEDRO Y MIGELON", "SAHARA OCCIDENTAL", "SAMOA AMERICANA", "SAMOA OCCIDENTAL", "SAN CRISTOBAL Y NEVIS", "SAN MARINO", "SAN VICENTE", "SANTA LUCIA", "SANTO TOME Y PRINCIPE", "SENEGAL", "SERBIA", "SEYCHELLES", "SIERRA LEONA", "SIKKIM", "SINGAPUR", "SIRIA", "SOMALIA", "SRI LANKA", "SUDAFRICA", "SUDAN", "SUECIA", "SUIZA", "SURINAME", "SWAZILANDIA", "TAILANDIA", "TAIWAN", "TANZANIA", "TOGO", "TONGA", "TRINIDAD Y TABAGO", "TUNEZ", "TUNEZ", "TURQUIA", "UGANDA", "UKRAINE", "URUGUAY", "VANUATU", "VENEZUELA", "VIETNAM", "YEMEN", "YEMEN DEMOCRATICO", "ZAIRE", "ZAMBIA", "ZIMBABWE"];
+const PB_CARGOS = ["ASESOR LEGAL", "FIRMA AUTORIZADA", "GERENTE DE VENTAS", "GERENTE FINANCIERO", "CONTADOR", "TESORERO", "GERENTE DE PRODUCCIÓN"];
+
+let pbDocsGuardados = [];
+
+/* --- Firebase: historial de informes Produbanco --- */
+async function cargarDocsBancoProdubanco(empresaId){
+  const snap = await db.ref(`banco_produbanco_docs/${DATOS_UID}`).once("value");
+  const val = snap.val() || {};
+  let lista = Object.keys(val).map(id=>({id,...val[id]}));
+  if(empresaId) lista = lista.filter(d=>!d.empresaId || d.empresaId===empresaId);
+  return lista.sort((a,b)=>(b.creado||0)-(a.creado||0));
+}
+async function guardarDocBancoProdubanco(datos, id){
+  const payload = limpiarUndefined({...datos, actualizado: Date.now()});
+  if(id){ await db.ref(`banco_produbanco_docs/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`banco_produbanco_docs/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
+  return id;
+}
+async function eliminarDocBancoProdubanco(id){ await db.ref(`banco_produbanco_docs/${DATOS_UID}/${id}`).remove(); }
+
+/* --- helpers --- */
+function pbN(id){ const el=document.getElementById(id); return el ? (parseFloat(el.value)||0) : 0; }
+function pbV(id){ const el=document.getElementById(id); return el ? el.value : ''; }
+function pbUSD(n){ return '$'+Number(n||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function pbPct(n){ return isFinite(n) ? Number(n||0).toFixed(2)+'%' : '0.00%'; }
+function pbSelectOpts(opts){ return opts.map(o=>`<option>${o}</option>`).join(''); }
+function pbFilas(prefijo, n, campos){
+  return Array.from({length:n}).map((_,i)=>`
+    <div style="display:grid;grid-template-columns:${campos.map(c=>c.w||'1fr').join(' ')};gap:6px;margin-bottom:4px;">
+      ${campos.map(c=>{
+        const id=`${prefijo}-${i}-${c.id}`;
+        if(c.tipo==='select') return `<select id="${id}" ${c.oninput?`onchange="${c.oninput}"`:''} style="font-size:11px;padding:5px"><option value="">${c.label}</option>${pbSelectOpts(c.opciones||[])}</select>`;
+        return `<input type="${c.tipo||'text'}" id="${id}" placeholder="${c.label}" style="font-size:11px;padding:5px" ${c.oninput?`oninput="${c.oninput}"`:''}>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+function pbInformeBasicoFormHTML(){
+  const anioA = new Date().getFullYear(), anioB = anioA-1;
+  return `
+  <div class="doc-literatura"><strong>Produbanco — Informe Básico del Cliente:</strong> reproduce el formulario "IBC_Corp_Emp" que el banco solicita para el conocimiento del cliente corporativo (generalidades, estructura accionarial, RRHH, datos del negocio, aspectos ambientales, instalaciones, líneas de crédito y estrategias futuras).</div>
+
+  <h3>1. Generalidades</h3>
+  <div class="form-group"><label>Nombre de la compañía</label><input type="text" id="pb-nombre"></div>
+  <div class="form-group"><label>RUC</label><input type="text" id="pb-ruc"></div>
+  <div class="form-group"><label>Actividades principales</label><textarea id="pb-actividades" rows="2"></textarea></div>
+  <div class="form-group"><label>Breve historia de la compañía (año de inicio, lugar, cómo se inició, actividades iniciales, etc.)</label><textarea id="pb-historia" rows="3"></textarea></div>
+
+  <h3>2.1 Accionistas Finales (Persona Natural)</h3>
+  ${pbFilas('pb-acc',5,[{id:'nombre',label:'Nombre'},{id:'ident',label:'N° identificación'},{id:'nac',label:'Nacionalidad',tipo:'select',opciones:PB_PAISES},{id:'pct',label:'% Participación',tipo:'number',oninput:'pbAccionistasLive()'}])}
+  <div id="pb-acc-total" style="font-size:12px;font-weight:700;margin:4px 0 10px;"></div>
+
+  <h3>2.2 Administradores / Ejecutivos</h3>
+  <p class="helpNote" style="font-size:11px;">Indicar principal línea de administradores que no se reflejen en la web de Superintendencia de Compañías.</p>
+  ${pbFilas('pb-adm',5,[{id:'nombre',label:'Nombre'},{id:'ident',label:'N° identificación'},{id:'nac',label:'Nacionalidad',tipo:'select',opciones:PB_PAISES},{id:'cargo',label:'Cargo',tipo:'select',opciones:PB_CARGOS},{id:'tiempo',label:'Tiempo en el cargo'}])}
+
+  <h3>2.3 Directores</h3>
+  <p class="helpNote" style="font-size:11px;">De no contar con Directores, dejar en blanco.</p>
+  ${pbFilas('pb-dir',5,[{id:'nombre',label:'Nombre'},{id:'ident',label:'N° identificación'},{id:'nac',label:'Nacionalidad',tipo:'select',opciones:PB_PAISES},{id:'tiempo',label:'Tiempo en el cargo'}])}
+
+  <h3>2.4 Compañías Relacionadas del Exterior</h3>
+  <p class="helpNote" style="font-size:11px;">Exclusivamente de existir compañías del Grupo constituidas fuera de Ecuador.</p>
+  ${pbFilas('pb-rel',5,[{id:'nombre',label:'Nombre compañía',w:'1.3fr'},{id:'ident',label:'N° identificación'},{id:'pais',label:'País de domicilio',tipo:'select',opciones:PB_PAISES},{id:'actividad',label:'Actividad'},{id:'comercial',label:'¿Relación comercial?',tipo:'select',opciones:['Sí','No']},{id:'accionarial',label:'¿Relación accionarial?',tipo:'select',opciones:['Sí','No']},{id:'pct',label:'% Particip. accionarial',tipo:'number'}])}
+
+  <h3>2.5 Gobierno Corporativo / Empresa Familiar</h3>
+  <div class="form-group"><label>¿Es una empresa familiar?</label><select id="pb-familiar"><option value="">--</option>${pbSelectOpts(['Sí','No','N/A'])}</select></div>
+  <div class="form-group"><label>Comentario (políticas de sucesión, consejo de familia, protocolo familiar, etc.)</label><textarea id="pb-familiar-com" rows="2"></textarea></div>
+  <div class="form-group"><label>¿Mantiene Gobierno Corporativo?</label><select id="pb-gobcorp"><option value="">--</option>${pbSelectOpts(['Sí','No','N/A'])}</select></div>
+  <div class="form-group"><label>Comentario (principales prácticas aplicadas)</label><textarea id="pb-gobcorp-com" rows="2"></textarea></div>
+
+  <h3>3.1 Número de Empleados</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+    <div class="form-group"><label>Administrativos</label><input type="number" id="pb-emp-admin" oninput="pbRRHHLive()"></div>
+    <div class="form-group"><label>Producción / Obreros</label><input type="number" id="pb-emp-prod" oninput="pbRRHHLive()"></div>
+    <div class="form-group"><label>Comerciales</label><input type="number" id="pb-emp-com" oninput="pbRRHHLive()"></div>
+  </div>
+  <div id="pb-emp-total" style="font-size:12px;font-weight:700;margin-bottom:8px;">Total empleados: 0</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+    <div class="form-group"><label># Hombres</label><input type="number" id="pb-emp-hombres"></div>
+    <div class="form-group"><label># Mujeres</label><input type="number" id="pb-emp-mujeres"></div>
+  </div>
+  <div class="form-group"><label>¿Tiene sindicato de empleados?</label><select id="pb-sindicato"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Detalle (N° empleados sindicalizados, fecha de firma del último contrato colectivo)</label><textarea id="pb-sindicato-det" rows="2"></textarea></div>
+  <div class="form-group"><label>Valor de nómina mensual (USD, promedio)</label><input type="number" id="pb-nomina"></div>
+  <div class="form-group"><label>¿Posee "Manual de Funciones" para cada cargo?</label><select id="pb-manualfunciones"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>¿Posee Política de Contratación (incl. edad mínima para trabajar)?</label><select id="pb-politicacontratacion"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+
+  <h3>3.2 Políticas de Seguridad y Salud Ocupacional (SSO)</h3>
+  <div class="form-group"><label>¿Tienen políticas de SSO?</label><select id="pb-sso"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Detalle (N° de resolución o fecha de aprobación del Reglamento de Seguridad e Higiene)</label><textarea id="pb-sso-det" rows="2"></textarea></div>
+  <div class="form-group"><label>¿Cuenta con permiso de bomberos vigente?</label><select id="pb-bomberos"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Si es Sí: fecha última aprobación. Si es No: estatus y/o motivo</label><input type="text" id="pb-bomberos-det"></div>
+
+  <h3>4.1 Mix de Ventas o Líneas de Productos/Servicios</h3>
+  <p class="helpNote" style="font-size:11px;">Ingrese hasta 6 líneas de negocio. El % de participación en ventas y el total de ventas se calculan automáticamente (igual que el Excel original).</p>
+  <div class="grid2">
+    <div class="field"><label>Año actual</label><input type="number" id="pb-anio-actual" value="${anioA}" oninput="pbVentasLive()"></div>
+    <div class="field"><label>Año anterior</label><input type="number" id="pb-anio-anterior" value="${anioB}" oninput="pbVentasLive()"></div>
+  </div>
+  <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Orden de campos por línea: línea de negocio · ventas año actual · costos año actual · volumen (cant.) · medida · ventas año anterior · costos año anterior · volumen (cant.) año anterior · medida año anterior</div>
+  ${pbFilas('pb-mix',6,[{id:'linea',label:'Línea de negocio',w:'1.5fr'},{id:'ventas',label:'Ventas USD (actual)',tipo:'number',oninput:'pbVentasLive()'},{id:'costos',label:'Costos USD (actual)',tipo:'number',oninput:'pbVentasLive()'},{id:'volcant',label:'Volumen cant.',tipo:'number'},{id:'volmed',label:'Medida'},{id:'ventasant',label:'Ventas USD (anterior)',tipo:'number',oninput:'pbVentasLive()'},{id:'costosant',label:'Costos USD (anterior)',tipo:'number',oninput:'pbVentasLive()'},{id:'volcantant',label:'Volumen cant. ant.',tipo:'number'},{id:'volmedant',label:'Medida ant.'}])}
+  <div id="pb-mix-total" style="font-size:12px;font-weight:700;margin:6px 0 10px;">Total Ventas: $0.00</div>
+
+  <h3>4.1.1 Otras Variables de los Ingresos</h3>
+  <div class="form-group"><label>¿Los ingresos tienen estacionalidad?</label><select id="pb-estacionalidad"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Detalle (meses de mayor/menor nivel de ingresos, % sobre ventas anual, motivo)</label><textarea id="pb-estacionalidad-det" rows="2"></textarea></div>
+  <div class="form-group"><label>¿Realiza ventas al sector público?</label><select id="pb-ventaspublico"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Entidad estatal a la que vende / % de ventas al sector público</label><input type="text" id="pb-ventaspublico-det"></div>
+  <div class="form-group"><label>¿Realiza exportaciones?</label><select id="pb-exporta"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="grid2">
+    <div class="field"><label>Total exportaciones año actual (USD)</label><input type="number" id="pb-export-actual"></div>
+    <div class="field"><label>Total exportaciones año anterior (USD)</label><input type="number" id="pb-export-anterior"></div>
+  </div>
+
+  <h3>4.2 Mercadeo y/o Canales de Distribución</h3>
+  <div class="form-group"><label>Canales de distribución y % de participación sobre ingresos totales del último año fiscal</label><textarea id="pb-canales" rows="2"></textarea></div>
+
+  <h3>4.3 Participación de Mercado y Competidores</h3>
+  <div class="form-group"><label>Participación dentro del mercado/sector; competidores y sus principales líneas</label><textarea id="pb-competidores" rows="2"></textarea></div>
+
+  <h3>4.4 Ventas a Clientes / Compras a Proveedores</h3>
+  <div class="form-group"><label>Principales clientes locales y del exterior (nivel de ventas, plazo de crédito otorgado)</label><textarea id="pb-clientes" rows="2"></textarea></div>
+  <div class="form-group"><label>Principales proveedores locales y del exterior (nivel de compras, plazo de crédito recibido)</label><textarea id="pb-proveedores" rows="2"></textarea></div>
+
+  <h3>5. Principales Eventos Internos y/o Externos</h3>
+  <div class="form-group"><label>Eventos que afectaron positiva o negativamente a la compañía (impositivos, precios locales/internacionales, medidas gubernamentales, factores climáticos, otros)</label><textarea id="pb-eventos" rows="3"></textarea></div>
+
+  <h3>6. Aspectos Ambientales y de Calidad</h3>
+  <div class="form-group"><label>¿Tiene permiso ambiental o lo está tramitando?</label><select id="pb-permisoambiental"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Detalle (establecimiento, ubicación, tipo de permiso: Certificado / Registro / Licencia Ambiental)</label><textarea id="pb-permisoambiental-det" rows="2"></textarea></div>
+  <div class="form-group"><label>¿Cuenta con otras certificaciones ambientales?</label><select id="pb-certamb"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>¿Cuenta con iniciativas de sostenibilidad (ahorro energético, comercio justo, economía circular, etc.)?</label><select id="pb-sostenibilidad"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Detalle de certificaciones ambientales / iniciativas sostenibles</label><textarea id="pb-ambiental-det" rows="2"></textarea></div>
+  <div class="form-group"><label>¿Mide su huella de carbono?</label><select id="pb-huellacarbono"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>¿Tiene certificación de calidad vigente?</label><select id="pb-certcalidad"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>Certificaciones de calidad que posee (ISO9001, OHSAS, INEN, etc.)</label><input type="text" id="pb-certcalidad-det"></div>
+
+  <h3>7. Instalaciones y Seguros</h3>
+  <div class="form-group"><label>Principales instalaciones (matriz, plantas/fábricas, centros de distribución, haciendas, predios camaroneros, etc.: tipo, ubicación, % capacidad utilizada, extensión, si tiene seguro, aseguradora)</label><textarea id="pb-instalaciones" rows="3"></textarea></div>
+  <div class="form-group"><label>¿Su inventario tiene seguro? / Nombre de la aseguradora del inventario</label><input type="text" id="pb-seguroinventario"></div>
+
+  <h3>8. Mercado de Valores y Líneas de Crédito</h3>
+  <div class="form-group"><label>¿Participa en el mercado de valores?</label><select id="pb-mercadovalores"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>¿Proyecta instrumentar nuevas emisiones? (tipo, monto, plazo)</label><input type="text" id="pb-nuevasemisiones"></div>
+  <div class="form-group"><label>Líneas de crédito disponibles (institución financiera, monto de línea, monto y tipo de garantía)</label><textarea id="pb-lineascredito" rows="2"></textarea></div>
+  <div class="form-group"><label>¿Tiene financiamiento vía Factoring?</label><select id="pb-factoring"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+  <div class="form-group"><label>¿Tiene financiamiento con instituciones del exterior o públicas? (institución, saldo por pagar)</label><select id="pb-financext"><option value="">--</option>${pbSelectOpts(['Sí','No'])}</select></div>
+
+  <h3>9. Estrategias Futuras del Cliente</h3>
+  <div class="form-group"><label>Estrategias de corto y largo plazo (comerciales, de inversión, otras — próximos 12 y 24 meses)</label><textarea id="pb-estrategias" rows="3"></textarea></div>
+
+  <h3>Datos de Elaboración</h3>
+  <div class="grid2">
+    <div class="field"><label>Fecha de creación</label><input type="date" id="pb-fechacreacion"></div>
+    <div class="field"><label>Nombre del responsable (quien llenó el formulario)</label><input type="text" id="pb-responsable"></div>
+  </div>
+
+  <div class="doc-btn-row">
+    <button class="btn-calc" onclick="generarPBInforme()">👁 Generar Informe</button>
+    <button class="btn-secondary" onclick="pbImprimirInforme()">🖨 Imprimir</button>
+    <button class="btn-calc" onclick="terminarYGuardarProdubanco()" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+  </div>
+  `;
+}
+
+/* --- % participación / totales en vivo (igual que en el Excel original) --- */
+function pbAccionistasLive(){
+  const box=document.getElementById('pb-acc-total'); if(!box) return;
+  let sum=0; for(let i=0;i<5;i++) sum+=pbN(`pb-acc-${i}-pct`);
+  const ok = Math.abs(sum-100)<0.01;
+  box.textContent = `Suma % participación: ${pbPct(sum)}` + (sum>0 ? (ok?' ✓ (cuadra 100%)':' (debería sumar 100%)') : '');
+  box.style.color = (sum>0 && !ok) ? '#c0392b' : '';
+}
+function pbRRHHLive(){
+  const box=document.getElementById('pb-emp-total'); if(!box) return;
+  const tot = pbN('pb-emp-admin')+pbN('pb-emp-prod')+pbN('pb-emp-com');
+  box.textContent = `Total empleados: ${tot}`;
+}
+function pbVentasLive(){
+  const box=document.getElementById('pb-mix-total'); if(!box) return;
+  let totVentas=0, totCostos=0, totVentasAnt=0, totCostosAnt=0;
+  for(let i=0;i<6;i++){
+    totVentas+=pbN(`pb-mix-${i}-ventas`); totCostos+=pbN(`pb-mix-${i}-costos`);
+    totVentasAnt+=pbN(`pb-mix-${i}-ventasant`); totCostosAnt+=pbN(`pb-mix-${i}-costosant`);
+  }
+  box.innerHTML = `Total Ventas ${escapeHtml(pbV('pb-anio-actual')||'')}: <b>${pbUSD(totVentas)}</b> (costos ${pbUSD(totCostos)}) &nbsp;|&nbsp; Total Ventas ${escapeHtml(pbV('pb-anio-anterior')||'')}: <b>${pbUSD(totVentasAnt)}</b> (costos ${pbUSD(totCostosAnt)})`;
+}
+
+function generarPBInforme(){
+  const nombre = pbV('pb-nombre');
+  if(!nombre){ toast('Ingrese el nombre de la compañía', 'error'); return; }
+  const filasTabla = (prefijo, n, cols) => {
+    const rows = Array.from({length:n}).map((_,i)=>cols.map(c=>pbV(`${prefijo}-${i}-${c}`)));
+    const conDatos = rows.filter(r=>r.some(v=>v));
+    return conDatos.length ? conDatos.map(r=>`<tr>${r.map(v=>`<td>${escapeHtml(v||'-')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}" style="text-align:center;color:#888">Sin registros</td></tr>`;
+  };
+  let totVentas=0, totVentasAnt=0;
+  const mixRaw = Array.from({length:6}).map((_,i)=>({
+    linea: pbV(`pb-mix-${i}-linea`), ventas: pbN(`pb-mix-${i}-ventas`), costos: pbN(`pb-mix-${i}-costos`),
+    volcant: pbV(`pb-mix-${i}-volcant`), volmed: pbV(`pb-mix-${i}-volmed`),
+    ventasant: pbN(`pb-mix-${i}-ventasant`), costosant: pbN(`pb-mix-${i}-costosant`),
+    volcantant: pbV(`pb-mix-${i}-volcantant`), volmedant: pbV(`pb-mix-${i}-volmedant`),
+  })).filter(f=>f.linea || f.ventas || f.ventasant);
+  mixRaw.forEach(f=>{ totVentas+=f.ventas; totVentasAnt+=f.ventasant; });
+  const mixFilas = mixRaw.map(f=>`<tr>
+    <td>${escapeHtml(f.linea||'-')}</td>
+    <td class="num">${pbUSD(f.ventas)}</td><td class="num">${pbUSD(f.costos)}</td><td class="num">${totVentas>0?pbPct(f.ventas/totVentas*100):'0.00%'}</td><td class="num">${escapeHtml(f.volcant||'-')} ${escapeHtml(f.volmed||'')}</td>
+    <td class="num">${pbUSD(f.ventasant)}</td><td class="num">${pbUSD(f.costosant)}</td><td class="num">${totVentasAnt>0?pbPct(f.ventasant/totVentasAnt*100):'0.00%'}</td><td class="num">${escapeHtml(f.volcantant||'-')} ${escapeHtml(f.volmedant||'')}</td>
+  </tr>`).join('') || `<tr><td colspan="9" style="text-align:center;color:#888">Sin registros</td></tr>`;
+
+  const totEmp = pbN('pb-emp-admin')+pbN('pb-emp-prod')+pbN('pb-emp-com');
+  let sumAcc=0; for(let i=0;i<5;i++) sumAcc+=pbN(`pb-acc-${i}-pct`);
+
+  document.getElementById('pb-preview').innerHTML = `
+    <div class="doc-header"><div class="doc-title">Informe Básico del Cliente</div><div class="doc-subtitle">Produbanco — ${escapeHtml(nombre)}</div></div>
+
+    <h4>1. Generalidades</h4>
+    <p class="bp-campo"><b>Nombre de la compañía:</b> ${escapeHtml(nombre)} &nbsp; <b>RUC:</b> ${escapeHtml(pbV('pb-ruc'))}</p>
+    <p class="bp-campo"><b>Actividades principales:</b> ${escapeHtml(pbV('pb-actividades'))||'-'}</p>
+    <p class="bp-campo"><b>Breve historia:</b> ${escapeHtml(pbV('pb-historia'))||'-'}</p>
+
+    <h4>2.1 Accionistas Finales (Persona Natural)</h4>
+    <table><thead><tr><th>Nombre</th><th>N° identificación</th><th>Nacionalidad</th><th class="num">% Participación</th></tr></thead><tbody>${filasTabla('pb-acc',5,['nombre','ident','nac','pct'])}</tbody>
+    <tfoot><tr><td colspan="3">Suma % participación</td><td class="num">${pbPct(sumAcc)}</td></tr></tfoot></table>
+
+    <h4>2.2 Administradores / Ejecutivos</h4>
+    <table><thead><tr><th>Nombre</th><th>N° identificación</th><th>Nacionalidad</th><th>Cargo</th><th>Tiempo en el cargo</th></tr></thead><tbody>${filasTabla('pb-adm',5,['nombre','ident','nac','cargo','tiempo'])}</tbody></table>
+
+    <h4>2.3 Directores</h4>
+    <table><thead><tr><th>Nombre</th><th>N° identificación</th><th>Nacionalidad</th><th>Tiempo en el cargo</th></tr></thead><tbody>${filasTabla('pb-dir',5,['nombre','ident','nac','tiempo'])}</tbody></table>
+
+    <h4>2.4 Compañías Relacionadas del Exterior</h4>
+    <table><thead><tr><th>Nombre</th><th>N° identificación</th><th>País</th><th>Actividad</th><th>Rel. comercial</th><th>Rel. accionarial</th><th class="num">% Particip.</th></tr></thead><tbody>${filasTabla('pb-rel',5,['nombre','ident','pais','actividad','comercial','accionarial','pct'])}</tbody></table>
+
+    <h4>2.5 Gobierno Corporativo / Empresa Familiar</h4>
+    <p class="bp-campo"><b>¿Empresa familiar?</b> ${escapeHtml(pbV('pb-familiar')||'-')} ${pbV('pb-familiar-com')?'— '+escapeHtml(pbV('pb-familiar-com')):''}</p>
+    <p class="bp-campo"><b>¿Gobierno corporativo?</b> ${escapeHtml(pbV('pb-gobcorp')||'-')} ${pbV('pb-gobcorp-com')?'— '+escapeHtml(pbV('pb-gobcorp-com')):''}</p>
+
+    <h4>3.1 Número de Empleados</h4>
+    <table><tbody>
+      <tr><th>Administrativos</th><td class="num">${pbN('pb-emp-admin')}</td><th>Producción/Obreros</th><td class="num">${pbN('pb-emp-prod')}</td><th>Comerciales</th><td class="num">${pbN('pb-emp-com')}</td></tr>
+      <tr style="font-weight:700"><th>Total empleados</th><td class="num" colspan="5">${totEmp}</td></tr>
+      <tr><th># Hombres</th><td class="num">${pbN('pb-emp-hombres')}</td><th># Mujeres</th><td class="num" colspan="3">${pbN('pb-emp-mujeres')}</td></tr>
+      <tr><th>Sindicato</th><td colspan="5">${escapeHtml(pbV('pb-sindicato')||'-')} ${pbV('pb-sindicato-det')?'— '+escapeHtml(pbV('pb-sindicato-det')):''}</td></tr>
+      <tr><th>Valor de nómina mensual</th><td colspan="5">${pbUSD(pbN('pb-nomina'))}</td></tr>
+      <tr><th>Manual de funciones</th><td>${escapeHtml(pbV('pb-manualfunciones')||'-')}</td><th>Política de contratación</th><td colspan="3">${escapeHtml(pbV('pb-politicacontratacion')||'-')}</td></tr>
+    </tbody></table>
+
+    <h4>3.2 Políticas de Seguridad y Salud Ocupacional (SSO)</h4>
+    <p class="bp-campo"><b>SSO:</b> ${escapeHtml(pbV('pb-sso')||'-')} ${pbV('pb-sso-det')?'— '+escapeHtml(pbV('pb-sso-det')):''}</p>
+    <p class="bp-campo"><b>Permiso de bomberos vigente:</b> ${escapeHtml(pbV('pb-bomberos')||'-')} ${pbV('pb-bomberos-det')?'— '+escapeHtml(pbV('pb-bomberos-det')):''}</p>
+
+    <h4>4.1 Mix de Ventas o Líneas de Productos/Servicios</h4>
+    <table><thead><tr><th rowspan="2">Línea de negocio</th><th colspan="4">${escapeHtml(pbV('pb-anio-actual')||'')}</th><th colspan="4">${escapeHtml(pbV('pb-anio-anterior')||'')}</th></tr>
+    <tr><th class="num">Ventas USD</th><th class="num">Costos USD</th><th class="num">% Particip.</th><th>Volumen</th><th class="num">Ventas USD</th><th class="num">Costos USD</th><th class="num">% Particip.</th><th>Volumen</th></tr></thead>
+    <tbody>${mixFilas}</tbody>
+    <tfoot><tr><td>TOTAL VENTAS</td><td class="num">${pbUSD(totVentas)}</td><td class="num">-</td><td class="num">100.00%</td><td>-</td><td class="num">${pbUSD(totVentasAnt)}</td><td class="num">-</td><td class="num">100.00%</td><td>-</td></tr></tfoot></table>
+
+    <h4>4.1.1 Otras Variables de los Ingresos</h4>
+    <p class="bp-campo"><b>Estacionalidad:</b> ${escapeHtml(pbV('pb-estacionalidad')||'-')} ${pbV('pb-estacionalidad-det')?'— '+escapeHtml(pbV('pb-estacionalidad-det')):''}</p>
+    <p class="bp-campo"><b>Ventas al sector público:</b> ${escapeHtml(pbV('pb-ventaspublico')||'-')} ${pbV('pb-ventaspublico-det')?'— '+escapeHtml(pbV('pb-ventaspublico-det')):''}</p>
+    <p class="bp-campo"><b>Exportaciones:</b> ${escapeHtml(pbV('pb-exporta')||'-')} — Año actual: ${pbUSD(pbN('pb-export-actual'))}, Año anterior: ${pbUSD(pbN('pb-export-anterior'))}</p>
+
+    <h4>4.2 Mercadeo y/o Canales de Distribución</h4><p class="bp-campo">${escapeHtml(pbV('pb-canales'))||'-'}</p>
+    <h4>4.3 Participación de Mercado y Competidores</h4><p class="bp-campo">${escapeHtml(pbV('pb-competidores'))||'-'}</p>
+    <h4>4.4 Ventas a Clientes / Compras a Proveedores</h4>
+    <p class="bp-campo"><b>Clientes:</b> ${escapeHtml(pbV('pb-clientes'))||'-'}</p>
+    <p class="bp-campo"><b>Proveedores:</b> ${escapeHtml(pbV('pb-proveedores'))||'-'}</p>
+
+    <h4>5. Principales Eventos Internos y/o Externos</h4><p class="bp-campo">${escapeHtml(pbV('pb-eventos'))||'-'}</p>
+
+    <h4>6. Aspectos Ambientales y de Calidad</h4>
+    <p class="bp-campo"><b>Permiso ambiental:</b> ${escapeHtml(pbV('pb-permisoambiental')||'-')} ${pbV('pb-permisoambiental-det')?'— '+escapeHtml(pbV('pb-permisoambiental-det')):''}</p>
+    <p class="bp-campo"><b>Certificaciones ambientales:</b> ${escapeHtml(pbV('pb-certamb')||'-')} &nbsp; <b>Sostenibilidad:</b> ${escapeHtml(pbV('pb-sostenibilidad')||'-')} ${pbV('pb-ambiental-det')?'— '+escapeHtml(pbV('pb-ambiental-det')):''}</p>
+    <p class="bp-campo"><b>Huella de carbono:</b> ${escapeHtml(pbV('pb-huellacarbono')||'-')} &nbsp; <b>Certificación de calidad:</b> ${escapeHtml(pbV('pb-certcalidad')||'-')} ${pbV('pb-certcalidad-det')?'— '+escapeHtml(pbV('pb-certcalidad-det')):''}</p>
+
+    <h4>7. Instalaciones y Seguros</h4>
+    <p class="bp-campo">${escapeHtml(pbV('pb-instalaciones'))||'-'}</p>
+    <p class="bp-campo"><b>Seguro de inventario:</b> ${escapeHtml(pbV('pb-seguroinventario'))||'-'}</p>
+
+    <h4>8. Mercado de Valores y Líneas de Crédito</h4>
+    <p class="bp-campo"><b>Mercado de valores:</b> ${escapeHtml(pbV('pb-mercadovalores')||'-')} &nbsp; <b>Nuevas emisiones:</b> ${escapeHtml(pbV('pb-nuevasemisiones'))||'-'}</p>
+    <p class="bp-campo"><b>Líneas de crédito:</b> ${escapeHtml(pbV('pb-lineascredito'))||'-'}</p>
+    <p class="bp-campo"><b>Factoring:</b> ${escapeHtml(pbV('pb-factoring')||'-')} &nbsp; <b>Financiamiento exterior/público:</b> ${escapeHtml(pbV('pb-financext')||'-')}</p>
+
+    <h4>9. Estrategias Futuras del Cliente</h4><p class="bp-campo">${escapeHtml(pbV('pb-estrategias'))||'-'}</p>
+
+    <table><tbody>
+      <tr><th style="width:35%">Fecha de creación</th><td>${pbV('pb-fechacreacion')?fmtFecha(new Date(pbV('pb-fechacreacion')+'T00:00')):'-'}</td></tr>
+      <tr><th>Nombre del responsable</th><td>${escapeHtml(pbV('pb-responsable'))}</td></tr>
+    </tbody></table>
+  `;
+}
+function pbImprimirInforme(){
+  const el = document.getElementById('pb-preview');
+  if(!el || el.querySelector('.doc-placeholder')){ toast('Genere el informe primero', 'warning'); return; }
+  bpAbrirVentanaImpresion(el.innerHTML, 'Informe Básico del Cliente - Produbanco');
+}
+async function terminarYGuardarProdubanco(){
+  const preview = document.getElementById('pb-preview');
+  if(!preview || preview.querySelector('.doc-placeholder')){ toast('Genere el informe antes de guardar', 'warning'); return; }
+  const datos = {};
+  document.querySelectorAll('#pbdoc-informe input, #pbdoc-informe select, #pbdoc-informe textarea').forEach(inp=>{
+    if(!inp.id) return; datos[inp.id] = inp.type==='checkbox' ? inp.checked : inp.value;
+  });
+  const contenidoHtml = preview.innerHTML;
+  const descripcion = pbV('pb-nombre') || 'Informe Básico del Cliente';
+  await guardarDocBancoProdubanco({ tipo:'informebasico', descripcion, datos, contenidoHtml, empresaId: empresaBancariaSeleccionada }, null);
+  await registrarCambio("Área Bancaria", "generar", `Informe Básico Produbanco: ${descripcion}`);
+  toast('Informe guardado en historial ✓', 'success');
+  await pintarPBHistLista();
+}
+async function pintarPBHistLista(){
+  const cont = document.getElementById('pbHistLista'); if(!cont) return;
+  cont.innerHTML = `<div class="emptyState">Cargando...</div>`;
+  try{ pbDocsGuardados = await cargarDocsBancoProdubanco(empresaBancariaSeleccionada); }
+  catch(e){
+    cont.innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "banco_produbanco_docs" a las reglas de Realtime Database.</span></div>`;
+    return;
+  }
+  cont.innerHTML = !pbDocsGuardados.length ? `<div class="emptyState">Aún no hay informes guardados.</div>` : `
+    <table><thead><tr><th>Descripción</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${pbDocsGuardados.map(d=>`<tr>
+        <td>${escapeHtml(d.descripcion||'-')}</td><td>${fmtFecha(d.creado)}</td>
+        <td><button class="btn small" onclick="verPBDocGuardado('${d.id}')">👁️ Ver / Imprimir</button>
+        <button class="btn small danger" onclick="eliminarPBDocGuardado('${d.id}')">Eliminar</button></td>
+      </tr>`).join("")}
+    </tbody></table>`;
+}
+function verPBDocGuardado(id){
+  const d = pbDocsGuardados.find(x=>x.id===id); if(!d) return;
+  bpAbrirVentanaImpresion(d.contenidoHtml||'<p>Sin contenido.</p>', d.descripcion||'Informe Básico del Cliente');
+}
+async function eliminarPBDocGuardado(id){
+  if(!confirm('¿Eliminar este informe guardado?')) return;
+  await eliminarDocBancoProdubanco(id);
+  await pintarPBHistLista();
+}
+async function pintarDocsBancoProdubanco(){
+  const cont = document.getElementById("vistaBancariaInterna");
+  cont.innerHTML = `
+    <p class="helpNote">📋 Informe Básico del Cliente Corporativo/Empresa — formulario oficial de Produbanco para el conocimiento del cliente, con cálculo automático de % de participación y totales.</p>
+    <div id="pbDocsRoot">
+      <div class="doc-content active" id="pbdoc-informe">
+        <div class="doc-form-preview">
+          <div class="doc-form">${pbInformeBasicoFormHTML()}</div>
+          <div class="doc-preview" id="pb-preview"><div class="doc-placeholder">Complete los datos y haga clic en Generar Informe</div></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0;">📚 Historial de Informes Guardados</h3>
+        <div id="pbHistLista"></div>
+      </div>
+    </div>
+  `;
+  await pintarPBHistLista();
+  bpPrefillEmpresaEnDocs();
+}
+
+/* =========================================================================
+   MÓDULO: ESTADOS FINANCIEROS (sub-sección de Área Bancaria)
+   Plan de cuentas editable/importable (manual o CSV/Excel) + hasta 5
+   estados (periodos/años/escenarios) con valores manuales por cuenta.
+   Genera automáticamente el Estado de Situación Financiera (Balance
+   General: Activo = Pasivo + Patrimonio, con agrupación corriente/no
+   corriente e indicador de cuadre) y el Estado de Resultados (Ingresos -
+   Costos - Gastos = Utilidad). Estilo ejecutivo para impresión (mismas
+   convenciones de imprimirReporteActivos: .tarjetas, .tarjeta, h2.seccion,
+   tfoot, @page) y exportación a Excel real usando SheetJS (xlsx.full.min,
+   ya cargado por la app — sin nuevas dependencias externas).
+   ========================================================================= */
+let efPlanCuentas = [];
+let efEstados = [];
+let efEstadoActivo = 0;
+const EF_TIPOS = ["Activo","Pasivo","Patrimonio","Ingreso","Costo","Gasto"];
+
+async function cargarEstadosFinancieros(empresaId){
+  if(!empresaId) return { planCuentas: [], estados: [] };
+  const snap = await db.ref(`estados_financieros/${DATOS_UID}/${empresaId}`).once("value");
+  const val = snap.val() || {};
+  return { planCuentas: val.planCuentas||[], estados: val.estados||[] };
+}
+async function guardarEstadosFinancieros(){
+  if(!empresaBancariaSeleccionada) return;
+  await db.ref(`estados_financieros/${DATOS_UID}/${empresaBancariaSeleccionada}`).set(limpiarUndefined({ planCuentas: efPlanCuentas, estados: efEstados, actualizado: Date.now() }));
+}
+
+async function pintarEstadosFinancieros(){
+  const cont = document.getElementById("vistaBancariaInterna");
+  cont.innerHTML = `<div class="emptyState">Cargando...</div>`;
+  let datos;
+  try{ datos = await cargarEstadosFinancieros(empresaBancariaSeleccionada); }
+  catch(e){
+    cont.innerHTML = `<div class="card emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "estados_financieros" a las reglas de Realtime Database.</span></div>`;
+    return;
+  }
+  efPlanCuentas = datos.planCuentas;
+  efEstados = datos.estados.length ? datos.estados : [{ label: String(new Date().getFullYear()), valores:{} }];
+  if(efEstadoActivo >= efEstados.length) efEstadoActivo = 0;
+  if(!empresaBancariaSeleccionada){
+    cont.innerHTML = `<div class="card emptyState">Selecciona una empresa.</div>`;
+    return;
+  }
+  cont.innerHTML = `
+    <p class="helpNote">📊 Define tu plan de cuentas y captura hasta 5 estados (periodos/años/escenarios) para generar el Estado de Situación Financiera y el Estado de Resultados automáticamente, con presentación ejecutiva lista para imprimir o exportar a Excel.</p>
+    <div class="card">
+      <h3 style="margin-top:0;">Plan de Cuentas</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="btn small" onclick="efAgregarCuenta()">+ Agregar cuenta</button>
+        <label class="btn small" style="cursor:pointer;">📥 Importar CSV/Excel<input type="file" id="efImportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="efImportarPlanCuentas(event)"></label>
+        <button class="btn small" onclick="efExportarPlanCuentasCSV()">⬇ Exportar plan (CSV)</button>
+        <button class="btn primary small" onclick="efGuardarPlanCuentas()">💾 Guardar plan de cuentas</button>
+      </div>
+      <div id="efTablaPlan"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">Estados (hasta 5 periodos)</h3>
+      <div class="tabs" id="efEstadoTabs"></div>
+      <div id="efEstadoValores"></div>
+    </div>
+    <div class="card" id="efResultado"></div>
+  `;
+  efPintarTablaPlan();
+  efPintarEstadoTabs();
+  efPintarValoresEstado();
+}
+
+function efPintarTablaPlan(){
+  const cont = document.getElementById("efTablaPlan");
+  if(!cont) return;
+  if(!efPlanCuentas.length){ cont.innerHTML = `<div class="emptyState">Sin cuentas. Agrega manualmente o importa un CSV/Excel con columnas: código, nombre, tipo (Activo/Pasivo/Patrimonio/Ingreso/Costo/Gasto).</div>`; return; }
+  cont.innerHTML = `<table><thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Corriente</th><th>Nivel</th><th></th></tr></thead><tbody>
+    ${efPlanCuentas.map((c,i)=>`<tr>
+      <td><input value="${escapeHtml(c.codigo||'')}" oninput="efPlanCuentas[${i}].codigo=this.value" style="width:100px"></td>
+      <td><input value="${escapeHtml(c.nombre||'')}" oninput="efPlanCuentas[${i}].nombre=this.value" style="width:220px"></td>
+      <td><select onchange="efPlanCuentas[${i}].tipo=this.value">${EF_TIPOS.map(t=>`<option ${c.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
+      <td><select onchange="efPlanCuentas[${i}].corriente=this.value"><option value="" ${!c.corriente?'selected':''}>N/A</option><option ${c.corriente==='Sí'?'selected':''}>Sí</option><option ${c.corriente==='No'?'selected':''}>No</option></select></td>
+      <td><input type="number" min="1" value="${c.nivel||1}" style="width:55px" oninput="efPlanCuentas[${i}].nivel=parseInt(this.value)||1"></td>
+      <td><button class="btn small danger" onclick="efEliminarCuenta(${i})">✕</button></td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+function efAgregarCuenta(){ efPlanCuentas.push({codigo:'',nombre:'',tipo:'Activo',corriente:'',nivel:1}); efPintarTablaPlan(); }
+function efEliminarCuenta(i){ efPlanCuentas.splice(i,1); efPintarTablaPlan(); efPintarValoresEstado(); }
+async function efGuardarPlanCuentas(){
+  if(!empresaBancariaSeleccionada){ toast('Selecciona una empresa', 'warning'); return; }
+  await guardarEstadosFinancieros();
+  toast('Plan de cuentas guardado ✓', 'success');
+  efPintarValoresEstado();
+}
+function efExportarPlanCuentasCSV(){
+  const filas = [['codigo','nombre','tipo','corriente','nivel'], ...efPlanCuentas.map(c=>[c.codigo||'',c.nombre||'',c.tipo||'',c.corriente||'',c.nivel||1])];
+  const csv = filas.map(f=>f.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'plan_cuentas.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+}
+function efParseCSV(text){
+  const lineas = text.split(/\r?\n/).filter(l=>l.trim().length);
+  return lineas.map(l=>{
+    const out=[]; let cur=''; let enQ=false;
+    for(let i=0;i<l.length;i++){
+      const ch=l[i];
+      if(ch==='"'){ if(enQ && l[i+1]==='"'){ cur+='"'; i++; } else enQ=!enQ; }
+      else if((ch===','||ch===';') && !enQ){ out.push(cur); cur=''; }
+      else cur+=ch;
+    }
+    out.push(cur);
+    return out.map(v=>v.trim());
+  });
+}
+function efImportarPlanCuentas(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const nombreArch = file.name.toLowerCase();
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try{
+      let filas;
+      if(nombreArch.endsWith('.csv')){
+        filas = efParseCSV(e.target.result);
+      } else {
+        const wb = XLSX.read(e.target.result, {type:'binary'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        filas = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:''});
+      }
+      if(!filas.length){ toast('Archivo vacío', 'error'); return; }
+      const header = filas[0].map(h=>String(h||'').toLowerCase().trim());
+      const idxCod = header.findIndex(h=>h.includes('cod'));
+      const idxNom = header.findIndex(h=>h.includes('nombre')||h.includes('cuenta'));
+      const idxTipo = header.findIndex(h=>h.includes('tipo'));
+      const idxCorr = header.findIndex(h=>h.includes('corriente'));
+      const idxNivel = header.findIndex(h=>h.includes('nivel'));
+      const nuevas = filas.slice(1).filter(r=>r.some(v=>String(v||'').trim())).map(r=>({
+        codigo: idxCod>=0?String(r[idxCod]||'').trim():'',
+        nombre: idxNom>=0?String(r[idxNom]||'').trim():'',
+        tipo: idxTipo>=0 && EF_TIPOS.includes(String(r[idxTipo]||'').trim()) ? String(r[idxTipo]).trim() : 'Activo',
+        corriente: idxCorr>=0?String(r[idxCorr]||'').trim():'',
+        nivel: idxNivel>=0?(parseInt(r[idxNivel])||1):1,
+      }));
+      if(!nuevas.length){ toast('No se encontraron filas válidas (se esperan columnas código, nombre, tipo)', 'error'); return; }
+      efPlanCuentas = efPlanCuentas.concat(nuevas);
+      efPintarTablaPlan();
+      efPintarValoresEstado();
+      toast(`${nuevas.length} cuentas importadas ✓`, 'success');
+    }catch(err){ toast('Error al leer el archivo: '+(err.message||err), 'error'); }
+  };
+  if(nombreArch.endsWith('.csv')) reader.readAsText(file);
+  else reader.readAsBinaryString(file);
+  ev.target.value = '';
+}
+
+function efPintarEstadoTabs(){
+  const cont = document.getElementById("efEstadoTabs");
+  if(!cont) return;
+  cont.innerHTML = efEstados.map((e,i)=>`<button class="tabBtn ${efEstadoActivo===i?'active':''}" onclick="efCambiarEstado(${i})">${escapeHtml(e.label||('Estado '+(i+1)))}</button>`).join('')
+    + (efEstados.length<5 ? `<button class="tabBtn" onclick="efAgregarEstado()">+ Nuevo periodo</button>` : '')
+    + (efEstados.length>1 ? `<button class="tabBtn" onclick="efEliminarEstado(${efEstadoActivo})">🗑 Eliminar actual</button>` : '')
+    + `<button class="tabBtn" onclick="efCompararEstados()">📊 Comparar todos</button>`;
+}
+function efCambiarEstado(i){ efEstadoActivo=i; efPintarEstadoTabs(); efPintarValoresEstado(); }
+function efAgregarEstado(){
+  if(efEstados.length>=5){ toast('Máximo 5 estados', 'warning'); return; }
+  efEstados.push({ label:'Periodo '+(efEstados.length+1), valores:{} });
+  efEstadoActivo = efEstados.length-1;
+  efPintarEstadoTabs(); efPintarValoresEstado();
+}
+function efEliminarEstado(i){
+  if(efEstados.length<=1) return;
+  if(!confirm('¿Eliminar este periodo/estado?')) return;
+  efEstados.splice(i,1);
+  efEstadoActivo = 0;
+  efPintarEstadoTabs(); efPintarValoresEstado();
+}
+function efPintarValoresEstado(){
+  const cont = document.getElementById("efEstadoValores");
+  if(!cont) return;
+  if(!efPlanCuentas.length){ cont.innerHTML = `<div class="emptyState">Primero define el plan de cuentas.</div>`; return; }
+  const est = efEstados[efEstadoActivo];
+  if(!est.valores) est.valores = {};
+  cont.innerHTML = `
+    <div class="field"><label>Etiqueta del periodo</label><input value="${escapeHtml(est.label||'')}" oninput="efEstados[${efEstadoActivo}].label=this.value; efPintarEstadoTabs()"></div>
+    <table><thead><tr><th>Código</th><th>Cuenta</th><th>Tipo</th><th>Valor (USD)</th></tr></thead><tbody>
+      ${efPlanCuentas.map(c=>`<tr>
+        <td>${escapeHtml(c.codigo||'-')}</td><td>${'&nbsp;'.repeat(Math.max(0,((c.nivel||1)-1))*2)}${escapeHtml(c.nombre||'-')}</td><td>${escapeHtml(c.tipo||'-')}</td>
+        <td><input type="number" step="0.01" value="${est.valores[c.codigo]!=null?est.valores[c.codigo]:''}" oninput="efEstados[${efEstadoActivo}].valores['${c.codigo}']=parseFloat(this.value)||0" style="width:130px;text-align:right"></td>
+      </tr>`).join('')}
+    </tbody></table>
+    <div class="doc-btn-row" style="margin-top:10px;">
+      <button class="btn primary" onclick="efGuardarValores()">💾 Guardar valores</button>
+      <button class="btn-calc" onclick="efGenerarEstados(${efEstadoActivo})">👁 Generar Estados Financieros</button>
+    </div>
+  `;
+}
+async function efGuardarValores(){
+  if(!empresaBancariaSeleccionada){ toast('Selecciona una empresa', 'warning'); return; }
+  await guardarEstadosFinancieros();
+  toast('Valores guardados ✓', 'success');
+}
+
+/* --- Cálculo de los dos estados a partir del plan de cuentas + valores ---
+   Verificado con dataset de prueba: Activo = Pasivo + Patrimonio + Utilidad
+   dispara el indicador "cuadrado"/"no cuadra" correctamente (ver validación
+   en Node adjunta al cierre de esta sesión de cambios). */
+function efCalcularEstados(valores){
+  valores = valores || {};
+  const grupo = t => efPlanCuentas.filter(c=>c.tipo===t);
+  const sum = arr => arr.reduce((s,c)=>s+Number(valores[c.codigo]||0),0);
+  const activo = grupo('Activo'), pasivo = grupo('Pasivo'), patrimonio = grupo('Patrimonio');
+  const ingreso = grupo('Ingreso'), costo = grupo('Costo'), gasto = grupo('Gasto');
+  const activoCorriente = activo.filter(c=>c.corriente==='Sí'), activoNoCorriente = activo.filter(c=>c.corriente!=='Sí');
+  const pasivoCorriente = pasivo.filter(c=>c.corriente==='Sí'), pasivoNoCorriente = pasivo.filter(c=>c.corriente!=='Sí');
+  const totActivo = sum(activo), totPasivo = sum(pasivo), totPatrimonio = sum(patrimonio);
+  const totIngreso = sum(ingreso), totCosto = sum(costo), totGasto = sum(gasto);
+  const utilidad = totIngreso - totCosto - totGasto;
+  const diferencia = totActivo - (totPasivo + totPatrimonio + utilidad);
+  const cuadre = Math.abs(diferencia) < 0.01;
+  return {
+    activo, pasivo, patrimonio, ingreso, costo, gasto,
+    activoCorriente, activoNoCorriente, pasivoCorriente, pasivoNoCorriente,
+    totActivo, totPasivo, totPatrimonio, totIngreso, totCosto, totGasto, utilidad,
+    cuadre, diferencia,
+  };
+}
+
+function efGenerarEstados(idx){
+  const est = efEstados[idx];
+  const r = efCalcularEstados(est.valores);
+  const fila = c => `<tr><td>${escapeHtml(c.codigo||'-')}</td><td>${escapeHtml(c.nombre||'-')}</td><td class="num">${pbUSD(est.valores[c.codigo]||0)}</td></tr>`;
+  document.getElementById('efResultado').innerHTML = `
+    <h3>Estado de Situación Financiera — ${escapeHtml(est.label||'')}</h3>
+    <table><thead><tr><th>Código</th><th>Cuenta</th><th class="num">Valor</th></tr></thead><tbody>
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">ACTIVO CORRIENTE</td></tr>
+      ${r.activoCorriente.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">ACTIVO NO CORRIENTE</td></tr>
+      ${r.activoNoCorriente.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr style="font-weight:700"><td colspan="2">TOTAL ACTIVO</td><td class="num">${pbUSD(r.totActivo)}</td></tr>
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">PASIVO CORRIENTE</td></tr>
+      ${r.pasivoCorriente.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">PASIVO NO CORRIENTE</td></tr>
+      ${r.pasivoNoCorriente.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr style="font-weight:700"><td colspan="2">TOTAL PASIVO</td><td class="num">${pbUSD(r.totPasivo)}</td></tr>
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">PATRIMONIO</td></tr>
+      ${r.patrimonio.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr><td colspan="2">Utilidad del ejercicio (Estado de Resultados)</td><td class="num">${pbUSD(r.utilidad)}</td></tr>
+      <tr style="font-weight:700"><td colspan="2">TOTAL PASIVO + PATRIMONIO</td><td class="num">${pbUSD(r.totPasivo+r.totPatrimonio+r.utilidad)}</td></tr>
+    </tbody></table>
+    <p style="font-weight:700;color:${r.cuadre?'#0a9468':'#c0392b'}">${r.cuadre?'✓ Balance cuadrado (Activo = Pasivo + Patrimonio)':'⚠ Balance NO cuadra — diferencia: '+pbUSD(r.diferencia)}</p>
+
+    <h3>Estado de Resultados — ${escapeHtml(est.label||'')}</h3>
+    <table><thead><tr><th>Código</th><th>Cuenta</th><th class="num">Valor</th></tr></thead><tbody>
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">INGRESOS</td></tr>
+      ${r.ingreso.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr style="font-weight:700"><td colspan="2">TOTAL INGRESOS</td><td class="num">${pbUSD(r.totIngreso)}</td></tr>
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">COSTOS</td></tr>
+      ${r.costo.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr style="font-weight:700"><td colspan="2">TOTAL COSTOS</td><td class="num">${pbUSD(r.totCosto)}</td></tr>
+      <tr style="font-weight:700;background:rgba(120,120,120,.12)"><td colspan="3">GASTOS</td></tr>
+      ${r.gasto.map(fila).join('')||'<tr><td colspan="3" style="color:#888">Sin cuentas</td></tr>'}
+      <tr style="font-weight:700"><td colspan="2">TOTAL GASTOS</td><td class="num">${pbUSD(r.totGasto)}</td></tr>
+      <tr style="font-weight:700"><td colspan="2">UTILIDAD DEL EJERCICIO</td><td class="num">${pbUSD(r.utilidad)}</td></tr>
+    </tbody></table>
+    <div class="doc-btn-row" style="margin-top:10px;">
+      <button class="btn-secondary" onclick="efImprimirEstados(${idx})">🖨️ Imprimir / PDF</button>
+      <button class="btn-secondary" onclick="efExportarExcel(${idx})">⬇ Exportar Excel</button>
+    </div>
+  `;
+}
+
+function efCompararEstados(){
+  const cont = document.getElementById('efResultado');
+  if(!cont) return;
+  const calcs = efEstados.map(e=>({label:e.label||'', r: efCalcularEstados(e.valores)}));
+  cont.innerHTML = `
+    <h3>Comparación de Estados (${calcs.length} periodo${calcs.length>1?'s':''})</h3>
+    <table><thead><tr><th>Concepto</th>${calcs.map(c=>`<th class="num">${escapeHtml(c.label)}</th>`).join('')}</tr></thead><tbody>
+      <tr><td>Total Activo</td>${calcs.map(c=>`<td class="num">${pbUSD(c.r.totActivo)}</td>`).join('')}</tr>
+      <tr><td>Total Pasivo</td>${calcs.map(c=>`<td class="num">${pbUSD(c.r.totPasivo)}</td>`).join('')}</tr>
+      <tr><td>Total Patrimonio</td>${calcs.map(c=>`<td class="num">${pbUSD(c.r.totPatrimonio)}</td>`).join('')}</tr>
+      <tr><td>Total Ingresos</td>${calcs.map(c=>`<td class="num">${pbUSD(c.r.totIngreso)}</td>`).join('')}</tr>
+      <tr><td>Total Costos</td>${calcs.map(c=>`<td class="num">${pbUSD(c.r.totCosto)}</td>`).join('')}</tr>
+      <tr><td>Total Gastos</td>${calcs.map(c=>`<td class="num">${pbUSD(c.r.totGasto)}</td>`).join('')}</tr>
+      <tr style="font-weight:700"><td>Utilidad del ejercicio</td>${calcs.map(c=>`<td class="num">${pbUSD(c.r.utilidad)}</td>`).join('')}</tr>
+      <tr><td>Balance cuadrado</td>${calcs.map(c=>`<td class="num">${c.r.cuadre?'✓':'⚠'}</td>`).join('')}</tr>
+    </tbody></table>
+  `;
+}
+
+/* Ventana de impresión estilo ejecutivo, misma convención de
+   imprimirReporteActivos() (.tarjetas/.tarjeta/h2.seccion/tfoot/@page). */
+function efImprimirEstados(idx){
+  const est = efEstados[idx];
+  const r = efCalcularEstados(est.valores);
+  const empresa = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  const fila = c => `<tr><td>${escapeHtml(c.codigo||'-')}</td><td>${escapeHtml(c.nombre||'-')}</td><td class="num">$${Number(est.valores[c.codigo]||0).toFixed(2)}</td></tr>`;
+  const win = window.open("", "_blank");
+  win.document.write(`<html><head><title>Estados Financieros - ${escapeHtml(empresa?.nombre||'')}</title>
+    <style>
+      @page { size: A4; margin: 16mm; }
+      body{font-family:Arial,Helvetica,sans-serif;padding:0;color:#1a1a1a;line-height:1.5;}
+      .portada-linea{height:4px;background:linear-gradient(90deg,#1a2733,#3a4a5c);margin-bottom:14px;}
+      .encabezado{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1a2733;padding-bottom:10px;margin-bottom:18px;}
+      .encabezado h1{font-size:19px;margin:0 0 4px;color:#1a2733;}
+      .encabezado p{margin:0;font-size:12px;color:#555;}
+      .tarjetas{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+      .tarjeta{flex:1;min-width:140px;background:#f5f7fa;border:1px solid #dde3e9;border-radius:8px;padding:12px 14px;}
+      .tarjeta .label{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#667;margin-bottom:4px;}
+      .tarjeta .valor{font-size:18px;font-weight:800;color:#1a2733;}
+      h2.seccion{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:#1a2733;border-bottom:1px solid #ccc;padding-bottom:5px;margin:22px 0 10px;}
+      table{width:100%;border-collapse:collapse;margin-top:6px;}
+      th,td{border:1px solid #ccc;padding:7px;font-size:11px;text-align:left;}
+      th{background:#eef2f6;font-size:10px;text-transform:uppercase;letter-spacing:.3px;}
+      td.num, th.num{text-align:right;}
+      tr.grupo td{font-weight:700;background:#eef2f6;}
+      tfoot td{font-weight:700;background:#eef2f6;}
+      .pie{margin-top:26px;font-size:9px;color:#8ea2b3;border-top:1px solid #d7dee6;padding-top:8px;}
+      .cuadre-ok{color:#0a9468;font-weight:700;}
+      .cuadre-mal{color:#c0392b;font-weight:700;}
+    </style></head><body>
+    <div class="portada-linea"></div>
+    <div class="encabezado"><div><h1>Estados Financieros</h1><p>${escapeHtml(empresa?.nombre||'')} — Periodo: ${escapeHtml(est.label||'')}</p></div><p>Generado el ${fmtFecha(new Date())}</p></div>
+    <div class="tarjetas">
+      <div class="tarjeta"><div class="label">Total Activo</div><div class="valor">$${r.totActivo.toFixed(2)}</div></div>
+      <div class="tarjeta"><div class="label">Total Pasivo</div><div class="valor">$${r.totPasivo.toFixed(2)}</div></div>
+      <div class="tarjeta"><div class="label">Total Patrimonio</div><div class="valor">$${r.totPatrimonio.toFixed(2)}</div></div>
+      <div class="tarjeta"><div class="label">Utilidad del ejercicio</div><div class="valor">$${r.utilidad.toFixed(2)}</div></div>
+    </div>
+    <p class="${r.cuadre?'cuadre-ok':'cuadre-mal'}">${r.cuadre?'✓ Balance cuadrado (Activo = Pasivo + Patrimonio)':'⚠ Balance NO cuadra — diferencia: $'+r.diferencia.toFixed(2)}</p>
+
+    <h2 class="seccion">Estado de Situación Financiera</h2>
+    <table><thead><tr><th>Código</th><th>Cuenta</th><th class="num">Valor</th></tr></thead><tbody>
+      <tr class="grupo"><td colspan="3">ACTIVO CORRIENTE</td></tr>${r.activoCorriente.map(fila).join('')}
+      <tr class="grupo"><td colspan="3">ACTIVO NO CORRIENTE</td></tr>${r.activoNoCorriente.map(fila).join('')}
+    </tbody><tfoot><tr><td colspan="2">TOTAL ACTIVO</td><td class="num">$${r.totActivo.toFixed(2)}</td></tr></tfoot></table>
+    <table><thead><tr><th>Código</th><th>Cuenta</th><th class="num">Valor</th></tr></thead><tbody>
+      <tr class="grupo"><td colspan="3">PASIVO CORRIENTE</td></tr>${r.pasivoCorriente.map(fila).join('')}
+      <tr class="grupo"><td colspan="3">PASIVO NO CORRIENTE</td></tr>${r.pasivoNoCorriente.map(fila).join('')}
+    </tbody><tfoot><tr><td colspan="2">TOTAL PASIVO</td><td class="num">$${r.totPasivo.toFixed(2)}</td></tr></tfoot></table>
+    <table><thead><tr><th>Código</th><th>Cuenta</th><th class="num">Valor</th></tr></thead><tbody>
+      <tr class="grupo"><td colspan="3">PATRIMONIO</td></tr>${r.patrimonio.map(fila).join('')}
+      <tr><td colspan="2">Utilidad del ejercicio</td><td class="num">$${r.utilidad.toFixed(2)}</td></tr>
+    </tbody><tfoot><tr><td colspan="2">TOTAL PATRIMONIO + UTILIDAD</td><td class="num">$${(r.totPatrimonio+r.utilidad).toFixed(2)}</td></tr></tfoot></table>
+
+    <h2 class="seccion">Estado de Resultados</h2>
+    <table><thead><tr><th>Código</th><th>Cuenta</th><th class="num">Valor</th></tr></thead><tbody>
+      <tr class="grupo"><td colspan="3">INGRESOS</td></tr>${r.ingreso.map(fila).join('')}
+      <tr class="grupo"><td colspan="3">COSTOS</td></tr>${r.costo.map(fila).join('')}
+      <tr class="grupo"><td colspan="3">GASTOS</td></tr>${r.gasto.map(fila).join('')}
+    </tbody><tfoot>
+      <tr><td colspan="2">TOTAL INGRESOS</td><td class="num">$${r.totIngreso.toFixed(2)}</td></tr>
+      <tr><td colspan="2">TOTAL COSTOS</td><td class="num">$${r.totCosto.toFixed(2)}</td></tr>
+      <tr><td colspan="2">TOTAL GASTOS</td><td class="num">$${r.totGasto.toFixed(2)}</td></tr>
+      <tr><td colspan="2">UTILIDAD DEL EJERCICIO</td><td class="num">$${r.utilidad.toFixed(2)}</td></tr>
+    </tfoot></table>
+    <div class="pie">Reporte generado por Control Documental.</div>
+    </body></html>`);
+  win.document.close(); win.focus(); win.print();
+}
+
+/* Exportación a Excel REAL (.xlsx binario) usando SheetJS (xlsx.full.min.js),
+   que la app ya carga desde cdnjs — no se agrega ninguna dependencia nueva. */
+function efExportarExcel(idx){
+  const est = efEstados[idx];
+  const r = efCalcularEstados(est.valores);
+  const empresa = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  const wb = XLSX.utils.book_new();
+  const filaArr = c => [c.codigo||'', c.nombre||'', Number(est.valores[c.codigo]||0)];
+  const balanceRows = [
+    ['ESTADO DE SITUACIÓN FINANCIERA','',''],
+    [empresa?.nombre||'', 'Periodo:', est.label||''],
+    [],
+    ['ACTIVO CORRIENTE','',''], ...r.activoCorriente.map(filaArr),
+    ['ACTIVO NO CORRIENTE','',''], ...r.activoNoCorriente.map(filaArr),
+    ['TOTAL ACTIVO','', r.totActivo],
+    [],
+    ['PASIVO CORRIENTE','',''], ...r.pasivoCorriente.map(filaArr),
+    ['PASIVO NO CORRIENTE','',''], ...r.pasivoNoCorriente.map(filaArr),
+    ['TOTAL PASIVO','', r.totPasivo],
+    [],
+    ['PATRIMONIO','',''], ...r.patrimonio.map(filaArr),
+    ['Utilidad del ejercicio','', r.utilidad],
+    ['TOTAL PASIVO + PATRIMONIO','', r.totPasivo+r.totPatrimonio+r.utilidad],
+    [],
+    ['Balance cuadrado', r.cuadre?'SI':'NO', r.diferencia],
+  ];
+  const resultadoRows = [
+    ['ESTADO DE RESULTADOS','',''],
+    [empresa?.nombre||'', 'Periodo:', est.label||''],
+    [],
+    ['INGRESOS','',''], ...r.ingreso.map(filaArr),
+    ['TOTAL INGRESOS','', r.totIngreso],
+    [],
+    ['COSTOS','',''], ...r.costo.map(filaArr),
+    ['TOTAL COSTOS','', r.totCosto],
+    [],
+    ['GASTOS','',''], ...r.gasto.map(filaArr),
+    ['TOTAL GASTOS','', r.totGasto],
+    [],
+    ['UTILIDAD DEL EJERCICIO','', r.utilidad],
+  ];
+  const wsBal = XLSX.utils.aoa_to_sheet(balanceRows);
+  const wsRes = XLSX.utils.aoa_to_sheet(resultadoRows);
+  const wsPlan = XLSX.utils.aoa_to_sheet([['codigo','nombre','tipo','corriente','nivel'], ...efPlanCuentas.map(c=>[c.codigo||'',c.nombre||'',c.tipo||'',c.corriente||'',c.nivel||1])]);
+  XLSX.utils.book_append_sheet(wb, wsBal, 'Situacion Financiera');
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resultados');
+  XLSX.utils.book_append_sheet(wb, wsPlan, 'Plan de Cuentas');
+  XLSX.writeFile(wb, `Estados_Financieros_${(est.label||'periodo').replace(/[^a-z0-9]+/gi,'_')}.xlsx`);
+  toast('Excel exportado ✓', 'success');
 }
 
 /* =========================================================================
