@@ -232,6 +232,46 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Mejorado: Flujo de Caja Proyectado Produbanco — impresión configurable por año y Resumen
+  Comparativo en pestaña propia (4ta iteración).** Tres refinamientos sobre la herramienta:
+  (1) el botón **"🖨 Imprimir todo"** ahora respeta un checkbox **"Incluir año base (2025) en
+  la impresión"** (activado por defecto) — al desmarcarlo, el documento impreso completo omite
+  la tabla mensual detallada de 2025 pero conserva el Resumen Anual Comparativo y el Estado de
+  Resultados Comparativo (que sí muestran 2025 como columna de referencia); (2) cada tarjeta de
+  año (2025 base y 2026-2030 proyectados) tiene ahora su propio botón **"🖨️ Imprimir [año]"**
+  que abre una ventana de impresión con SOLO la tabla mensual de ese año y un encabezado
+  profesional (empresa + período Enero-Diciembre del año); (3) el **"📊 Resumen Anual
+  Comparativo 2025-2030"** se movió a su propia sub-pestaña **"📊 Resumen Comparativo"**
+  (junto a "📅 Años Individuales", mismo patrón de pestañas `doc-tab`/`doc-content` que el resto
+  de la app), con su propio botón de impresión que genera un documento aparte (horizontal) con
+  solo la tabla comparativa y el Estado de Resultados Comparativo — sigue actualizándose en vivo
+  igual que antes. Ninguno de estos cambios tocó el motor de cálculo (`pfCalcular`,
+  `pfCalcularAnioAuto`, `pfCalcularAnio`): el % independiente por año y la cadena de cascada
+  hacia adelante (cambiar el % de un año solo afecta a ese año y a los posteriores) siguen
+  intactos.
+
+- **Mejorado: Flujo de Caja Proyectado Produbanco — porcentajes independientes por año y
+  secciones colapsables.** Antes, un único juego de % del panel "⚙️ Supuestos / Porcentajes" se
+  reutilizaba para componer los 5 años proyectados (2026-2030). Ahora **cada año proyectado
+  tiene su propio panel de % 100% independiente y editable** (crecimiento de ventas, mezcla
+  contado/crédito, proveedores nacional/exterior, crédito directo, y % de crecimiento de cada
+  rubro de gasto), todos precargados por defecto con los mismos valores reales de la hoja de
+  trabajo. Cambiar el % de un año recalcula **ese año y todos los años posteriores** (cadena
+  compuesta), sin tocar nunca los años anteriores — verificado con un script Node que simula
+  cambiar el % de 2028 y confirma que 2026/2027 quedan intactos mientras 2028-2030 se
+  recalculan. El año 2026 dejó de tener celdas mensuales editables a mano (ahora se calcula
+  igual que 2027-2030, 100% a partir de su propio %) para que los 5 años proyectados sean
+  consistentes entre sí. Cada año proyectado ahora se muestra en una **tarjeta colapsable**
+  (con un resumen de una línea siempre visible: ventas, egresos y flujo neto totales) — 2026
+  nace expandido y 2027-2030 nacen colapsados para no abrumar con 5 tablas mensuales a la vez —
+  y hay botones globales **"Expandir todos" / "Contraer todos"** para ver el detalle completo
+  de un vistazo. La tabla "Resumen Anual Comparativo 2025-2030" y el Estado de Resultados
+  Proyectado siguen reflejando los totales correctos sin importar qué años estén colapsados
+  (las tarjetas colapsadas siguen en el DOM, solo ocultas, así que imprimir/exportar/guardar
+  toman siempre el cálculo completo). El guardado en `banco_produbanco_flujo/${DATOS_UID}/${empresaId}`
+  ahora incluye además un campo explícito `porcentajesPorAnio` con el juego de % usado en cada
+  año (2025 base + 2026-2030), junto al resto de campos del formulario.
+
 - **Nuevo: Documentos Banco del Pacífico (dentro de Área Bancaria → pestaña "📄 Documentos
   Banco Pacífico")** — 5 formatos oficiales adjuntos del banco, llenables e imprimibles con un
   diagramado similar al del banco: **Guía de Flujo de Caja Proyectado v2.0** (premisas,
