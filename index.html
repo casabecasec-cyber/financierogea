@@ -7086,11 +7086,13 @@ async function pintarAreaBancaria(){
     <div class="tabs">
       <button class="tabBtn ${vistaBancariaActual==='bancos'?'active':''}" onclick="cambiarVistaBancaria('bancos')">Bancos</button>
       <button class="tabBtn ${vistaBancariaActual==='flujo'?'active':''}" onclick="cambiarVistaBancaria('flujo')">Flujo de Caja</button>
+      <button class="tabBtn ${vistaBancariaActual==='docspacifico'?'active':''}" onclick="cambiarVistaBancaria('docspacifico')">📄 Documentos Banco Pacífico</button>
     </div>
     <div id="vistaBancariaInterna">Cargando...</div>
   `;
   if(vistaBancariaActual==="bancos") await pintarListaBancos();
-  else await pintarFlujoCaja();
+  else if(vistaBancariaActual==="flujo") await pintarFlujoCaja();
+  else await pintarDocsBancoPacifico();
 }
 
 async function cambiarVistaBancaria(vista){
@@ -7334,6 +7336,1163 @@ async function imprimirFlujoCaja(){
     ${datos.notas?`<p style="margin-top:16px;"><b>Notas:</b> ${escapeHtml(datos.notas)}</p>`:''}
     </body></html>`);
   win.document.close(); win.focus(); win.print();
+}
+
+/* =========================================================================
+   MÓDULO: DOCUMENTOS BANCO DEL PACÍFICO (sub-sección de Área Bancaria)
+   5 formatos oficiales adjuntos: Guía de Flujo de Caja Proyectado v2.0,
+   Anexos de Evaluación CxC/Inventarios/CxP, Reporte de Información Básica
+   (005), Solicitud de Avalúo/Reavalúo (REGADMAV001) y Solicitud Jurídica.
+   Los dos primeros recalculan en vivo (amortización francesa, totales,
+   porcentajes) replicando las fórmulas del Excel original; los otros tres
+   reproducen el formato/diagramación del Word/PDF original como formulario
+   imprimible.
+   ========================================================================= */
+const BANCO_PACIFICO_DOC_TIPOS = {
+  flujocaja:  "📊 Flujo de Caja Proyectado",
+  anexos:     "📋 Anexos CxC / Inventarios / CxP",
+  infobasica: "🏢 Reporte Información Básica",
+  avaluo:     "🏗️ Solicitud Avalúo / Reavalúo",
+  juridica:   "⚖️ Solicitud Jurídica",
+};
+let bpDocsGuardados = {};
+let bpDocHistTipoActual = "flujocaja";
+
+/* --- Firebase: historial de documentos Banco del Pacífico --- */
+async function cargarDocsBancoPacifico(tipo){
+  const snap = await db.ref(`banco_pacifico_docs/${DATOS_UID}`).once("value");
+  const val = snap.val() || {};
+  return Object.keys(val).map(id=>({id,...val[id]})).filter(d=>d.tipo===tipo).sort((a,b)=>(b.creado||0)-(a.creado||0));
+}
+async function guardarDocBancoPacifico(datos, id){
+  const payload = limpiarUndefined({...datos, actualizado: Date.now()});
+  if(id){ await db.ref(`banco_pacifico_docs/${DATOS_UID}/${id}`).update(payload); }
+  else { payload.creado = Date.now(); const ref = db.ref(`banco_pacifico_docs/${DATOS_UID}`).push(); await ref.set(payload); id = ref.key; }
+  return id;
+}
+async function eliminarDocBancoPacifico(id){ await db.ref(`banco_pacifico_docs/${DATOS_UID}/${id}`).remove(); }
+
+/* --- helpers genéricos --- */
+function bpN(id){ const el=document.getElementById(id); return el ? (parseFloat(el.value)||0) : 0; }
+function bpV(id){ const el=document.getElementById(id); return el ? el.value : ''; }
+function bpC(id){ const el=document.getElementById(id); return !!(el && el.checked); }
+function bpUSD(n){ return '$'+Number(n||0).toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function bpPct(n){ return (Number(n||0)).toFixed(2)+'%'; }
+
+/* Amortización francesa (cuota fija): monto, tasa anual %, plazo en meses.
+   Devuelve el arreglo mensual completo (saldo inicial, capital, interés,
+   dividendo, saldo final) — misma lógica que las tablas de amortización de
+   BANCO 1 / BANCO 2 / BANCO DEL PACÍFICO de la guía original. */
+function bpAmortizacionFrancesa(monto, tasaAnualPct, plazoMeses){
+  monto = Number(monto)||0; plazoMeses = Math.max(0, Math.round(Number(plazoMeses)||0));
+  const i = (Number(tasaAnualPct)||0)/100/12;
+  if(monto<=0 || plazoMeses<=0) return { cuota:0, filas:[] };
+  const cuota = i===0 ? monto/plazoMeses : monto*i/(1-Math.pow(1+i,-plazoMeses));
+  let saldo = monto;
+  const filas = [];
+  for(let m=1;m<=plazoMeses;m++){
+    const saldoInicial = saldo;
+    const interes = saldoInicial*i;
+    let capital = cuota-interes;
+    if(m===plazoMeses || capital>saldoInicial) capital = saldoInicial; // ajuste de redondeo del último periodo
+    saldo = Math.max(0, saldoInicial-capital);
+    filas.push({mes:m, saldoInicial, capital, interes, dividendo: capital+interes, saldoFinal: saldo});
+  }
+  return { cuota, filas };
+}
+
+/* Distribuye el capital+interés de un préstamo en un eje absoluto de meses
+   (0 = Mes 1 del Año 1), a partir del mes de inicio dentro del Año 1. */
+function bpDistribuirPrestamo(monto, tasaAnualPct, plazoMeses, mesInicio){
+  const { filas } = bpAmortizacionFrancesa(monto, tasaAnualPct, plazoMeses);
+  const offset = Math.max(1, Math.min(12, Math.round(Number(mesInicio)||1))) - 1;
+  const capitalAbs = [], interesAbs = [];
+  filas.forEach((f, idx) => { capitalAbs[offset+idx] = f.capital; interesAbs[offset+idx] = f.interes; });
+  return { capitalAbs, interesAbs, filas };
+}
+function bpSumaRango(arr, ini, fin){ let s=0; for(let k=ini;k<=fin;k++) s += Number(arr[k]||0); return s; }
+
+/* Proyecta un total anual (año1 ya conocido) a 4 años más aplicando un
+   % de crecimiento anual compuesto — mismo criterio que las columnas
+   "% de crecimiento proyectado" de INGRESOS/COSTOS/GASTOS PROYECTADOS. */
+function bpProyectarAnios(totalAnio1, crecimientoPct, anios=4){
+  const out = [totalAnio1];
+  for(let k=0;k<anios;k++) out.push(out[out.length-1]*(1+(Number(crecimientoPct)||0)/100));
+  return out; // [Año1, Año2, Año3, Año4, Año5]
+}
+
+function showBancoDocTab(tab, btnEl){
+  document.querySelectorAll("#bpDocsRoot .doc-tab").forEach(t=>t.classList.remove("active"));
+  document.querySelectorAll("#bpDocsRoot .doc-content").forEach(c=>c.classList.remove("active"));
+  if(btnEl) btnEl.classList.add("active");
+  const el = document.getElementById("bpdoc-"+tab);
+  if(el) el.classList.add("active");
+}
+
+/* ── Historial guardado (compartido, por tipo) ── */
+function pintarBPHistTabs(){
+  const cont = document.getElementById("bpHistTabsBar");
+  if(!cont) return;
+  cont.innerHTML = Object.keys(BANCO_PACIFICO_DOC_TIPOS).map(tipo =>
+    `<button class="doc-tab ${bpDocHistTipoActual===tipo?'active':''}" onclick="cambiarBPHistTipo('${tipo}')">${BANCO_PACIFICO_DOC_TIPOS[tipo]}</button>`
+  ).join("");
+}
+async function cambiarBPHistTipo(tipo){ bpDocHistTipoActual = tipo; pintarBPHistTabs(); await pintarBPHistLista(tipo); }
+async function pintarBPHistLista(tipo){
+  const cont = document.getElementById("bpHistLista");
+  if(!cont) return;
+  cont.innerHTML = `<div class="emptyState">Cargando...</div>`;
+  try{ bpDocsGuardados[tipo] = await cargarDocsBancoPacifico(tipo); }
+  catch(e){
+    cont.innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "banco_pacifico_docs" a las reglas de Realtime Database.</span></div>`;
+    return;
+  }
+  const lista = bpDocsGuardados[tipo];
+  cont.innerHTML = !lista.length ? `<div class="emptyState">Aún no hay ${BANCO_PACIFICO_DOC_TIPOS[tipo].replace(/^\S+\s/,'')} guardados.</div>` : `
+    <table><thead><tr><th>Descripción</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${lista.map(d=>`<tr>
+        <td>${escapeHtml(d.descripcion||'-')}</td>
+        <td>${fmtFecha(d.creado)}</td>
+        <td>
+          <button class="btn small" onclick="verBPDocGuardado('${tipo}','${d.id}')">👁️ Ver / Imprimir</button>
+          <button class="btn small danger" onclick="eliminarBPDocGuardado('${tipo}','${d.id}')">Eliminar</button>
+        </td>
+      </tr>`).join("")}
+    </tbody></table>`;
+}
+function verBPDocGuardado(tipo, id){
+  const d = (bpDocsGuardados[tipo]||[]).find(x=>x.id===id);
+  if(!d) return;
+  bpAbrirVentanaImpresion(d.contenidoHtml||'<p>Sin contenido.</p>', d.descripcion||'Documento');
+}
+async function eliminarBPDocGuardado(tipo, id){
+  if(!confirm("¿Eliminar este documento guardado?")) return;
+  await eliminarDocBancoPacifico(id);
+  await pintarBPHistLista(tipo);
+}
+async function guardarHistorialBP(tipoDoc, descripcion, datos, previewId){
+  const previewEl = document.getElementById(previewId);
+  const contenidoHtml = previewEl ? previewEl.innerHTML : "";
+  await guardarDocBancoPacifico({ tipo: tipoDoc, descripcion, datos, contenidoHtml }, null);
+  await registrarCambio("Área Bancaria", "generar", `${BANCO_PACIFICO_DOC_TIPOS[tipoDoc]||tipoDoc}: ${descripcion}`);
+  if(bpDocHistTipoActual===tipoDoc) await pintarBPHistLista(tipoDoc);
+}
+function terminarYGuardarBP(tipoDoc, etiqueta, previewId, formSelector){
+  const preview = document.getElementById(previewId);
+  if(!preview || preview.querySelector('.doc-placeholder')){ toast('Genere la vista previa antes de guardar', 'warning'); return; }
+  const datos = {};
+  document.querySelectorAll(formSelector+' input, '+formSelector+' select, '+formSelector+' textarea').forEach(inp=>{
+    if(!inp.id) return;
+    datos[inp.id] = inp.type==='checkbox' ? inp.checked : inp.value;
+  });
+  guardarHistorialBP(tipoDoc, etiqueta, datos, previewId);
+  toast(`${etiqueta} guardado en historial ✓`, 'success');
+}
+
+/* Ventana de impresión con estilo "papel del banco" (barra de color
+   corporativa) — misma convención de imprimirDocumento()/imprimirReporteActivos(). */
+function bpAbrirVentanaImpresion(contentHtml, titulo){
+  const win = window.open('', '_blank');
+  win.document.write(`<html><head><title>${escapeHtml(titulo||'Documento')}</title><style>
+    @page{ size:A4; margin:14mm; }
+    body{font-family:Arial,Helvetica,sans-serif;padding:0;color:#111;font-size:11.5px;line-height:1.45;}
+    .bp-header{background:linear-gradient(135deg,#0057A3,#0091D5);color:#fff;padding:14px 18px;border-radius:6px;margin-bottom:14px;}
+    .bp-header .bp-logo{font-size:16px;font-weight:900;letter-spacing:.4px;}
+    .bp-header .bp-sub{font-size:11px;opacity:.9;margin-top:2px;}
+    h1.bp-titulo{font-size:15px;text-transform:uppercase;letter-spacing:1px;text-align:center;margin:10px 0 4px;color:#0057A3;}
+    h2.bp-sub2{font-size:12px;text-align:center;color:#555;margin:0 0 14px;font-weight:400;}
+    table{width:100%;border-collapse:collapse;margin:8px 0 14px;}
+    th,td{border:1px solid #8fb3cf;padding:5px 6px;font-size:10.5px;text-align:left;vertical-align:top;}
+    th{background:#e8f2fa;font-weight:700;color:#0057A3;}
+    td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+    .bp-seccion{background:#0057A3;color:#fff;font-weight:700;font-size:11.5px;padding:5px 10px;margin:14px 0 0;border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:.4px;}
+    .bp-seccion + table{margin-top:0;border-top:none;}
+    .bp-campo{margin-bottom:6px;font-size:11px;}
+    .bp-campo b{color:#0057A3;}
+    .bp-chk{display:inline-block;width:11px;height:11px;border:1px solid #333;text-align:center;line-height:10px;font-size:9px;margin-right:5px;}
+    .bp-chk-item{display:block;margin:3px 0;font-size:10.5px;}
+    .bp-firma-row{display:flex;justify-content:space-around;margin-top:50px;flex-wrap:wrap;gap:20px;}
+    .bp-firma{text-align:center;width:40%;font-size:10.5px;}
+    .bp-firma-line{border-top:1px solid #333;padding-top:5px;margin-top:40px;}
+    .bp-footer{border-top:1px solid #ccc;padding-top:6px;font-size:9px;color:#888;margin-top:20px;}
+    .bp-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;}
+    .bp-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 16px;}
+    .doc-header{text-align:center;margin-bottom:16px;}
+    .doc-title{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:1px;color:#0057A3;margin-bottom:4px;}
+    .doc-subtitle{font-size:11px;color:#555;}
+    .doc-footer{border-top:1px solid #ccc;padding-top:7px;font-size:9px;color:#888;margin-top:18px;}
+    tr.tot td{font-weight:700;background:#eef5fb;}
+  </style></head><body>
+    <div class="bp-header"><div class="bp-logo">🏦 BANCO DEL PACÍFICO S.A.</div><div class="bp-sub">${escapeHtml(titulo||'')}</div></div>
+    ${contentHtml}
+    <div class="bp-footer">Documento generado internamente para gestión de trámites bancarios — no reemplaza el formato oficial descargable del banco.</div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),300);<\/script>
+  </body></html>`);
+  win.document.close();
+}
+
+/* =========================================================================
+   DOC 1 — GUÍA DE FLUJO DE CAJA PROYECTADO v2.0
+   ========================================================================= */
+function bpFlujoCajaFormHTML(){
+  const meses = [1,2,3,4,5,6,7,8,9,10,11,12];
+  const filaMeses = (prefijo, defVal) => meses.map(m=>`<input type="number" step="0.01" id="${prefijo}-m${m}" placeholder="M${m}" value="${defVal!=null?defVal:''}" style="width:64px;font-size:11px;padding:4px" oninput="bpFlujoCajaLive()">`).join("");
+  return `
+    <div class="doc-literatura">
+      <strong>Guía Metodológica:</strong> Replica la <em>Guía de Flujo de Caja Proyectado v2.0</em> del Banco del Pacífico (Res. 209-2016F, JPRMF). Ingresa las premisas y las proyecciones mensuales del Año 1; los préstamos calculan automáticamente su tabla de amortización (sistema francés / cuota fija) y el <b>Flujo de Caja Consolidado</b> se recalcula solo, igual que las fórmulas del Excel original.
+    </div>
+    <h3>1. Datos Generales y Premisas</h3>
+    <div class="form-group"><label>Cliente / Razón Social</label><input type="text" id="fc2-cliente" placeholder="Ej. COMERCIAL IMPORTADORA XYZ S.A."></div>
+    <div class="form-group"><label>Saldo Inicial de Caja (USD)</label><input type="number" id="fc2-saldoinicial" value="150000" step="0.01" oninput="bpFlujoCajaLive()"></div>
+    <div class="form-group"><label>Premisas de Ingresos Operacionales</label><textarea id="fc2-premisas-ing" rows="2" placeholder="Ej. crecimiento del 2% anual en unidades, precio ajustado por inflación..."></textarea></div>
+    <div class="form-group"><label>Premisas de Egresos Operacionales</label><textarea id="fc2-premisas-egr" rows="2"></textarea></div>
+    <div class="form-group"><label>Premisas de Ingresos No Operacionales</label><textarea id="fc2-premisas-ingno" rows="2"></textarea></div>
+    <div class="form-group"><label>Premisas de Egresos No Operacionales</label><textarea id="fc2-premisas-egrno" rows="2"></textarea></div>
+
+    <h3>2. Ingresos Proyectados (Año 1, mensual)</h3>
+    <div class="form-group"><label>Ingresos por Ventas — Mes 1 a 12 (USD)</label><div style="display:flex;flex-wrap:wrap;gap:4px">${filaMeses('fc2-ing',0)}</div></div>
+    <div class="form-group"><label>% Crecimiento anual proyectado (Años 2 a 5)</label><input type="number" id="fc2-ing-crec" value="0" step="0.01" oninput="bpFlujoCajaLive()"></div>
+
+    <h3>3. Costos Proyectados (Año 1, mensual)</h3>
+    <div class="form-group"><label>Costos de Ventas — Mes 1 a 12 (USD)</label><div style="display:flex;flex-wrap:wrap;gap:4px">${filaMeses('fc2-costo',0)}</div></div>
+    <div class="form-group"><label>% Crecimiento anual proyectado (Años 2 a 5)</label><input type="number" id="fc2-costo-crec" value="0" step="0.01" oninput="bpFlujoCajaLive()"></div>
+
+    <h3>4. Gastos Administrativos y de Ventas (Año 1, mensual)</h3>
+    <div class="form-group"><label>Gastos Adm. y Ventas — Mes 1 a 12 (USD)</label><div style="display:flex;flex-wrap:wrap;gap:4px">${filaMeses('fc2-gasto',0)}</div></div>
+    <div class="form-group"><label>% Crecimiento anual proyectado (Años 2 a 5)</label><input type="number" id="fc2-gasto-crec" value="0" step="0.01" oninput="bpFlujoCajaLive()"></div>
+
+    <h3>5. Ingresos / Egresos No Operacionales (Año 1)</h3>
+    <div class="form-group"><label>Aportes de Socios (mes en que ingresan)</label>
+      <div style="display:flex;gap:8px"><select id="fc2-aportes-mes" style="width:90px">${meses.map(m=>`<option value="${m}">Mes ${m}</option>`).join('')}</select>
+      <input type="number" id="fc2-aportes-monto" placeholder="Monto USD" step="0.01" oninput="bpFlujoCajaLive()"></div></div>
+    <div class="form-group"><label>Crédito Recibido de Banco del Pacífico (mes en que ingresa)</label>
+      <div style="display:flex;gap:8px"><select id="fc2-creditoing-mes" style="width:90px">${meses.map(m=>`<option value="${m}">Mes ${m}</option>`).join('')}</select>
+      <input type="number" id="fc2-creditoing-monto" placeholder="Monto USD" step="0.01" oninput="bpFlujoCajaLive()"></div></div>
+    <div class="form-group"><label>Compra de Activos / Egresos de Inversión (mes en que se paga)</label>
+      <div style="display:flex;gap:8px"><select id="fc2-capex-mes" style="width:90px">${meses.map(m=>`<option value="${m}">Mes ${m}</option>`).join('')}</select>
+      <input type="number" id="fc2-capex-monto" placeholder="Monto USD" step="0.01" oninput="bpFlujoCajaLive()"></div></div>
+
+    <h3>6. Tablas de Amortización (hasta 3 préstamos)</h3>
+    ${[1,2,3].map(n=>`
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
+        <div class="form-group"><label>Nombre del Banco</label><input type="text" id="fc2-pr${n}-nombre" value="${n===3?'BANCO DEL PACÍFICO':'BANCO '+n}"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+          <div class="form-group"><label>Monto (USD)</label><input type="number" id="fc2-pr${n}-monto" step="0.01" oninput="bpFlujoCajaLive()"></div>
+          <div class="form-group"><label>Tasa anual (%)</label><input type="number" id="fc2-pr${n}-tasa" step="0.0001" value="8.95" oninput="bpFlujoCajaLive()"></div>
+          <div class="form-group"><label>Plazo (meses)</label><input type="number" id="fc2-pr${n}-plazo" step="1" oninput="bpFlujoCajaLive()"></div>
+          <div class="form-group"><label>Mes de inicio (Año 1)</label><select id="fc2-pr${n}-inicio" onchange="bpFlujoCajaLive()">${meses.map(m=>`<option value="${m}">Mes ${m}</option>`).join('')}</select></div>
+        </div>
+      </div>
+    `).join("")}
+
+    <div id="fc2-resumen-live" style="background:var(--panel2);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px;"></div>
+
+    <div class="doc-btn-row">
+      <button class="btn-calc" onclick="generarBPFlujoCaja()">👁 Generar Flujo de Caja</button>
+      <button class="btn-secondary" onclick="bpImprimirFlujoCaja()">🖨 Imprimir</button>
+      <button class="btn-calc" onclick="terminarYGuardarBP('flujocaja','Flujo de Caja Proyectado','flujocaja-preview','#bpdoc-flujocaja .doc-form')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+    </div>
+  `;
+}
+
+/* Recolecta todos los datos del formulario del flujo de caja y calcula
+   la proyección completa (Año1 mensual + Años 2-5). Devuelve un objeto
+   con todo lo necesario para pintar la vista previa / imprimir. */
+function bpFlujoCajaCalcular(){
+  const meses = [1,2,3,4,5,6,7,8,9,10,11,12];
+  const cliente = bpV('fc2-cliente');
+  const saldoInicial = bpN('fc2-saldoinicial');
+  const ingresosM = meses.map(m=>bpN('fc2-ing-m'+m));
+  const costosM = meses.map(m=>bpN('fc2-costo-m'+m));
+  const gastosM = meses.map(m=>bpN('fc2-gasto-m'+m));
+  const ingCrec = bpN('fc2-ing-crec'), costoCrec = bpN('fc2-costo-crec'), gastoCrec = bpN('fc2-gasto-crec');
+
+  const ingresosAnio1 = ingresosM.reduce((a,b)=>a+b,0);
+  const costosAnio1 = costosM.reduce((a,b)=>a+b,0);
+  const gastosAnio1 = gastosM.reduce((a,b)=>a+b,0);
+  const ingresosAnios = bpProyectarAnios(ingresosAnio1, ingCrec);
+  const costosAnios = bpProyectarAnios(costosAnio1, costoCrec);
+  const gastosAnios = bpProyectarAnios(gastosAnio1, gastoCrec);
+
+  // No operacionales — se registran en el mes indicado, dentro del Año 1
+  const aportesMes = parseInt(bpV('fc2-aportes-mes'))||1, aportesMonto = bpN('fc2-aportes-monto');
+  const creditoMes = parseInt(bpV('fc2-creditoing-mes'))||1, creditoMonto = bpN('fc2-creditoing-monto');
+  const capexMes = parseInt(bpV('fc2-capex-mes'))||1, capexMonto = bpN('fc2-capex-monto');
+  const ingFinM = meses.map(m => (m===aportesMes?aportesMonto:0)+(m===creditoMes?creditoMonto:0));
+  const egrInvM = meses.map(m => (m===capexMes?capexMonto:0));
+
+  // Préstamos — amortización francesa distribuida en el eje de 60 meses (5 años)
+  const prestamos = [1,2,3].map(n => ({
+    nombre: bpV(`fc2-pr${n}-nombre`) || `Banco ${n}`,
+    monto: bpN(`fc2-pr${n}-monto`), tasa: bpN(`fc2-pr${n}-tasa`),
+    plazo: bpN(`fc2-pr${n}-plazo`), inicio: parseInt(bpV(`fc2-pr${n}-inicio`))||1,
+  })).filter(p=>p.monto>0 && p.plazo>0);
+  const dist = prestamos.map(p => ({ ...p, ...bpDistribuirPrestamo(p.monto,p.tasa,p.plazo,p.inicio) }));
+
+  const capitalAbsTotal = [], interesAbsTotal = [];
+  dist.forEach(p => { p.capitalAbs.forEach((v,i)=>capitalAbsTotal[i]=(capitalAbsTotal[i]||0)+v); p.interesAbs.forEach((v,i)=>interesAbsTotal[i]=(interesAbsTotal[i]||0)+v); });
+  const egrFinM = meses.map(m => (capitalAbsTotal[m-1]||0)+(interesAbsTotal[m-1]||0));
+  const egrFinAnios = [0,1,2,3,4].map(y => bpSumaRango(capitalAbsTotal,y*12,y*12+11)+bpSumaRango(interesAbsTotal,y*12,y*12+11));
+  const ingFinAnios = [ingFinM.reduce((a,b)=>a+b,0),0,0,0,0];
+  const egrInvAnios = [egrInvM.reduce((a,b)=>a+b,0),0,0,0,0];
+
+  // Flujo consolidado mensual (Año 1)
+  const totalIngOpM = ingresosM.slice();
+  const totalEgrOpM = meses.map(i=>costosM[i-1]+gastosM[i-1]);
+  const flujoOpM = meses.map(i=>totalIngOpM[i-1]-totalEgrOpM[i-1]);
+  const flujoInvM = meses.map(i=>-egrInvM[i-1]);
+  const flujoFinM = meses.map(i=>ingFinM[i-1]-egrFinM[i-1]);
+  const flujoNetoM = meses.map(i=>flujoOpM[i-1]+flujoInvM[i-1]+flujoFinM[i-1]);
+  const saldoInicialM = [], flujoAcumM = [];
+  meses.forEach((m,i)=>{ saldoInicialM[i] = i===0?saldoInicial:flujoAcumM[i-1]; flujoAcumM[i] = saldoInicialM[i]+flujoNetoM[i]; });
+
+  // Flujo consolidado anual (Año 1 a 5)
+  const totalIngOpAnios = ingresosAnios;
+  const totalEgrOpAnios = [0,1,2,3,4].map(k=>costosAnios[k]+gastosAnios[k]);
+  const flujoOpAnios = [0,1,2,3,4].map(k=>totalIngOpAnios[k]-totalEgrOpAnios[k]);
+  const flujoInvAnios = egrInvAnios.map(v=>-v);
+  const flujoFinAnios = [0,1,2,3,4].map(k=>ingFinAnios[k]-egrFinAnios[k]);
+  const flujoNetoAnios = [0,1,2,3,4].map(k=>flujoOpAnios[k]+flujoInvAnios[k]+flujoFinAnios[k]);
+  const saldoInicialAnios = [], flujoAcumAnios = [];
+  [0,1,2,3,4].forEach(k=>{ saldoInicialAnios[k]= k===0?saldoInicial:flujoAcumAnios[k-1]; flujoAcumAnios[k]=saldoInicialAnios[k]+flujoNetoAnios[k]; });
+
+  return { cliente, saldoInicial, meses, ingresosM, costosM, gastosM, ingresosAnios, costosAnios, gastosAnios,
+    ingFinM, egrInvM, egrFinM, dist, capitalAbsTotal, interesAbsTotal,
+    totalIngOpM, totalEgrOpM, flujoOpM, flujoInvM, flujoFinM, flujoNetoM, saldoInicialM, flujoAcumM,
+    totalIngOpAnios, totalEgrOpAnios, flujoOpAnios, flujoInvAnios, flujoFinAnios, flujoNetoAnios, saldoInicialAnios, flujoAcumAnios,
+    ingFinAnios, egrFinAnios, egrInvAnios };
+}
+
+function bpFlujoCajaLive(){
+  const box = document.getElementById('fc2-resumen-live');
+  if(!box) return;
+  const r = bpFlujoCajaCalcular();
+  box.innerHTML = `<b>Vista rápida (en vivo):</b> Flujo Neto Año 1: ${bpUSD(r.flujoNetoAnios[0])} · Flujo Acumulado fin Año 1: ${bpUSD(r.flujoAcumAnios[0])} · Total cuotas mensuales préstamos (mes 1): ${bpUSD(r.egrFinM[0])}`;
+}
+
+function bpTablaFilaMesesAnios(etiqueta, mensuales, anios, clase){
+  return `<tr class="${clase||''}"><td>${etiqueta}</td>${mensuales.map(v=>`<td class="num">${bpUSD(v)}</td>`).join('')}${anios.map(v=>`<td class="num">${bpUSD(v)}</td>`).join('')}</tr>`;
+}
+
+function generarBPFlujoCaja(){
+  const cliente = bpV('fc2-cliente');
+  if(!cliente){ toast('Ingrese el nombre del cliente / razón social', 'error'); return; }
+  const r = bpFlujoCajaCalcular();
+  const headMeses = r.meses.map(m=>`<th class="num">Mes ${m}</th>`).join('');
+  const headAnios = [1,2,3,4,5].map(a=>`<th class="num">Total Año ${a}</th>`).join('');
+
+  const tablaFlujo = `
+    <table><thead><tr><th>Concepto</th>${headMeses}${headAnios}</tr></thead><tbody>
+      ${bpTablaFilaMesesAnios('Ingresos por Ventas', r.ingresosM, r.ingresosAnios)}
+      ${bpTablaFilaMesesAnios('TOTAL INGRESO OPERACIONAL', r.totalIngOpM, r.totalIngOpAnios,'tot')}
+      ${bpTablaFilaMesesAnios('Costos de Ventas', r.costosM, r.costosAnios)}
+      ${bpTablaFilaMesesAnios('Gastos Adm. y Ventas', r.gastosM, r.gastosAnios)}
+      ${bpTablaFilaMesesAnios('TOTAL EGRESOS OPERACIONALES', r.totalEgrOpM, r.totalEgrOpAnios,'tot')}
+      ${bpTablaFilaMesesAnios('FLUJO OPERACIONAL', r.flujoOpM, r.flujoOpAnios,'tot')}
+      ${bpTablaFilaMesesAnios('Egresos por Actividades de Inversión', r.egrInvM, r.egrInvAnios)}
+      ${bpTablaFilaMesesAnios('FLUJO POR ACTIVIDADES DE INVERSIÓN', r.flujoInvM, r.flujoInvAnios,'tot')}
+      ${bpTablaFilaMesesAnios('Ingresos por Actividades de Financiamiento', r.ingFinM, r.ingFinAnios)}
+      ${bpTablaFilaMesesAnios('Egresos por Actividades de Financiamiento (capital + interés)', r.egrFinM, r.egrFinAnios)}
+      ${bpTablaFilaMesesAnios('FLUJO POR ACTIVIDADES DE FINANCIAMIENTO', r.flujoFinM, r.flujoFinAnios,'tot')}
+      ${bpTablaFilaMesesAnios('FLUJO NETO DE CAJA', r.flujoNetoM, r.flujoNetoAnios,'tot')}
+      ${bpTablaFilaMesesAnios('Saldo Inicial de Caja', r.saldoInicialM, r.saldoInicialAnios)}
+      ${bpTablaFilaMesesAnios('FLUJO ACUMULADO', r.flujoAcumM, r.flujoAcumAnios,'tot')}
+    </tbody></table>`;
+
+  const tablasAmort = r.dist.map(p => {
+    if(!p.filas.length) return '';
+    return `<h4 style="margin:14px 0 6px;">Tabla de Amortización — ${escapeHtml(p.nombre)} (Monto ${bpUSD(p.monto)}, ${p.tasa}% anual, ${p.plazo} meses, cuota ${bpUSD(bpAmortizacionFrancesa(p.monto,p.tasa,p.plazo).cuota)})</h4>
+    <table><thead><tr><th>Mes</th><th class="num">Saldo Inicial</th><th class="num">Capital</th><th class="num">Interés</th><th class="num">Dividendo</th><th class="num">Saldo Final</th></tr></thead>
+    <tbody>${p.filas.map(f=>`<tr><td>${f.mes}</td><td class="num">${bpUSD(f.saldoInicial)}</td><td class="num">${bpUSD(f.capital)}</td><td class="num">${bpUSD(f.interes)}</td><td class="num">${bpUSD(f.dividendo)}</td><td class="num">${bpUSD(f.saldoFinal)}</td></tr>`).join('')}</tbody></table>`;
+  }).join('');
+
+  document.getElementById('flujocaja-preview').innerHTML = `
+    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado</div><div class="doc-subtitle">${escapeHtml(cliente)} · Guía Metodológica Banco del Pacífico v2.0</div></div>
+    <div style="overflow-x:auto">${tablaFlujo}</div>
+    <div style="overflow-x:auto">${tablasAmort}</div>
+    <div class="doc-footer">Saldo inicial de caja: ${bpUSD(r.saldoInicial)}. Las columnas Año 2 a Año 5 se proyectan aplicando el % de crecimiento anual indicado sobre ingresos, costos y gastos; los egresos de financiamiento provienen directamente de la tabla de amortización de cada préstamo.</div>
+  `;
+}
+function bpImprimirFlujoCaja(){
+  const el = document.getElementById('flujocaja-preview');
+  if(!el || el.querySelector('.doc-placeholder')){ toast('Genere el flujo de caja primero', 'warning'); return; }
+  bpAbrirVentanaImpresion(el.innerHTML, 'Flujo de Caja Proyectado');
+}
+
+/* =========================================================================
+   DOC 2 — ANEXOS: EVALUACIÓN DE CxC, INVENTARIOS Y CxP
+   ========================================================================= */
+function bpAnexosFormHTML(){
+  const filaCliente = (prefijo, n, campos) => Array.from({length:n}).map((_,i)=>`
+    <div style="display:grid;grid-template-columns:${campos.map(()=>'1fr').join(' ')};gap:6px;margin-bottom:4px;">
+      ${campos.map(c=>`<input type="${c.tipo||'text'}" id="${prefijo}-${i}-${c.id}" placeholder="${c.label}" ${c.tipo==='number'?'step="0.01"':''} oninput="bpAnexosLive()" style="font-size:11px;padding:5px">`).join('')}
+    </div>`).join('');
+
+  return `
+    <div class="doc-literatura"><strong>Guía de Calificación:</strong> replica la hoja "Evaluación de CxC, Inventarios y CxP" del Banco del Pacífico. Los porcentajes (% vs. total de cartera / % vs. total de inventarios) se calculan automáticamente a partir de los montos ingresados.</div>
+    <div class="form-group"><label>Cliente</label><input type="text" id="anx-cliente"></div>
+    <div class="form-group"><label>Fecha</label><input type="date" id="anx-fecha"></div>
+
+    <h3>Cuentas por Cobrar — Antigüedad de Cartera</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:6px;font-size:10px;color:var(--muted);margin-bottom:4px;"><span></span><span>0-30 días</span><span>31-60 días</span><span>61-90 días</span><span>&gt;90 días</span></div>
+    ${['Por Vencer','Vencida'].map((lbl,i)=>`
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:6px;margin-bottom:4px;">
+        <span style="font-size:11px;padding-top:6px">${lbl}</span>
+        ${['30','60','90','90p'].map(b=>`<input type="number" step="0.01" id="anx-cart-${i}-${b}" oninput="bpAnexosLive()" style="font-size:11px;padding:5px">`).join('')}
+      </div>`).join('')}
+    <div id="anx-cart-total" style="font-size:12px;font-weight:700;margin:6px 0 14px;"></div>
+
+    <h3>Principales Clientes</h3>
+    ${filaCliente('anx-cli',5,[{id:'nombre',label:'Nombre'},{id:'monto',label:'Monto',tipo:'number'},{id:'plazo',label:'Plazo otorgado'},{id:'garantia',label:'Tipo de garantías'}])}
+    <div id="anx-cli-pct" style="font-size:11px;color:var(--muted);margin-bottom:14px;"></div>
+
+    <h3>Clientes Vencidos &gt; 60 Días</h3>
+    ${filaCliente('anx-venc',5,[{id:'nombre',label:'Nombre'},{id:'monto',label:'Monto',tipo:'number'},{id:'garantia',label:'Tipo de garantías'},{id:'obs',label:'Observaciones'}])}
+
+    <h3>Inventarios — Detalle por Tipo</h3>
+    ${['Producto Terminado','Producto en Proceso','Materia Prima','Herramientas y Suministros','En Tránsito'].map((lbl,i)=>`
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
+        <span style="flex:1;font-size:11px;">${lbl}</span>
+        <input type="number" step="0.01" id="anx-inv-${i}" placeholder="Monto" oninput="bpAnexosLive()" style="width:120px;font-size:11px;padding:5px">
+        <span id="anx-inv-pct-${i}" style="width:60px;font-size:11px;color:var(--muted);">0%</span>
+      </div>`).join('')}
+    <div id="anx-inv-total" style="font-size:12px;font-weight:700;margin:6px 0 14px;"></div>
+
+    <h3>Principales Líneas / Ítems de Inventario</h3>
+    ${filaCliente('anx-linea',5,[{id:'nombre',label:'Línea / Ítem'},{id:'monto',label:'Monto',tipo:'number'}])}
+    <div id="anx-linea-pct" style="font-size:11px;color:var(--muted);margin-bottom:14px;"></div>
+
+    <h3>Líneas con Antigüedad &gt; 1 Año</h3>
+    ${filaCliente('anx-lineaold',5,[{id:'nombre',label:'Línea / Ítem'},{id:'monto',label:'Monto',tipo:'number'}])}
+    <div id="anx-lineaold-pct" style="font-size:11px;color:var(--muted);margin-bottom:14px;"></div>
+
+    <h3>Cuentas por Pagar — Obligaciones No Financieras</h3>
+    ${filaCliente('anx-cpnf',5,[{id:'nombre',label:'Nombre'},{id:'destino',label:'Destino'},{id:'cupo',label:'Cupo/Monto',tipo:'number'},{id:'plazo',label:'Plazo'},{id:'forma',label:'Forma de pago'},{id:'garantia',label:'Tipo y valor garantía'}])}
+
+    <h3>Cuentas por Pagar — Obligaciones con el Sistema Financiero</h3>
+    ${filaCliente('anx-cpsf',5,[{id:'nombre',label:'Nombre'},{id:'destino',label:'Destino'},{id:'cupo',label:'Cupo/Monto',tipo:'number'},{id:'plazo',label:'Plazo'},{id:'forma',label:'Forma de pago'},{id:'garantia',label:'Tipo y valor garantía'}])}
+
+    <h3>Observaciones</h3>
+    <div class="form-group"><label>Observaciones CxC/Inventarios</label><textarea id="anx-obs" rows="2"></textarea></div>
+    <div class="form-group"><label>Representante Legal</label><input type="text" id="anx-repleg"></div>
+    <div class="form-group"><label>Contador</label><input type="text" id="anx-contador"></div>
+
+    <div class="doc-btn-row">
+      <button class="btn-calc" onclick="generarBPAnexos()">👁 Generar Anexo</button>
+      <button class="btn-secondary" onclick="bpImprimirAnexos()">🖨 Imprimir</button>
+      <button class="btn-calc" onclick="terminarYGuardarBP('anexos','Anexo CxC/Inventarios/CxP','anexos-preview','#bpdoc-anexos .doc-form')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+    </div>
+  `;
+}
+
+function bpAnexosCalcular(){
+  const cart = [0,1].map(i => ({
+    d30: bpN(`anx-cart-${i}-30`), d60: bpN(`anx-cart-${i}-60`), d90: bpN(`anx-cart-${i}-90`), d90p: bpN(`anx-cart-${i}-90p`),
+  }));
+  cart.forEach(c => c.total = c.d30+c.d60+c.d90+c.d90p);
+  const totalCartera = cart.reduce((s,c)=>s+c.total,0);
+
+  const clientes = Array.from({length:5}).map((_,i)=>({
+    nombre: bpV(`anx-cli-${i}-nombre`), monto: bpN(`anx-cli-${i}-monto`), plazo: bpV(`anx-cli-${i}-plazo`), garantia: bpV(`anx-cli-${i}-garantia`),
+  })).filter(c=>c.nombre||c.monto);
+  clientes.forEach(c => c.pct = totalCartera>0 ? c.monto/totalCartera*100 : 0);
+
+  const vencidos = Array.from({length:5}).map((_,i)=>({
+    nombre: bpV(`anx-venc-${i}-nombre`), monto: bpN(`anx-venc-${i}-monto`), garantia: bpV(`anx-venc-${i}-garantia`), obs: bpV(`anx-venc-${i}-obs`),
+  })).filter(c=>c.nombre||c.monto);
+  vencidos.forEach(c => c.pct = totalCartera>0 ? c.monto/totalCartera*100 : 0);
+
+  const invLabels = ['Producto Terminado','Producto en Proceso','Materia Prima','Herramientas y Suministros','En Tránsito'];
+  const inventario = invLabels.map((lbl,i)=>({lbl, monto: bpN(`anx-inv-${i}`)}));
+  const totalInventario = inventario.reduce((s,x)=>s+x.monto,0);
+  inventario.forEach(x => x.pct = totalInventario>0 ? x.monto/totalInventario*100 : 0);
+
+  const lineas = Array.from({length:5}).map((_,i)=>({ nombre: bpV(`anx-linea-${i}-nombre`), monto: bpN(`anx-linea-${i}-monto`) })).filter(x=>x.nombre||x.monto);
+  lineas.forEach(x => x.pct = totalInventario>0 ? x.monto/totalInventario*100 : 0);
+  const lineasOld = Array.from({length:5}).map((_,i)=>({ nombre: bpV(`anx-lineaold-${i}-nombre`), monto: bpN(`anx-lineaold-${i}-monto`) })).filter(x=>x.nombre||x.monto);
+  lineasOld.forEach(x => x.pct = totalInventario>0 ? x.monto/totalInventario*100 : 0);
+
+  const cpnf = Array.from({length:5}).map((_,i)=>({
+    nombre: bpV(`anx-cpnf-${i}-nombre`), destino: bpV(`anx-cpnf-${i}-destino`), cupo: bpN(`anx-cpnf-${i}-cupo`), plazo: bpV(`anx-cpnf-${i}-plazo`), forma: bpV(`anx-cpnf-${i}-forma`), garantia: bpV(`anx-cpnf-${i}-garantia`),
+  })).filter(x=>x.nombre||x.cupo);
+  const cpsf = Array.from({length:5}).map((_,i)=>({
+    nombre: bpV(`anx-cpsf-${i}-nombre`), destino: bpV(`anx-cpsf-${i}-destino`), cupo: bpN(`anx-cpsf-${i}-cupo`), plazo: bpV(`anx-cpsf-${i}-plazo`), forma: bpV(`anx-cpsf-${i}-forma`), garantia: bpV(`anx-cpsf-${i}-garantia`),
+  })).filter(x=>x.nombre||x.cupo);
+
+  return { cart, totalCartera, clientes, vencidos, inventario, totalInventario, lineas, lineasOld, cpnf, cpsf };
+}
+
+function bpAnexosLive(){
+  const r = bpAnexosCalcular();
+  const totBox = document.getElementById('anx-cart-total');
+  if(totBox) totBox.innerHTML = `Total Cartera: ${bpUSD(r.totalCartera)} (Por Vencer ${bpUSD(r.cart[0].total)} + Vencida ${bpUSD(r.cart[1].total)})`;
+  const invTot = document.getElementById('anx-inv-total');
+  if(invTot) invTot.innerHTML = `Total Inventarios: ${bpUSD(r.totalInventario)}`;
+  r.inventario.forEach((x,i)=>{ const el = document.getElementById(`anx-inv-pct-${i}`); if(el) el.textContent = bpPct(x.pct); });
+  const cliPct = document.getElementById('anx-cli-pct');
+  if(cliPct) cliPct.innerHTML = r.clientes.map(c=>`${escapeHtml(c.nombre)}: ${bpPct(c.pct)} del total de cartera`).join(' · ');
+  const lineaPct = document.getElementById('anx-linea-pct');
+  if(lineaPct) lineaPct.innerHTML = r.lineas.map(c=>`${escapeHtml(c.nombre)}: ${bpPct(c.pct)} del total de inventarios`).join(' · ');
+  const lineaOldPct = document.getElementById('anx-lineaold-pct');
+  if(lineaOldPct) lineaOldPct.innerHTML = r.lineasOld.map(c=>`${escapeHtml(c.nombre)}: ${bpPct(c.pct)} del total de inventarios`).join(' · ');
+}
+
+function generarBPAnexos(){
+  const cliente = bpV('anx-cliente');
+  if(!cliente){ toast('Ingrese el nombre del cliente', 'error'); return; }
+  const r = bpAnexosCalcular();
+  const filaTabla = (arr, cols) => arr.length ? arr.map(row=>`<tr>${cols.map(c=>`<td${c.num?' class="num"':''}>${c.pct?bpPct(row[c.key]):(c.num?bpUSD(row[c.key]):escapeHtml(row[c.key]||'-'))}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}" style="text-align:center;color:#888">Sin registros</td></tr>`;
+
+  document.getElementById('anexos-preview').innerHTML = `
+    <div class="doc-header"><div class="doc-title">Guía de Calificación</div><div class="doc-subtitle">Evaluación de CxC, Inventarios y CxP — ${escapeHtml(cliente)} · ${bpV('anx-fecha')?fmtFecha(new Date(bpV('anx-fecha')+'T00:00')):''}</div></div>
+
+    <h4>Cuentas por Cobrar — Antigüedad de Cartera</h4>
+    <table><thead><tr><th></th><th class="num">0-30 días</th><th class="num">31-60 días</th><th class="num">61-90 días</th><th class="num">&gt;90 días</th><th class="num">Total</th></tr></thead>
+    <tbody>
+      <tr><td>Por Vencer</td><td class="num">${bpUSD(r.cart[0].d30)}</td><td class="num">${bpUSD(r.cart[0].d60)}</td><td class="num">${bpUSD(r.cart[0].d90)}</td><td class="num">${bpUSD(r.cart[0].d90p)}</td><td class="num">${bpUSD(r.cart[0].total)}</td></tr>
+      <tr><td>Vencida</td><td class="num">${bpUSD(r.cart[1].d30)}</td><td class="num">${bpUSD(r.cart[1].d60)}</td><td class="num">${bpUSD(r.cart[1].d90)}</td><td class="num">${bpUSD(r.cart[1].d90p)}</td><td class="num">${bpUSD(r.cart[1].total)}</td></tr>
+      <tr style="font-weight:700"><td>TOTAL CARTERA</td><td colspan="4"></td><td class="num">${bpUSD(r.totalCartera)}</td></tr>
+    </tbody></table>
+
+    <h4>Principales Clientes</h4>
+    <table><thead><tr><th>Nombre</th><th class="num">Monto</th><th class="num">% vs Total Cartera</th><th>Plazo Otorgado</th><th>Tipo de Garantías</th></tr></thead>
+    <tbody>${filaTabla(r.clientes,[{key:'nombre'},{key:'monto',num:true},{key:'pct',pct:true},{key:'plazo'},{key:'garantia'}])}</tbody></table>
+
+    <h4>Clientes Vencidos &gt; 60 Días</h4>
+    <table><thead><tr><th>Nombre</th><th class="num">Monto</th><th class="num">% vs Total Cartera</th><th>Tipo de Garantías</th><th>Observaciones</th></tr></thead>
+    <tbody>${filaTabla(r.vencidos,[{key:'nombre'},{key:'monto',num:true},{key:'pct',pct:true},{key:'garantia'},{key:'obs'}])}</tbody></table>
+
+    <h4>Inventarios — Detalle por Tipo</h4>
+    <table><thead><tr><th>Detalle</th><th class="num">Monto</th><th class="num">% vs Total Inventarios</th></tr></thead>
+    <tbody>${r.inventario.map(x=>`<tr><td>${x.lbl}</td><td class="num">${bpUSD(x.monto)}</td><td class="num">${bpPct(x.pct)}</td></tr>`).join('')}
+    <tr style="font-weight:700"><td>TOTAL INVENTARIOS</td><td class="num">${bpUSD(r.totalInventario)}</td><td class="num">100.00%</td></tr></tbody></table>
+
+    <h4>Principales Líneas / Ítems de Inventario</h4>
+    <table><thead><tr><th>Línea / Ítem</th><th class="num">Monto</th><th class="num">% vs Total Inventarios</th></tr></thead>
+    <tbody>${filaTabla(r.lineas,[{key:'nombre'},{key:'monto',num:true},{key:'pct',pct:true}])}</tbody></table>
+
+    <h4>Líneas con Antigüedad &gt; 1 Año</h4>
+    <table><thead><tr><th>Línea / Ítem</th><th class="num">Monto</th><th class="num">% vs Total Inventarios</th></tr></thead>
+    <tbody>${filaTabla(r.lineasOld,[{key:'nombre'},{key:'monto',num:true},{key:'pct',pct:true}])}</tbody></table>
+
+    <h4>Cuentas por Pagar — Obligaciones No Financieras</h4>
+    <table><thead><tr><th>Nombre</th><th>Destino</th><th class="num">Cupo/Monto</th><th>Plazo</th><th>Forma de Pago</th><th>Tipo y Valor Garantía</th></tr></thead>
+    <tbody>${filaTabla(r.cpnf,[{key:'nombre'},{key:'destino'},{key:'cupo',num:true},{key:'plazo'},{key:'forma'},{key:'garantia'}])}</tbody></table>
+
+    <h4>Cuentas por Pagar — Obligaciones con el Sistema Financiero</h4>
+    <table><thead><tr><th>Nombre</th><th>Destino</th><th class="num">Cupo/Monto</th><th>Plazo</th><th>Forma de Pago</th><th>Tipo y Valor Garantía</th></tr></thead>
+    <tbody>${filaTabla(r.cpsf,[{key:'nombre'},{key:'destino'},{key:'cupo',num:true},{key:'plazo'},{key:'forma'},{key:'garantia'}])}</tbody></table>
+
+    ${bpV('anx-obs')?`<p><b>Observaciones:</b> ${escapeHtml(bpV('anx-obs'))}</p>`:''}
+    <div class="doc-firma-row">
+      <div class="doc-firma"><div class="doc-firma-line">${escapeHtml(bpV('anx-repleg')||'')}<br><em>Representante Legal</em></div></div>
+      <div class="doc-firma"><div class="doc-firma-line">${escapeHtml(bpV('anx-contador')||'')}<br><em>Contador</em></div></div>
+    </div>
+  `;
+}
+function bpImprimirAnexos(){
+  const el = document.getElementById('anexos-preview');
+  if(!el || el.querySelector('.doc-placeholder')){ toast('Genere el anexo primero', 'warning'); return; }
+  bpAbrirVentanaImpresion(el.innerHTML, 'Anexo — Evaluación CxC, Inventarios y CxP');
+}
+
+/* =========================================================================
+   DOC 3 — REPORTE DE INFORMACIÓN BÁSICA (005)
+   ========================================================================= */
+function bpInfoBasicaFormHTML(){
+  const filas = (prefijo, n, campos) => Array.from({length:n}).map((_,i)=>`
+    <div style="display:grid;grid-template-columns:${campos.map(()=>'1fr').join(' ')};gap:6px;margin-bottom:4px;">
+      ${campos.map(c=>`<input type="${c.tipo||'text'}" id="${prefijo}-${i}-${c.id}" placeholder="${c.label}" style="font-size:11px;padding:5px">`).join('')}
+    </div>`).join('');
+  return `
+    <div class="doc-literatura"><strong>Formato 005:</strong> reproduce el "Reporte de Información Básica" que el Banco del Pacífico solicita para el conocimiento del cliente (perfil comercial, accionistas, ejecutivos, referencias bancarias y de seguros).</div>
+    <div class="form-group"><label>Lugar y Fecha</label><input type="text" id="ib-lugarfecha" placeholder="Quito, ..."></div>
+    <h3>Datos Generales</h3>
+    <div class="form-group"><label>Nombre</label><input type="text" id="ib-nombre"></div>
+    <div class="form-group"><label>Constitución Jurídica</label><input type="text" id="ib-constitucion"></div>
+    <div class="form-group"><label>Dirección</label><input type="text" id="ib-direccion"></div>
+    <div class="form-group"><label>Teléfono</label><input type="text" id="ib-telefono"></div>
+    <div class="form-group"><label>Identificación RUC</label><input type="text" id="ib-ruc"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div class="form-group"><label>Cuenta No.</label><input type="text" id="ib-cuenta"></div>
+      <div class="form-group"><label>Tipo de Cuenta</label><input type="text" id="ib-tipocuenta"></div>
+      <div class="form-group"><label>Saldo Promedio</label><input type="number" id="ib-saldoprom" step="0.01"></div>
+    </div>
+    <div class="form-group"><label>Cliente Desde</label><input type="text" id="ib-clientedesde"></div>
+    <div class="form-group"><label>Inversiones</label><input type="text" id="ib-inversiones"></div>
+    <div class="form-group"><label>Grupo Económico</label><input type="text" id="ib-grupoeco" value="Comercial"></div>
+    <div class="form-group"><label>Fecha de Constitución</label><input type="date" id="ib-fechaconst"></div>
+    <div class="form-group"><label>Fecha de Inicio de Actividades</label><input type="date" id="ib-fechainicio"></div>
+    <div class="form-group"><label>Actividad de la Empresa</label><input type="text" id="ib-actividad"></div>
+    <div class="form-group"><label>Aumento de Capital</label><input type="text" id="ib-aumentocap"></div>
+
+    <h3>Persona Entrevistada o Contacto</h3>
+    <div class="form-group"><label>Nombre</label><input type="text" id="ib-entrev-nombre"></div>
+    <div class="form-group"><label>Cargo</label><input type="text" id="ib-entrev-cargo"></div>
+
+    <h3>Accionistas de la Empresa</h3>
+    ${filas('ib-acc',3,[{id:'nombre',label:'Nombre'},{id:'ident',label:'Identificación'},{id:'nac',label:'Nacionalidad'},{id:'pct',label:'Porcentaje',tipo:'number'}])}
+
+    <h3>Principales Ejecutivos</h3>
+    ${filas('ib-ejec',3,[{id:'cargo',label:'Cargo'},{id:'nombre',label:'Nombre'},{id:'edad',label:'Edad',tipo:'number'},{id:'nac',label:'Nacionalidad'},{id:'tiempo',label:'Tiempo en la empresa'}])}
+
+    <h3>Personal en la Empresa</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div class="form-group"><label>Empleados</label><input type="number" id="ib-empleados" oninput="bpInfoBasicaLive()"></div>
+      <div class="form-group"><label>Tercerizados</label><input type="number" id="ib-terceriz" oninput="bpInfoBasicaLive()"></div>
+    </div>
+    <div id="ib-total-personal" style="font-size:12px;font-weight:700;margin-bottom:10px;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div class="form-group"><label>Asociación</label><input type="text" id="ib-asociacion" value="0"></div>
+      <div class="form-group"><label>Sindicato</label><input type="text" id="ib-sindicato" value="0"></div>
+      <div class="form-group"><label>Huelgas (última fecha)</label><input type="text" id="ib-huelgas" value="0"></div>
+    </div>
+
+    <h3>Operaciones Bancarias</h3>
+    ${filas('ib-banco',3,[{id:'banco',label:'Banco'},{id:'cuenta',label:'Cuenta'},{id:'abierta',label:'Abierta'},{id:'sprom',label:'S. Prom'},{id:'credito',label:'Crédito'},{id:'invers',label:'Invers.'},{id:'obs',label:'Observa.'}])}
+    <div class="form-group"><label>Riesgo Aprobado</label><input type="text" id="ib-riesgoaprob"></div>
+    <div class="form-group"><label>Riesgo Vigente</label><input type="text" id="ib-riesgovig"></div>
+    <div class="form-group"><label>Garantías</label><input type="text" id="ib-garantias"></div>
+
+    <h3>Seguros</h3>
+    ${filas('ib-seg',4,[{id:'compania',label:'Compañía'},{id:'venc',label:'Vencimiento'},{id:'obs',label:'Observaciones'}])}
+    <div class="form-group"><label>Historia</label><textarea id="ib-historia" rows="3"></textarea></div>
+
+    <h3>Proveedores / Clientes</h3>
+    <div class="form-group"><label>Principales Clientes</label><textarea id="ib-princclientes" rows="2"></textarea></div>
+    <div class="form-group"><label>Principales Proveedores</label><textarea id="ib-princprov" rows="2"></textarea></div>
+
+    <h3>Instalaciones</h3>
+    <div class="form-group"><label>Nuestra empresa se encuentra en el sector...</label><input type="text" id="ib-sector"></div>
+
+    <h3>Situación Laboral</h3>
+    <div class="form-group"><label>Número de empleados afiliados al IESS</label><input type="number" id="ib-numempleadosiess"></div>
+
+    <div class="doc-btn-row">
+      <button class="btn-calc" onclick="generarBPInfoBasica()">👁 Generar Reporte</button>
+      <button class="btn-secondary" onclick="bpImprimirInfoBasica()">🖨 Imprimir</button>
+      <button class="btn-calc" onclick="terminarYGuardarBP('infobasica','Reporte Información Básica','infobasica-preview','#bpdoc-infobasica .doc-form')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+    </div>
+  `;
+}
+function bpInfoBasicaLive(){
+  const box = document.getElementById('ib-total-personal');
+  if(!box) return;
+  const emp = bpN('ib-empleados'), ter = bpN('ib-terceriz');
+  box.textContent = `Total Personal: ${emp+ter}`;
+}
+function generarBPInfoBasica(){
+  const nombre = bpV('ib-nombre');
+  if(!nombre){ toast('Ingrese el nombre de la empresa', 'error'); return; }
+  const tablaFilas = (prefijo, n, cols) => {
+    const rows = Array.from({length:n}).map((_,i)=>cols.map(c=>bpV(`${prefijo}-${i}-${c}`)));
+    const conDatos = rows.filter(r=>r.some(v=>v));
+    return conDatos.length ? conDatos.map(r=>`<tr>${r.map(v=>`<td>${escapeHtml(v||'-')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}" style="text-align:center;color:#888">Sin registros</td></tr>`;
+  };
+  const totalPersonal = bpN('ib-empleados')+bpN('ib-terceriz');
+  document.getElementById('infobasica-preview').innerHTML = `
+    <div class="doc-header"><div class="doc-title">Reporte de Información Básica</div><div class="doc-subtitle">${escapeHtml(bpV('ib-lugarfecha'))}</div></div>
+    <h4>Datos Generales</h4>
+    <p class="bp-campo"><b>Nombre:</b> ${escapeHtml(nombre)} &nbsp; <b>Constitución Jurídica:</b> ${escapeHtml(bpV('ib-constitucion'))}</p>
+    <p class="bp-campo"><b>Dirección:</b> ${escapeHtml(bpV('ib-direccion'))} &nbsp; <b>Teléfono:</b> ${escapeHtml(bpV('ib-telefono'))}</p>
+    <p class="bp-campo"><b>RUC:</b> ${escapeHtml(bpV('ib-ruc'))} &nbsp; <b>Cuenta No.:</b> ${escapeHtml(bpV('ib-cuenta'))} &nbsp; <b>Tipo Cta:</b> ${escapeHtml(bpV('ib-tipocuenta'))} &nbsp; <b>Saldo Promedio:</b> ${bpUSD(bpN('ib-saldoprom'))}</p>
+    <p class="bp-campo"><b>Cliente desde:</b> ${escapeHtml(bpV('ib-clientedesde'))} &nbsp; <b>Inversiones:</b> ${escapeHtml(bpV('ib-inversiones'))} &nbsp; <b>Grupo Económico:</b> ${escapeHtml(bpV('ib-grupoeco'))}</p>
+    <table><tbody>
+      <tr><th style="width:35%">Fecha de constitución</th><td>${bpV('ib-fechaconst')?fmtFecha(new Date(bpV('ib-fechaconst')+'T00:00')):'-'}</td></tr>
+      <tr><th>Fecha de inicio de actividades</th><td>${bpV('ib-fechainicio')?fmtFecha(new Date(bpV('ib-fechainicio')+'T00:00')):'-'}</td></tr>
+      <tr><th>Actividad de la empresa</th><td>${escapeHtml(bpV('ib-actividad'))}</td></tr>
+      <tr><th>Aumento de capital</th><td>${escapeHtml(bpV('ib-aumentocap'))}</td></tr>
+    </tbody></table>
+
+    <h4>Persona Entrevistada o Contacto</h4>
+    <p class="bp-campo"><b>Nombre:</b> ${escapeHtml(bpV('ib-entrev-nombre'))} &nbsp; <b>Cargo:</b> ${escapeHtml(bpV('ib-entrev-cargo'))}</p>
+
+    <h4>Accionistas de la Empresa</h4>
+    <table><thead><tr><th>Nombre</th><th>Identificación</th><th>Nacionalidad</th><th>Porcentaje</th></tr></thead><tbody>${tablaFilas('ib-acc',3,['nombre','ident','nac','pct'])}</tbody></table>
+
+    <h4>Principales Ejecutivos de la Empresa</h4>
+    <table><thead><tr><th>Cargo</th><th>Nombre</th><th>Edad</th><th>Nacionalidad</th><th>Tiempo en la Empresa</th></tr></thead><tbody>${tablaFilas('ib-ejec',3,['cargo','nombre','edad','nac','tiempo'])}</tbody></table>
+
+    <h4>Personal en la Empresa</h4>
+    <table><tbody>
+      <tr><th>Empleados</th><td>${bpN('ib-empleados')}</td></tr>
+      <tr><th>Tercerizados</th><td>${bpN('ib-terceriz')}</td></tr>
+      <tr style="font-weight:700"><th>Total</th><td>${totalPersonal}</td></tr>
+      <tr><th>Asociación</th><td>${escapeHtml(bpV('ib-asociacion'))}</td></tr>
+      <tr><th>Sindicato</th><td>${escapeHtml(bpV('ib-sindicato'))}</td></tr>
+      <tr><th>Huelgas (última fecha)</th><td>${escapeHtml(bpV('ib-huelgas'))}</td></tr>
+    </tbody></table>
+
+    <h4>Operaciones Bancarias</h4>
+    <table><thead><tr><th>Banco</th><th>Cuenta</th><th>Abierta</th><th>S. Prom</th><th>Crédito</th><th>Invers.</th><th>Observa.</th></tr></thead><tbody>${tablaFilas('ib-banco',3,['banco','cuenta','abierta','sprom','credito','invers','obs'])}</tbody></table>
+    <p class="bp-campo"><b>Riesgo Aprobado:</b> ${escapeHtml(bpV('ib-riesgoaprob'))} &nbsp; <b>Riesgo Vigente:</b> ${escapeHtml(bpV('ib-riesgovig'))} &nbsp; <b>Garantías:</b> ${escapeHtml(bpV('ib-garantias'))}</p>
+
+    <h4>Seguros</h4>
+    <table><thead><tr><th>Compañía</th><th>Vencimiento</th><th>Observaciones</th></tr></thead><tbody>${tablaFilas('ib-seg',4,['compania','venc','obs'])}</tbody></table>
+    ${bpV('ib-historia')?`<p class="bp-campo"><b>Historia:</b> ${escapeHtml(bpV('ib-historia'))}</p>`:''}
+
+    <h4>Proveedores / Clientes</h4>
+    <p class="bp-campo"><b>Principales Clientes:</b> ${escapeHtml(bpV('ib-princclientes'))}</p>
+    <p class="bp-campo"><b>Principales Proveedores:</b> ${escapeHtml(bpV('ib-princprov'))}</p>
+
+    <h4>Instalaciones</h4>
+    <p class="bp-campo">Nuestra empresa se encuentra en el sector ${escapeHtml(bpV('ib-sector'))}.</p>
+
+    <h4>Situación Laboral</h4>
+    <p class="bp-campo">La empresa cuenta con ${bpN('ib-numempleadosiess')} empleados, los cuales se encuentran afiliados al IESS.</p>
+  `;
+}
+function bpImprimirInfoBasica(){
+  const el = document.getElementById('infobasica-preview');
+  if(!el || el.querySelector('.doc-placeholder')){ toast('Genere el reporte primero', 'warning'); return; }
+  bpAbrirVentanaImpresion(el.innerHTML, 'Reporte de Información Básica');
+}
+
+/* =========================================================================
+   DOC 4 — REGADMAV001: SOLICITUD DE AVALÚO / REAVALÚO
+   ========================================================================= */
+const BP_AVALUO_CHECKLISTS = [
+  { grupo: "Documentos para Avalúo de Terreno / Macrolote", items: [
+    "Escritura de compraventa o convenio de reservación.",
+    "Fotocopia del Certificado de Avalúos y Catastro Municipal.",
+    "Fotocopia del registro de la propiedad con historia de dominio vigente.",
+    "Certificado del uso de suelo vigente.",
+    "Fotocopia del impuesto predial vigente.",
+    "Para terrenos rústicos y macrolotes, plano topográfico con coordenadas (actualizado).",
+  ]},
+  { grupo: "Documentos para Avalúo de Vivienda, Departamentos, Locales, Oficinas, Parqueos y Bodegas", items: [
+    "Escritura de compraventa o convenio de reservación.",
+    "Fotocopia del Certificado de Avalúos y Catastro Municipal.",
+    "Fotocopia del registro de la propiedad con historia de dominio vigente.",
+    "Especificaciones técnicas (opcional).",
+    "Fotocopia del impuesto predial vigente.",
+    "Plano de implantación (si existiera, solo aplica para avalúo de vivienda).",
+    "Declaratoria de propiedad horizontal (si existiera Régimen de Propiedad Horizontal).",
+  ]},
+  { grupo: "Documentos para Avalúo Agrícola – Acuícola", items: [
+    "Escritura.",
+    "Certificado del Registro de la Propiedad con historia de dominio vigente.",
+    "Fotocopia del impuesto predial vigente.",
+    "Plano topográfico actualizado (cultivos - camaroneras).",
+    "Plano de diseño (aplica solo para camaroneras).",
+    "Copia Certificado de Avalúos y Catastro Municipal vigente.",
+  ]},
+  { grupo: "Documentos para Avalúo de Maquinarias", items: [
+    "Detalle de maquinarias (descripción, costo de adquisición, modelo, serie y N° de factura de compra).",
+    "Copia de factura comercial.",
+    "Desglose del gasto de importación (solo equipos nuevos).",
+    "Gasto de puesta en marcha y montaje (solo equipos nuevos).",
+    "Registro Mercantil.",
+  ]},
+  { grupo: "Documentos para Avalúo de Prendas de Inventario", items: [
+    "Detalle de mercadería (descripción del producto, peso, cantidad, código y N° de factura).",
+    "Copia de facturas de compra.",
+  ]},
+  { grupo: "Documentos para Avalúo de Vehículo", items: [
+    "Copia legible de la matrícula del vehículo.",
+    "Copia de la factura comercial (vehículo nuevo).",
+  ]},
+  { grupo: "Documentos para Crédito de Construcción de Edificación – Avance de Obra", items: [
+    "Escritura de terreno.",
+    "Fotocopia del Certificado de Avalúos y Catastro Municipal.",
+    "Registro de solar / ficha catastral.",
+    "Certificado del Registro de la Propiedad o Certificado de Desgravamen con historia de dominio vigente.",
+    "Presupuesto de obra actualizado firmado por el responsable técnico (PDF y Excel).",
+    "Cronograma actualizado de trabajo valorado, firmado por el responsable técnico (PDF y Excel).",
+    "Especificaciones técnicas firmadas por el responsable técnico.",
+    "Planos Arquitectónicos (vivienda) aprobados por el municipio en formato DWG (AutoCAD).",
+    "Permiso de construcción vigente otorgado por el municipio.",
+  ]},
+  { grupo: "Documentación para Construcción de Urbanización — Requisitos Generales", items: [
+    "Escritura.",
+    "Certificado del Registro de la Propiedad correspondiente.",
+    "Certificado de avalúos del GAD correspondiente.",
+    "Nombre, profesión y registro en SENESCYT/colegio profesional del responsable técnico de la obra.",
+    "Nombre, profesión y registro en SENESCYT/colegio profesional del fiscalizador de la obra.",
+  ]},
+  { grupo: "Urbanización — Urbanismo", items: [
+    "Plano urbanístico debidamente aprobado por el GAD correspondiente.",
+    "Presupuesto de obra por rubros y por etapas con firma de responsabilidad.",
+    "Especificaciones técnicas de urbanización con firma de responsabilidad.",
+    "Cronograma valorado con firma de responsabilidad.",
+    "Reglamento interno aprobado por el GAD.",
+    "Autorización de inicio de obras.",
+  ]},
+  { grupo: "Urbanización — Edificación", items: [
+    "Planos arquitectónicos debidamente aprobados.",
+    "Planos estructurales.",
+    "Planos de las diferentes ingenierías.",
+    "Presupuesto de obra por rubros con firma de responsabilidad.",
+    "Especificaciones técnicas con firma de responsabilidad.",
+    "Plano de ubicación de los diferentes modelos en cada lote.",
+  ]},
+  { grupo: "Reavalúo con Incremento de Riesgo — Terreno / Macrolote", items: [
+    "Fotocopia del impuesto predial vigente.",
+    "Fotocopia del Certificado de Avalúos y Catastro Municipal.",
+    "Fotocopia del Registro de la Propiedad con historia de dominio vigente.",
+  ]},
+];
+
+function bpAvaluoFormHTML(){
+  const tipoBien = ["Terreno","Casa","Departamento","Otros (especifique)","Oficina","Local","Urbanización","Camaronera","Hacienda","Predio Rústico","Maquinaria","Vehículo","Proyecto"];
+  const tipoAval = ["Comercial","Comercial Ajustado","Dación / Pago"];
+  return `
+    <div class="doc-literatura"><strong>REGADMAV001:</strong> reproduce la Solicitud de Avalúo/Reavalúo del Banco del Pacífico, incluyendo los check-list documentales exigidos por tipo de bien (Versión 1.0, aprobada el 16-sep-2025).</div>
+    <div class="form-group"><label>Tipo de Solicitud</label>
+      <select id="av-tiposolicitud"><option value="AVALÚO">Avalúo</option><option value="REAVALÚO">Reavalúo</option><option value="AVANCE DE OBRA">Avance de Obra</option><option value="INSPECCIÓN DE PRENDA">Inspección de Prenda</option></select>
+    </div>
+    <div class="form-group"><label>Lugar y Fecha</label><input type="text" id="av-lugarfecha" placeholder="Quito, ..."></div>
+    <h3>Forma de Pago</h3>
+    <div class="form-group"><label>Tipo de Cuenta</label><select id="av-tipocuenta"><option value="Ahorro">Cta. Ahorro</option><option value="Corriente">Cta. Corriente</option></select></div>
+    <div class="form-group"><label>Débito a Cuenta N°</label><input type="text" id="av-debitocuenta"></div>
+    <div class="form-group"><label>Otro (especifique)</label><input type="text" id="av-otropago"></div>
+    <h3>Datos Generales</h3>
+    <div class="form-group"><label>Propietario</label><input type="text" id="av-propietario"></div>
+    <div class="form-group"><label>Rep. Legal</label><input type="text" id="av-repleg"></div>
+    <div class="form-group"><label>Solicitante</label><input type="text" id="av-solicitante"></div>
+    <div class="form-group"><label>Teléfonos y celulares</label><input type="text" id="av-telefonos"></div>
+    <div class="form-group"><label>Autorizado para mostrar el bien</label><input type="text" id="av-autorizado"></div>
+    <div class="form-group"><label>Ubicación del Bien (# casa / Dto. / parqueadero / bodega)</label><input type="text" id="av-ubicacion"></div>
+    <h3>Tipo del Bien</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px">${tipoBien.map((t,i)=>`<label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="av-bien-${i}"> ${t}</label>`).join('')}</div>
+    <h3>Tipo de Avalúo</h3>
+    <div>${tipoAval.map((t,i)=>`<label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-bottom:4px"><input type="checkbox" id="av-tipoaval-${i}"> ${t}</label>`).join('')}</div>
+    <div class="form-group"><label>Observaciones</label><textarea id="av-obs" rows="2"></textarea></div>
+    <div class="form-group"><label>Funcionario</label><input type="text" id="av-funcionario"></div>
+    <div class="form-group"><label>CI / RUC del Solicitante</label><input type="text" id="av-cisolicitante"></div>
+    <h3>Datos para la Factura</h3>
+    <div class="form-group"><label>Nombre</label><input type="text" id="av-fact-nombre"></div>
+    <div class="form-group"><label>CI / RUC</label><input type="text" id="av-fact-ciruc"></div>
+    <div class="form-group"><label>Teléfono</label><input type="text" id="av-fact-tel"></div>
+    <div class="form-group"><label>Dirección</label><input type="text" id="av-fact-dir"></div>
+    <div class="form-group"><label>Correo electrónico</label><input type="text" id="av-fact-correo"></div>
+    <div class="form-group"><label>Aplica Retención</label><select id="av-fact-retencion"><option value="SI">Sí</option><option value="NO">No</option></select></div>
+
+    <h3>Check List Documental</h3>
+    <p class="helpNote">Marque los documentos recibidos del cliente, según el tipo de bien.</p>
+    ${BP_AVALUO_CHECKLISTS.map((g,gi)=>`
+      <div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">
+        <b style="font-size:11.5px;color:var(--accent)">${escapeHtml(g.grupo)}</b>
+        ${g.items.map((it,ii)=>`<label style="display:block;font-size:11.5px;margin:4px 0"><input type="checkbox" id="av-chk-${gi}-${ii}"> ${escapeHtml(it)}</label>`).join('')}
+      </div>`).join('')}
+
+    <div class="doc-btn-row">
+      <button class="btn-calc" onclick="generarBPAvaluo()">👁 Generar Solicitud</button>
+      <button class="btn-secondary" onclick="bpImprimirAvaluo()">🖨 Imprimir</button>
+      <button class="btn-calc" onclick="terminarYGuardarBP('avaluo','Solicitud Avalúo/Reavalúo','avaluo-preview','#bpdoc-avaluo .doc-form')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+    </div>
+  `;
+}
+function generarBPAvaluo(){
+  const propietario = bpV('av-propietario');
+  if(!propietario){ toast('Ingrese el nombre del propietario', 'error'); return; }
+  const tipoBien = ["Terreno","Casa","Departamento","Otros (especifique)","Oficina","Local","Urbanización","Camaronera","Hacienda","Predio Rústico","Maquinaria","Vehículo","Proyecto"];
+  const tipoAval = ["Comercial","Comercial Ajustado","Dación / Pago"];
+  document.getElementById('avaluo-preview').innerHTML = `
+    <div class="doc-header"><div class="doc-title">Solicitud de ${escapeHtml(bpV('av-tiposolicitud'))}</div><div class="doc-subtitle">REGADMAV001 · ${escapeHtml(bpV('av-lugarfecha'))}</div></div>
+    <table><tbody>
+      <tr><th style="width:30%">Forma de Pago</th><td>${escapeHtml(bpV('av-tipocuenta'))} — Débito a Cuenta N° ${escapeHtml(bpV('av-debitocuenta')||'-')} ${bpV('av-otropago')?'— Otro: '+escapeHtml(bpV('av-otropago')):''}</td></tr>
+      <tr><th>Propietario</th><td>${escapeHtml(propietario)}</td></tr>
+      <tr><th>Rep. Legal</th><td>${escapeHtml(bpV('av-repleg'))}</td></tr>
+      <tr><th>Solicitante</th><td>${escapeHtml(bpV('av-solicitante'))}</td></tr>
+      <tr><th>Teléfonos y Celulares</th><td>${escapeHtml(bpV('av-telefonos'))}</td></tr>
+      <tr><th>Autorizado para Mostrar el Bien</th><td>${escapeHtml(bpV('av-autorizado'))}</td></tr>
+      <tr><th>Ubicación del Bien</th><td>${escapeHtml(bpV('av-ubicacion'))}</td></tr>
+    </tbody></table>
+    <p class="bp-campo"><b>Tipo del Bien:</b> ${tipoBien.filter((t,i)=>bpC('av-bien-'+i)).join(', ')||'-'}</p>
+    <p class="bp-campo"><b>Tipo de Avalúo:</b> ${tipoAval.filter((t,i)=>bpC('av-tipoaval-'+i)).join(', ')||'-'}</p>
+    ${bpV('av-obs')?`<p class="bp-campo"><b>Observaciones:</b> ${escapeHtml(bpV('av-obs'))}</p>`:''}
+    <p class="bp-campo"><b>Funcionario:</b> ${escapeHtml(bpV('av-funcionario'))}</p>
+    <div class="doc-firma-row"><div class="doc-firma"><div class="doc-firma-line">${escapeHtml(propietario)}<br>CI/RUC: ${escapeHtml(bpV('av-cisolicitante')||'-')}<br><em>Firma del Solicitante</em></div></div></div>
+    <h4>Datos para la Factura</h4>
+    <table><tbody>
+      <tr><th style="width:30%">Nombre</th><td>${escapeHtml(bpV('av-fact-nombre'))}</td></tr>
+      <tr><th>CI / RUC</th><td>${escapeHtml(bpV('av-fact-ciruc'))}</td></tr>
+      <tr><th>Teléfono</th><td>${escapeHtml(bpV('av-fact-tel'))}</td></tr>
+      <tr><th>Dirección</th><td>${escapeHtml(bpV('av-fact-dir'))}</td></tr>
+      <tr><th>Correo electrónico</th><td>${escapeHtml(bpV('av-fact-correo'))}</td></tr>
+      <tr><th>Aplica Retención</th><td>${escapeHtml(bpV('av-fact-retencion'))}</td></tr>
+    </tbody></table>
+    <h4>Check List Documental</h4>
+    ${BP_AVALUO_CHECKLISTS.map((g,gi)=>`
+      <div class="bp-seccion" style="background:#0057A3">${escapeHtml(g.grupo)}</div>
+      <table><tbody>${g.items.map((it,ii)=>`<tr><td style="width:26px;text-align:center">${bpC('av-chk-'+gi+'-'+ii)?'☑':'☐'}</td><td>${escapeHtml(it)}</td></tr>`).join('')}</tbody></table>
+    `).join('')}
+  `;
+}
+function bpImprimirAvaluo(){
+  const el = document.getElementById('avaluo-preview');
+  if(!el || el.querySelector('.doc-placeholder')){ toast('Genere la solicitud primero', 'warning'); return; }
+  bpAbrirVentanaImpresion(el.innerHTML, 'Solicitud de Avalúo / Reavalúo');
+}
+
+/* =========================================================================
+   DOC 5 — SOLICITUD DE CRÉDITO / PERFIL CONOZCA A SU CLIENTE — PERSONA JURÍDICA
+   ========================================================================= */
+const BP_JURIDICA_PREGUNTAS_ESG = [
+  "¿En caso de actividades relacionadas con asbesto, el contenido es mayor a 20%?",
+  "¿En caso de actividades de pesca, utiliza redes de deriva de más de 2.5 km?",
+  "¿Produce y/o comercializa tabaco?",
+  "¿Produce y/o comercializa bebidas alcohólicas diferentes a cerveza o vino?",
+  "¿Produce y/o comercializa armas y municiones?",
+  "¿Desarrolla actividades de juegos de azar, casinos y similares?",
+  "¿Desarrolla actividades en área protegida?",
+  "¿Comercializa/Distribuye/Usa mercurio?",
+  "¿Comercializa/Distribuye pesticidas?",
+  "¿Utiliza material radioactivo?",
+  "¿Realiza importación/exportación de desechos?",
+  "¿Realiza actividades relacionadas con el comercio de madera?",
+];
+function bpJuridicaFormHTML(){
+  const filas = (prefijo, n, campos) => Array.from({length:n}).map((_,i)=>`
+    <div style="display:grid;grid-template-columns:${campos.map(()=>'1fr').join(' ')};gap:6px;margin-bottom:4px;">
+      ${campos.map(c=>`<input type="${c.tipo||'text'}" id="${prefijo}-${i}-${c.id}" placeholder="${c.label}" style="font-size:11px;padding:5px">`).join('')}
+    </div>`).join('');
+  return `
+    <div class="doc-literatura"><strong>Solicitud de Crédito / Perfil Conozca a su Cliente / Informe Básico — Persona Jurídica</strong> (Rev. 04-2016, Banco del Pacífico). Formulario extenso: se conservan las 8 secciones numeradas del formato original.</div>
+
+    <h3>1. Datos del Crédito</h3>
+    <div class="form-group"><label>Calidad</label><select id="pj-calidad"><option value="Deudor">Deudor(es)</option><option value="Codeudor">Codeudor(es)</option><option value="Garante">Garante(s)</option></select></div>
+    <div class="form-group"><label>Tipo de Producto</label><input type="text" id="pj-producto" value="Crédito Comercial"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="form-group"><label>Monto</label><input type="number" id="pj-monto" step="0.01"></div><div class="form-group"><label>Plazo</label><input type="text" id="pj-plazo"></div></div>
+    <div class="form-group"><label>Destino</label><input type="text" id="pj-destino" placeholder="Capital de trabajo, activos fijos, contingentes"></div>
+    <div class="form-group"><label>Descripción (detallar el destino)</label><input type="text" id="pj-desc-destino"></div>
+    <div class="form-group"><label>Frecuencia de Pago</label><input type="text" id="pj-frecuencia" placeholder="Mensual, bimestral, trimestral..."></div>
+    <div class="form-group"><label>Tipo de Crédito</label><select id="pj-tipocredito"><option>Crédito Directo</option><option>Garantías Bancarias</option><option>Cartas de Crédito</option><option>Otros</option></select></div>
+    <div class="form-group"><label>Lugar y Fecha</label><input type="text" id="pj-lugarfecha"></div>
+    <div class="form-group"><label>Ejecutivo de Cuenta</label><input type="text" id="pj-ejecutivo"></div>
+    <div class="form-group"><label>Agencia o CIN</label><input type="text" id="pj-agencia"></div>
+    <div class="form-group"><label>Región</label><input type="text" id="pj-region"></div>
+
+    <h3>2. Datos Generales</h3>
+    <div class="form-group"><label>Razón Social</label><input type="text" id="pj-razonsocial"></div>
+    <div class="form-group"><label>Nombre Comercial</label><input type="text" id="pj-nombrecomercial"></div>
+    <div class="form-group"><label>Número de RUC</label><input type="text" id="pj-ruc"></div>
+    <div class="form-group"><label>Fecha de Constitución</label><input type="date" id="pj-fechaconst"></div>
+    <div class="form-group"><label>Código de Establecimiento (SRI)</label><input type="text" id="pj-codigoestab"></div>
+    <div class="form-group"><label>País de Nacionalidad</label><input type="text" id="pj-pais" value="ECUADOR"></div>
+    <div class="form-group"><label>Número de Cuenta</label><input type="text" id="pj-numcuenta"></div>
+    <div class="form-group"><label>Cliente Desde</label><input type="text" id="pj-clientedesde"></div>
+    <div class="form-group"><label>Dirección de la Entidad</label><input type="text" id="pj-direccion"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div class="form-group"><label>Teléfono 1</label><input type="text" id="pj-tel1"></div>
+      <div class="form-group"><label>Teléfono 2</label><input type="text" id="pj-tel2"></div>
+      <div class="form-group"><label>Fax</label><input type="text" id="pj-fax"></div>
+    </div>
+    <div class="form-group"><label>E-mail</label><input type="text" id="pj-email"></div>
+    <div class="form-group"><label>Dirección Web</label><input type="text" id="pj-web"></div>
+
+    <h3>3. Datos de Entidad</h3>
+    <div class="form-group"><label>Actividad Económica</label><select id="pj-actividadeco">
+      ${["Agricultura, caza, silvicultura y pesca","Explotación de minas y canteras","Industria manufacturera","Electricidad, gas y agua","Construcción","Comercio, restaurantes y hoteles","Transporte, almacenamiento y comunicación","Establecimientos financieros, seguros"].map(a=>`<option>${a}</option>`).join('')}
+    </select></div>
+    <div class="form-group"><label>Línea de Negocio del Sector Económico</label><input type="text" id="pj-lineanegocio"></div>
+    <div class="form-group"><label>Tipo de Entidad</label><select id="pj-tipoentidad"><option>Privada nacional</option><option>Privada internacional</option><option>Pública financiera</option><option>Pública no financiera</option><option>Propia</option><option>Otra</option></select></div>
+    <div class="form-group"><label>Representante Legal — Nombre</label><input type="text" id="pj-repleg-nombre"></div>
+    <div class="form-group"><label>Representante Legal — Apellidos</label><input type="text" id="pj-repleg-apellidos"></div>
+    <div class="form-group"><label>Fecha de Nacimiento</label><input type="date" id="pj-repleg-fnac"></div>
+    <div class="form-group"><label>Cargo</label><input type="text" id="pj-repleg-cargo"></div>
+    <div class="form-group"><label>Tipo y Número de Identificación</label><input type="text" id="pj-repleg-ci"></div>
+    <div class="form-group"><label>Formación Académica</label><select id="pj-repleg-formacion"><option>Primaria</option><option>Secundaria</option><option>Superior</option><option>Técnica</option><option>Maestría</option><option>Doctorado</option><option>Ninguno</option></select></div>
+    <div class="form-group"><label>Clase de Empresa</label><input type="text" id="pj-claseempresa"></div>
+    <div class="form-group"><label>Experiencia en la Empresa</label><input type="text" id="pj-experiencia"></div>
+    <div class="form-group"><label>Antigüedad en la Empresa</label><input type="text" id="pj-antiguedad"></div>
+    <div class="form-group"><label>Describa las Instalaciones</label><input type="text" id="pj-instalaciones"></div>
+    <div class="form-group"><label>¿Las instalaciones aplican como garantía?</label><select id="pj-instgarantia"><option value="No">No</option><option value="Si">Sí</option></select></div>
+    <div class="form-group"><label>Actividades Previas en el Lugar (diferentes a la actual)</label><input type="text" id="pj-actprevias"></div>
+    <div class="form-group"><label>Breve Historia de la Empresa</label><textarea id="pj-historia" rows="2"></textarea></div>
+    <div class="form-group"><label>Actividad Actual u Origen de los Ingresos</label><input type="text" id="pj-origeningresos"></div>
+    <div class="form-group"><label>Posicionamiento de la Empresa en el Mercado</label><input type="text" id="pj-posicionamiento"></div>
+
+    <h3>4. Estructura de Información Accional</h3>
+    <div class="form-group"><label>Estructura</label><select id="pj-estructura"><option>Unipersonal</option><option>Sociedad familiar</option><option>Sociedad no familiar</option><option>Otra</option></select></div>
+    <h4 style="font-size:12px;margin:8px 0 4px;">Distribución Accionarial</h4>
+    ${filas('pj-acc',5,[{id:'nombre',label:'Nombre'},{id:'nac',label:'Nacionalidad'},{id:'pct',label:'% Participación',tipo:'number'}])}
+    <h4 style="font-size:12px;margin:8px 0 4px;">Directores y Administradores</h4>
+    ${["Presidente","Vicepresidente","Gerente General"].map((cargo,i)=>`
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:6px;margin-bottom:4px;">
+        <span style="font-size:11px;padding-top:6px">${cargo}</span>
+        <input type="text" id="pj-dir-${i}-nombre" placeholder="Nombre" style="font-size:11px;padding:5px">
+        <input type="number" id="pj-dir-${i}-edad" placeholder="Edad" style="font-size:11px;padding:5px">
+        <input type="text" id="pj-dir-${i}-profesion" placeholder="Profesión" style="font-size:11px;padding:5px">
+        <input type="text" id="pj-dir-${i}-doc" placeholder="Doc. identidad" style="font-size:11px;padding:5px">
+      </div>`).join('')}
+
+    <h3>5. Personas / Compañías Relacionadas / Clientes / Referencias</h3>
+    <h4 style="font-size:12px;">Personas de Contacto de la Empresa</h4>
+    ${filas('pj-contacto',2,[{id:'nombre',label:'Nombre'},{id:'cargo',label:'Cargo'},{id:'telefono',label:'Teléfono'},{id:'horario',label:'Horario de contacto'}])}
+    <h4 style="font-size:12px;">Compañías Relacionadas</h4>
+    ${filas('pj-relac',4,[{id:'empresa',label:'Empresa'},{id:'sector',label:'Sector económico'},{id:'ruc',label:'RUC'},{id:'repleg',label:'Representante legal'},{id:'cargo',label:'Cargo'},{id:'telefono',label:'Teléfono'}])}
+    <h4 style="font-size:12px;">Principales Clientes y Políticas de Venta</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="form-group"><label>Ventas al Contado (%)</label><input type="number" id="pj-ventascontado"></div><div class="form-group"><label>Ventas a Crédito (%)</label><input type="number" id="pj-ventascredito"></div></div>
+    <div class="form-group"><label>Número Total de Clientes</label><input type="number" id="pj-numclientes"></div>
+    ${filas('pj-cliente',3,[{id:'nombre',label:'Cliente'},{id:'productos',label:'Productos'},{id:'monto',label:'Monto venta $',tipo:'number'},{id:'plazo',label:'Plazo'},{id:'ciudad',label:'Ciudad'}])}
+    <h4 style="font-size:12px;">Referencias Bancarias</h4>
+    ${filas('pj-refbanco',3,[{id:'institucion',label:'Institución'},{id:'cuenta',label:'N° de cuenta'},{id:'saldoprom',label:'Saldo promedio',tipo:'number'}])}
+    <h4 style="font-size:12px;">Principales Proveedores / Clientes (contacto)</h4>
+    ${filas('pj-provclient',3,[{id:'nombre',label:'Nombre'},{id:'tipo',label:'Proveedor / Cliente'},{id:'telefono',label:'Teléfono'}])}
+
+    <h3>6. Ventas Totales</h3>
+    ${[1,2,3].map(a=>`<div class="form-group"><label>Ventas Totales Año ${a}</label><input type="number" id="pj-ventas-anio${a}" step="0.01"></div>`).join('')}
+    <div class="form-group"><label>Ventas Locales Anuales Proyectadas (siguiente año)</label><input type="number" id="pj-ventaslocalesproy" step="0.01"></div>
+    <div class="form-group"><label>Ventas Exterior Anuales Proyectadas (siguiente año)</label><input type="number" id="pj-ventasexteriorproy" step="0.01"></div>
+    <div class="form-group"><label>Naturaleza del Negocio</label><select id="pj-ciclonegocio"><option>Cíclica</option><option>Recurrente</option></select></div>
+
+    <h3>7. Certificaciones ESG / Sostenibilidad</h3>
+    <div class="form-group"><label>Nombre de la Certificación (si aplica)</label><input type="text" id="pj-certificacion"></div>
+    <div class="form-group"><label>Fecha de Vigencia</label><input type="date" id="pj-certfecha"></div>
+    ${BP_JURIDICA_PREGUNTAS_ESG.map((p,i)=>`
+      <div class="form-group"><label style="text-transform:none;font-weight:400;font-size:12px">${escapeHtml(p)}</label>
+      <select id="pj-esg-${i}"><option value="No">No</option><option value="Si">Sí</option></select></div>`).join('')}
+
+    <h3>8. Proveedores / Negocio / Seguros</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="form-group"><label>Compras al Contado (%)</label><input type="number" id="pj-comprascontado"></div><div class="form-group"><label>Compras a Crédito (%)</label><input type="number" id="pj-comprascredito"></div></div>
+    ${filas('pj-proveedor',3,[{id:'nombre',label:'Proveedor'},{id:'productos',label:'Productos'},{id:'plazo',label:'Plazo'},{id:'ciudad',label:'Ciudad'}])}
+    <div class="form-group"><label>Estrategia Corto Plazo</label><input type="text" id="pj-estrcorto"></div>
+    <div class="form-group"><label>Estrategia Largo Plazo</label><input type="text" id="pj-estrlargo"></div>
+    ${filas('pj-seguro',3,[{id:'compania',label:'Compañía'},{id:'monto',label:'Monto',tipo:'number'},{id:'cobertura',label:'Cobertura / Tipo de Seguro'}])}
+
+    <h3>Declaración y Firma</h3>
+    <div class="form-group"><label>Cuenta para débito de cuotas</label><select id="pj-cuentadebito"><option>Corriente</option><option>Ahorros</option></select></div>
+    <div class="form-group"><label>Número de Cuenta</label><input type="text" id="pj-cuentadebitonum"></div>
+    <div class="form-group"><label>Lugar y Fecha de Firma</label><input type="text" id="pj-firmalugar"></div>
+
+    <div class="doc-btn-row">
+      <button class="btn-calc" onclick="generarBPJuridica()">👁 Generar Solicitud</button>
+      <button class="btn-secondary" onclick="bpImprimirJuridica()">🖨 Imprimir</button>
+      <button class="btn-calc" onclick="terminarYGuardarBP('juridica','Solicitud Jurídica','juridica-preview','#bpdoc-juridica .doc-form')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+    </div>
+  `;
+}
+function generarBPJuridica(){
+  const razon = bpV('pj-razonsocial');
+  if(!razon){ toast('Ingrese la Razón Social', 'error'); return; }
+  const tablaFilas = (prefijo, n, cols) => {
+    const rows = Array.from({length:n}).map((_,i)=>cols.map(c=>bpV(`${prefijo}-${i}-${c}`)));
+    const conDatos = rows.filter(r=>r.some(v=>v));
+    return conDatos.length ? conDatos.map(r=>`<tr>${r.map(v=>`<td>${escapeHtml(v||'-')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}" style="text-align:center;color:#888">Sin registros</td></tr>`;
+  };
+  document.getElementById('juridica-preview').innerHTML = `
+    <div class="doc-header"><div class="doc-title">Solicitud de Crédito</div><div class="doc-subtitle">Perfil Conozca a su Cliente / Informe Básico Persona Jurídica · ${escapeHtml(bpV('pj-lugarfecha'))}</div></div>
+
+    <div class="bp-seccion">1. Datos del Crédito</div>
+    <table><tbody>
+      <tr><th style="width:30%">Calidad</th><td>${escapeHtml(bpV('pj-calidad'))}</td><th style="width:20%">Producto</th><td>${escapeHtml(bpV('pj-producto'))}</td></tr>
+      <tr><th>Monto</th><td>${bpUSD(bpN('pj-monto'))}</td><th>Plazo</th><td>${escapeHtml(bpV('pj-plazo'))}</td></tr>
+      <tr><th>Destino</th><td colspan="3">${escapeHtml(bpV('pj-destino'))} — ${escapeHtml(bpV('pj-desc-destino'))}</td></tr>
+      <tr><th>Frecuencia de Pago</th><td>${escapeHtml(bpV('pj-frecuencia'))}</td><th>Tipo de Crédito</th><td>${escapeHtml(bpV('pj-tipocredito'))}</td></tr>
+      <tr><th>Ejecutivo de Cuenta</th><td>${escapeHtml(bpV('pj-ejecutivo'))}</td><th>Agencia / Región</th><td>${escapeHtml(bpV('pj-agencia'))} / ${escapeHtml(bpV('pj-region'))}</td></tr>
+    </tbody></table>
+
+    <div class="bp-seccion">2. Datos Generales</div>
+    <table><tbody>
+      <tr><th style="width:30%">Razón Social</th><td>${escapeHtml(razon)}</td><th style="width:20%">Nombre Comercial</th><td>${escapeHtml(bpV('pj-nombrecomercial'))}</td></tr>
+      <tr><th>RUC</th><td>${escapeHtml(bpV('pj-ruc'))}</td><th>Fecha Constitución</th><td>${bpV('pj-fechaconst')?fmtFecha(new Date(bpV('pj-fechaconst')+'T00:00')):'-'}</td></tr>
+      <tr><th>Código Establecimiento</th><td>${escapeHtml(bpV('pj-codigoestab'))}</td><th>País</th><td>${escapeHtml(bpV('pj-pais'))}</td></tr>
+      <tr><th>N° de Cuenta</th><td>${escapeHtml(bpV('pj-numcuenta'))}</td><th>Cliente Desde</th><td>${escapeHtml(bpV('pj-clientedesde'))}</td></tr>
+      <tr><th>Dirección</th><td colspan="3">${escapeHtml(bpV('pj-direccion'))}</td></tr>
+      <tr><th>Teléfonos</th><td>${escapeHtml(bpV('pj-tel1'))} / ${escapeHtml(bpV('pj-tel2'))}</td><th>E-mail</th><td>${escapeHtml(bpV('pj-email'))}</td></tr>
+    </tbody></table>
+
+    <div class="bp-seccion">3. Datos de Entidad</div>
+    <table><tbody>
+      <tr><th style="width:30%">Actividad Económica</th><td colspan="3">${escapeHtml(bpV('pj-actividadeco'))}</td></tr>
+      <tr><th>Línea de Negocio</th><td colspan="3">${escapeHtml(bpV('pj-lineanegocio'))}</td></tr>
+      <tr><th>Tipo de Entidad</th><td>${escapeHtml(bpV('pj-tipoentidad'))}</td><th style="width:20%">Clase de Empresa</th><td>${escapeHtml(bpV('pj-claseempresa'))}</td></tr>
+      <tr><th>Representante Legal</th><td colspan="3">${escapeHtml(bpV('pj-repleg-nombre'))} ${escapeHtml(bpV('pj-repleg-apellidos'))} — ${escapeHtml(bpV('pj-repleg-cargo'))} (CI/Pas: ${escapeHtml(bpV('pj-repleg-ci'))})</td></tr>
+      <tr><th>Formación Académica</th><td>${escapeHtml(bpV('pj-repleg-formacion'))}</td><th>Experiencia / Antigüedad</th><td>${escapeHtml(bpV('pj-experiencia'))} / ${escapeHtml(bpV('pj-antiguedad'))}</td></tr>
+      <tr><th>Instalaciones</th><td colspan="3">${escapeHtml(bpV('pj-instalaciones'))} — ¿Aplican como garantía?: ${escapeHtml(bpV('pj-instgarantia'))}</td></tr>
+      <tr><th>Historia</th><td colspan="3">${escapeHtml(bpV('pj-historia'))}</td></tr>
+    </tbody></table>
+
+    <div class="bp-seccion">4. Estructura de Información Accional</div>
+    <p class="bp-campo"><b>Estructura:</b> ${escapeHtml(bpV('pj-estructura'))}</p>
+    <table><thead><tr><th>Nombre</th><th>Nacionalidad</th><th class="num">% Participación</th></tr></thead><tbody>${tablaFilas('pj-acc',5,['nombre','nac','pct'])}</tbody></table>
+    <table><thead><tr><th>Cargo</th><th>Nombre</th><th>Edad</th><th>Profesión</th><th>Doc. Identidad</th></tr></thead><tbody>
+      ${["Presidente","Vicepresidente","Gerente General"].map((cargo,i)=>`<tr><td>${cargo}</td><td>${escapeHtml(bpV('pj-dir-'+i+'-nombre')||'-')}</td><td>${escapeHtml(bpV('pj-dir-'+i+'-edad')||'-')}</td><td>${escapeHtml(bpV('pj-dir-'+i+'-profesion')||'-')}</td><td>${escapeHtml(bpV('pj-dir-'+i+'-doc')||'-')}</td></tr>`).join('')}
+    </tbody></table>
+
+    <div class="bp-seccion">5. Personas / Compañías Relacionadas / Clientes / Referencias</div>
+    <h4>Personas de Contacto</h4><table><thead><tr><th>Nombre</th><th>Cargo</th><th>Teléfono</th><th>Horario</th></tr></thead><tbody>${tablaFilas('pj-contacto',2,['nombre','cargo','telefono','horario'])}</tbody></table>
+    <h4>Compañías Relacionadas</h4><table><thead><tr><th>Empresa</th><th>Sector</th><th>RUC</th><th>Rep. Legal</th><th>Cargo</th><th>Teléfono</th></tr></thead><tbody>${tablaFilas('pj-relac',4,['empresa','sector','ruc','repleg','cargo','telefono'])}</tbody></table>
+    <p class="bp-campo"><b>Ventas al contado:</b> ${bpN('pj-ventascontado')}% &nbsp; <b>Ventas a crédito:</b> ${bpN('pj-ventascredito')}% &nbsp; <b>N° total clientes:</b> ${bpV('pj-numclientes')||'-'}</p>
+    <h4>Principales Clientes</h4><table><thead><tr><th>Cliente</th><th>Productos</th><th class="num">Monto Venta $</th><th>Plazo</th><th>Ciudad</th></tr></thead><tbody>${tablaFilas('pj-cliente',3,['nombre','productos','monto','plazo','ciudad'])}</tbody></table>
+    <h4>Referencias Bancarias</h4><table><thead><tr><th>Institución</th><th>N° Cuenta</th><th class="num">Saldo Promedio</th></tr></thead><tbody>${tablaFilas('pj-refbanco',3,['institucion','cuenta','saldoprom'])}</tbody></table>
+
+    <div class="bp-seccion">6. Ventas Totales</div>
+    <table><tbody>
+      <tr><th style="width:30%">Ventas Totales</th><td>Año 1: ${bpUSD(bpN('pj-ventas-anio1'))}</td><td>Año 2: ${bpUSD(bpN('pj-ventas-anio2'))}</td><td>Año 3: ${bpUSD(bpN('pj-ventas-anio3'))}</td></tr>
+      <tr><th>Proyectadas Siguiente Año</th><td>Locales: ${bpUSD(bpN('pj-ventaslocalesproy'))}</td><td colspan="2">Exterior: ${bpUSD(bpN('pj-ventasexteriorproy'))}</td></tr>
+      <tr><th>Naturaleza del Negocio</th><td colspan="3">${escapeHtml(bpV('pj-ciclonegocio'))}</td></tr>
+    </tbody></table>
+
+    <div class="bp-seccion">7. Certificaciones ESG / Sostenibilidad</div>
+    <p class="bp-campo"><b>Certificación:</b> ${escapeHtml(bpV('pj-certificacion')||'Ninguna')} ${bpV('pj-certfecha')?'— Vigente hasta '+fmtFecha(new Date(bpV('pj-certfecha')+'T00:00')):''}</p>
+    <table><thead><tr><th>Pregunta</th><th style="width:60px">Respuesta</th></tr></thead><tbody>
+      ${BP_JURIDICA_PREGUNTAS_ESG.map((p,i)=>`<tr><td>${escapeHtml(p)}</td><td style="text-align:center">${escapeHtml(bpV('pj-esg-'+i))}</td></tr>`).join('')}
+    </tbody></table>
+
+    <div class="bp-seccion">8. Proveedores / Negocio / Seguros</div>
+    <p class="bp-campo"><b>Compras al contado:</b> ${bpN('pj-comprascontado')}% &nbsp; <b>Compras a crédito:</b> ${bpN('pj-comprascredito')}%</p>
+    <table><thead><tr><th>Proveedor</th><th>Productos</th><th>Plazo</th><th>Ciudad</th></tr></thead><tbody>${tablaFilas('pj-proveedor',3,['nombre','productos','plazo','ciudad'])}</tbody></table>
+    <p class="bp-campo"><b>Estrategia Corto Plazo:</b> ${escapeHtml(bpV('pj-estrcorto'))}</p>
+    <p class="bp-campo"><b>Estrategia Largo Plazo:</b> ${escapeHtml(bpV('pj-estrlargo'))}</p>
+    <table><thead><tr><th>Compañía</th><th class="num">Monto</th><th>Cobertura / Tipo</th></tr></thead><tbody>${tablaFilas('pj-seguro',3,['compania','monto','cobertura'])}</tbody></table>
+
+    <p style="font-size:9px;color:#666;margin-top:16px;">Declaro conocer la normativa nacional vigente en materia ambiental, laboral y social, y que la información proporcionada es verdadera y correcta. Autorizo al Banco del Pacífico S.A. a verificar esta declaración y a consultar la Central de Riesgos / Burós de Información Crediticia.</p>
+    <p class="bp-campo"><b>Cuenta para débito de cuotas:</b> ${escapeHtml(bpV('pj-cuentadebito'))} N° ${escapeHtml(bpV('pj-cuentadebitonum')||'-')}</p>
+    <div class="doc-firma-row">
+      <div class="doc-firma"><div class="doc-firma-line">${escapeHtml(razon)}<br><em>Nombre Persona Jurídica</em></div></div>
+      <div class="doc-firma"><div class="doc-firma-line">&nbsp;<br><em>Firma del Representante Legal / Apoderado</em></div></div>
+      <div class="doc-firma"><div class="doc-firma-line">${escapeHtml(bpV('pj-firmalugar'))}<br><em>Lugar y Fecha</em></div></div>
+    </div>
+  `;
+}
+function bpImprimirJuridica(){
+  const el = document.getElementById('juridica-preview');
+  if(!el || el.querySelector('.doc-placeholder')){ toast('Genere la solicitud primero', 'warning'); return; }
+  bpAbrirVentanaImpresion(el.innerHTML, 'Solicitud Jurídica');
+}
+
+/* --- Contenedor principal de la sub-sección --- */
+const BP_DOC_BUILDERS = {
+  flujocaja: bpFlujoCajaFormHTML, anexos: bpAnexosFormHTML, infobasica: bpInfoBasicaFormHTML,
+  avaluo: bpAvaluoFormHTML, juridica: bpJuridicaFormHTML,
+};
+async function pintarDocsBancoPacifico(){
+  const cont = document.getElementById("vistaBancariaInterna");
+  cont.innerHTML = `
+    <p class="helpNote">📄 Formatos oficiales del Banco del Pacífico listos para llenar, calcular e imprimir con el mismo diagramado que el banco solicita.</p>
+    <div id="bpDocsRoot">
+      <div class="doc-tabs" id="bpDocTabsBar"></div>
+      ${Object.keys(BANCO_PACIFICO_DOC_TIPOS).map((tipo,idx)=>`
+        <div class="doc-content ${idx===0?'active':''}" id="bpdoc-${tipo}">
+          <div class="doc-form-preview">
+            <div class="doc-form">${BP_DOC_BUILDERS[tipo]()}</div>
+            <div class="doc-preview" id="${tipo}-preview"><div class="doc-placeholder">Complete los datos y haga clic en Generar</div></div>
+          </div>
+        </div>
+      `).join("")}
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0;">📚 Historial de Documentos Guardados</h3>
+        <div class="doc-tabs" id="bpHistTabsBar"></div>
+        <div id="bpHistLista"></div>
+      </div>
+    </div>
+  `;
+  pintarBPDocTabs();
+  pintarBPHistTabs();
+  await pintarBPHistLista(bpDocHistTipoActual);
+  if(document.getElementById('fc2-resumen-live')) bpFlujoCajaLive();
+  if(document.getElementById('anx-cart-total')) bpAnexosLive();
+  if(document.getElementById('ib-total-personal')) bpInfoBasicaLive();
+}
+function pintarBPDocTabs(){
+  const cont = document.getElementById("bpDocTabsBar");
+  if(!cont) return;
+  cont.innerHTML = Object.keys(BANCO_PACIFICO_DOC_TIPOS).map((tipo,idx)=>
+    `<button class="doc-tab ${idx===0?'active':''}" onclick="showBancoDocTab('${tipo}', this)">${BANCO_PACIFICO_DOC_TIPOS[tipo]}</button>`
+  ).join("");
 }
 
 /* =========================================================================

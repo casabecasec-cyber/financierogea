@@ -184,6 +184,12 @@ que exige inicio de sesión y limita a cada usuario a su propia rama de datos:
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
       }
+    },
+    "banco_pacifico_docs": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }
@@ -225,6 +231,27 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
    y la revisión de soportes.
 
 ## Notas importantes
+
+- **Nuevo: Documentos Banco del Pacífico (dentro de Área Bancaria → pestaña "📄 Documentos
+  Banco Pacífico")** — 5 formatos oficiales adjuntos del banco, llenables e imprimibles con un
+  diagramado similar al del banco: **Guía de Flujo de Caja Proyectado v2.0** (premisas,
+  ingresos/costos/gastos mensuales del Año 1 proyectados a 5 años, hasta 3 tablas de
+  amortización de préstamos con sistema francés/cuota fija que se calculan solas, y un Flujo de
+  Caja Consolidado que se recalcula automáticamente a partir de esos datos), **Anexo de
+  Evaluación de CxC, Inventarios y CxP** (antigüedad de cartera, principales clientes,
+  inventarios y cuentas por pagar, con los porcentajes vs. el total calculados en vivo),
+  **Reporte de Información Básica (005)**, **Solicitud de Avalúo/Reavalúo (REGADMAV001)** —
+  con los check-list documentales por tipo de bien (terreno, vivienda, agrícola-acuícola,
+  maquinarias, prendas, vehículo, construcción/avance de obra, urbanización y reavalúo con
+  incremento de riesgo) — y **Solicitud Jurídica** (perfil "Conozca a su Cliente" para persona
+  jurídica). Cada documento tiene vista previa, impresión con estilo "papel del banco", y
+  guardado en un historial consultable. Como solo se contaba con extracciones de texto plano
+  del Excel/Word originales (no los archivos binarios con fórmulas), las fórmulas de Excel se
+  reimplementaron como cálculo en vivo en JavaScript (verificado a mano contra los números de
+  ejemplo de la guía original) en vez de leerse de un archivo; algunos campos repetitivos se
+  limitaron a un número fijo de filas (por ejemplo 3 a 5 registros por tabla) en vez de filas
+  ilimitadas. **Requiere agregar la ruta nueva `banco_pacifico_docs` a las reglas de Realtime
+  Database** (mismo patrón `$uid` que las demás, ver el bloque de reglas más abajo).
 
 - **Nuevo: botón "✏️ Corregir monto" en Cuentas por Pagar (Forma de Pago de una retención)** —
   antes solo se podía SUMAR al monto acumulado ("+ Agregar"), sin forma de corregirlo si
