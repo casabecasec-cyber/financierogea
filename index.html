@@ -7088,6 +7088,7 @@ async function pintarAreaBancaria(){
       <button class="tabBtn ${vistaBancariaActual==='flujo'?'active':''}" onclick="cambiarVistaBancaria('flujo')">Flujo de Caja</button>
       <button class="tabBtn ${vistaBancariaActual==='docspacifico'?'active':''}" onclick="cambiarVistaBancaria('docspacifico')">📄 Documentos Banco Pacífico</button>
       <button class="tabBtn ${vistaBancariaActual==='docsprodubanco'?'active':''}" onclick="cambiarVistaBancaria('docsprodubanco')">📋 Informe Básico Produbanco</button>
+      <button class="tabBtn ${vistaBancariaActual==='flujoprodubanco'?'active':''}" onclick="cambiarVistaBancaria('flujoprodubanco')">📈 Flujo de Caja Proyectado Produbanco</button>
       <button class="tabBtn ${vistaBancariaActual==='estadosfinancieros'?'active':''}" onclick="cambiarVistaBancaria('estadosfinancieros')">📊 Estados Financieros</button>
     </div>
     <div id="vistaBancariaInterna">Cargando...</div>
@@ -7096,6 +7097,7 @@ async function pintarAreaBancaria(){
   else if(vistaBancariaActual==="flujo") await pintarFlujoCaja();
   else if(vistaBancariaActual==="docspacifico") await pintarDocsBancoPacifico();
   else if(vistaBancariaActual==="docsprodubanco") await pintarDocsBancoProdubanco();
+  else if(vistaBancariaActual==="flujoprodubanco") await pintarPFFlujoProdubanco();
   else await pintarEstadosFinancieros();
 }
 
@@ -8535,6 +8537,122 @@ function pintarBPDocTabs(){
 const PB_PAISES = ["AFGANISTAN", "ALBANIA", "ALEMANIA", "ANDORRA", "ANGOLA", "ANGUILA", "ANTIGUA", "ANTILLAS NEERLANDESAS", "ARABIA SAUDITA", "ARGELIA", "ARGENTINA", "ARMENIA", "ARUBA", "AUSTRALIA", "AUSTRIA", "AZERBAIJAN", "BAHAMAS", "BAHREIN", "BANGADESH", "BARBADOS", "BELGICA", "BELICE", "BENIN", "BERMUDAS", "BOLIVIA", "BOSNIA-HERCEGOVINA", "BOTSWANA", "BRASIL", "BRUNEI", "BULGARIA", "BURMA", "BURQUINA FASO", "BURUNDI", "BUTAN", "CABO VERDE", "CAMBOYA", "CAMERUN", "CAMORAS", "CANADA", "CHAD", "CHECOSLOVAQUIA", "CHILE", "CHINA", "CHIPRE", "CIUDAD DEL VATICANO", "COLOMBIA", "CONGO", "COSTA DE MARFIL", "COSTA RICA", "CROACIA", "CUBA", "DAHOMEY", "DINAMARCA", "DOMINICA", "ECUADOR", "EGIPTO", "EL SALVADOR", "EMIRATOS ARABES UNIDOS", "ESLOVAQUIA", "ESLOVENIA", "ESPAÑA", "ESTADOS UNIDOS", "ESTONIA", "ETIOPIA", "EUROPA", "FIJI", "FILIPINAS", "FINLADIA", "FRANCIA", "GABON", "GEORGIA", "GHANA", "GIBRALTAR", "GINEA", "GINEA BISSAU", "GINEA ECUATORIAL", "GRANADA", "GRECIA", "GROENLANDIA", "GUADALUPE", "GUAM", "GUATEMALA", "GUAYANA FRANCESA", "GUYANA", "HAITI", "HONDURAS", "HONG KONG", "HUNGRIA", "INDIA", "INDONESIA", "IRAN", "IRAQ", "IRLANDA", "ISLA DE PASCUA", "ISLA JOHNSTON", "ISLA NIUE", "ISLA NORFOLF", "ISLA SAN MARTIN", "ISLA WAKE", "ISLANDIA", "ISLAS CAIMAN", "ISLAS CANTON Y ENDERBURY", "ISLAS COCOS", "ISLAS COOK", "ISLAS DEL PACIFICO", "ISLAS DEL PACIFICO (EE.UU)", "ISLAS FEROE", "ISLAS GILBERT ELLICE", "ISLAS HEARD Y MCDONALD", "ISLAS MALVINAS", "ISLAS MIDWAY", "ISLAS PITCAIRN", "ISLAS SOLOMON BRITANICAS", "ISLAS SVALBART Y JAN MAYEN", "ISLAS TOKELAU", "ISLAS TURCAS Y CAICOS", "ISLAS VIRGENES BRITANICAS", "ISLAS WALLIS FUTUNA", "ISRAEL", "ITALIA", "JAMAICA", "JAPON", "JORDANIA", "KAMPUCHEA DEMOCRATICA", "KAZAJST-N", "KENIA", "KOREA DEL NORTE", "KOREA DEL SUR", "KUWAIT", "LAOS", "LATVIA", "LESOTHO", "LIBANO", "LIBERIA", "LIBIA", "LIECHTENSTEIN", "LITHUANIA", "LUXEMBURGO", "MACAO", "MACEDONIA", "MADAGASCAR", "MALASIA", "MALAWI", "MALDIVAS", "MALI", "MALTA", "MARRUECOS", "MARTINICA", "MAURICIO", "MAURITANIA", "MEXICO", "MICRONESIA", "MOLDOVA", "MONACO", "MONGOLIA", "MONTENEGRO", "MONTSERRAT", "MOZAMBIQUE", "MYANMAR", "NAMIBIA", "NAURU", "NEPAL", "NICARAGUA", "NIGER", "NIGERIA", "NORUEGA", "NUEVA CALEDONIA", "NUEVA ZELANDIA", "NUEVAS H+BRIDAS", "OMAN", "PAISES BAJOS", "PAKISTAN", "PALESTINA", "PANAMA", "PAPUA NUEVA GUINEA", "PARAGUAY", "PERU", "POLINESIA FRANCESA", "POLONIA", "PORTUGAL", "PUERTO RICO", "QATAR", "REINO UNIDO", "REPUBLICA CENTROAFRICANA", "REPUBLICA DE KOSOVO", "REPUBLICA DOMINICANA", "REUNION", "RHODESIA DEL SUR", "RSS DE BIOLORRUSIA", "RUMANIA", "RUSIA", "RWANDA", "S. PEDRO Y MIGELON", "SAHARA OCCIDENTAL", "SAMOA AMERICANA", "SAMOA OCCIDENTAL", "SAN CRISTOBAL Y NEVIS", "SAN MARINO", "SAN VICENTE", "SANTA LUCIA", "SANTO TOME Y PRINCIPE", "SENEGAL", "SERBIA", "SEYCHELLES", "SIERRA LEONA", "SIKKIM", "SINGAPUR", "SIRIA", "SOMALIA", "SRI LANKA", "SUDAFRICA", "SUDAN", "SUECIA", "SUIZA", "SURINAME", "SWAZILANDIA", "TAILANDIA", "TAIWAN", "TANZANIA", "TOGO", "TONGA", "TRINIDAD Y TABAGO", "TUNEZ", "TUNEZ", "TURQUIA", "UGANDA", "UKRAINE", "URUGUAY", "VANUATU", "VENEZUELA", "VIETNAM", "YEMEN", "YEMEN DEMOCRATICO", "ZAIRE", "ZAMBIA", "ZIMBABWE"];
 const PB_CARGOS = ["ASESOR LEGAL", "FIRMA AUTORIZADA", "GERENTE DE VENTAS", "GERENTE FINANCIERO", "CONTADOR", "TESORERO", "GERENTE DE PRODUCCIÓN"];
 
+/* --- Datos de referencia 2024 (IBC real de ALTA TENSIÓN ALTATEN S.A., RUC 1791189159001) ---
+   Sirven como valores por defecto SOLO al crear un Informe Básico Produbanco NUEVO (formulario
+   recién pintado, sin datos escritos) para ESTA MISMA empresa (se compara RUC o nombre de la
+   empresa seleccionada en Área Bancaria contra PRODUBANCO_EMPRESA_2024_REF). Para cualquier otra
+   empresa el formulario se mantiene en blanco. Nunca sobrescriben un campo que ya tenga valor
+   (mismo patrón que bpPrefillEmpresaEnDocs). Son "datos de referencia 2024 — verificar y
+   actualizar": el usuario debe revisarlos y completar la columna del año en curso (2025), que se
+   deja intencionalmente vacía en la sección 4.1 (Mix de Ventas) y en exportaciones. */
+const PRODUBANCO_EMPRESA_2024_REF = { ruc: '1791189159001', nombreContiene: 'ALTATEN' };
+const PRODUBANCO_DATOS_2024_DEFAULT = {
+  campos: {
+    'pb-nombre': 'ALTA TENSIÓN ALTATEN S.A.',
+    'pb-ruc': '1791189159001',
+    'pb-actividades': 'VENTA DE MATERIAL ELECTRICO EN GENERAL',
+    'pb-historia': 'Alta Tensión Altaten S.A. es una empresa legalmente constituida en el Ecuador según escritura del 13 de febrero de 1992 en la ciudad de Quito y cuya actividad principal es la venta de material eléctrico, su estructura organizacional y societaria corresponde a persona jurídica, con patrimonio y autonomía administrativa y operativa propia.',
+    'pb-familiar': 'Sí',
+    'pb-familiar-com': 'Están en revisión por parte del consejo familiar.',
+    'pb-gobcorp': 'No',
+    'pb-emp-admin': 12, 'pb-emp-prod': 4, 'pb-emp-com': 8,
+    'pb-emp-hombres': 15, 'pb-emp-mujeres': 9,
+    'pb-sindicato': 'No',
+    'pb-nomina': 22300,
+    'pb-manualfunciones': 'Sí',
+    'pb-politicacontratacion': 'No',
+    'pb-sso': 'Sí',
+    'pb-sso-det': 'N° de resolución MDT-RHS2022198495',
+    'pb-bomberos': 'Sí',
+    'pb-estacionalidad': 'No',
+    'pb-ventaspublico': 'Sí',
+    'pb-ventaspublico-det': 'CNEL, EEQ, EMELNORTE, entre otras — aprox. 90% de las ventas al sector público (2024)',
+    'pb-exporta': 'No',
+    'pb-export-anterior': 0,
+    'pb-canales': 'Directa: 100% de participación sobre los ingresos totales del último año fiscal. Otros canales: 0%.',
+    'pb-competidores': 'Participación de ALTA TENSIÓN ALTATEN S.A. en el sector: 40%. Competidores: MASTERLIGHT 20% (luminarias); MARRIOTT 10% (luminarias, ignitores, balastos); ESEMEC 15% (aisladores, seccionarias); GRANDA LOAIZA BYRON JAVIER 10% (medidores); otras (menores) 5%.',
+    'pb-clientes': 'Clientes locales 2024 (plazo de crédito 0-30 días): CNEL EP $1,250,474; EMPRESA ELÉCTRICA RIOBAMBA $589,562; FURCHETSA $644,793; EMPRESA ELÉCTRICA QUITO $478,955; COTASA COMERCIAL $1,568,717; EMPRESA ELÉCTRICA REGIONAL SUR $808,398; EMPRESA ELÉCTRICA REGIONAL NORTE $355,130; otros varios $2,683,202. N° de clientes locales activos: aprox. 60. Sin clientes del exterior registrados en 2024.',
+    'pb-proveedores': 'Proveedores locales 2024: INDUSUR $459,387 (0-30 días); TEOJAMA COMERCIAL $107,488 (más de 120 días); IRIARCO S.A. $105,280 (0-30 días); TODOHERRAJES $89,700 (30-60 días). N° de proveedores locales activos: aprox. 750. Proveedores del exterior: SHENZHEN DONSUN $2,769,000 (30-60 días); NINGBO JIANAN $2,476,000 (60-90 días); HASTING FIBER GLASS $264,506 (60-90 días); ESCALERAS S DE R.L $192,698 (0-30 días); KLEIN TOOLS $113,273 (0-30 días). N° de proveedores del exterior activos: aprox. 80.',
+    'pb-eventos': 'Impositivos: neutro, no hubo cambios significativos. Precios locales: neutro. Precios internacionales: neutro. Medidas gubernamentales: negativa (incremento de impuestos), impacto medio. Factores climáticos: negativa (aumento de precios de transporte), impacto medio. Otras afectaciones: incremento de materias primas y del transporte, y en los tiempos de llegada de la mercadería, impacto medio.',
+    'pb-permisoambiental': 'No',
+    'pb-permisoambiental-det': 'No aplica',
+    'pb-certamb': 'No',
+    'pb-sostenibilidad': 'No',
+    'pb-huellacarbono': 'No',
+    'pb-certcalidad': 'No',
+    'pb-instalaciones': 'Bodegas — Quito, Mitad del Mundo (Catequilla N5-227): 95% de capacidad utilizada, 4.788 mts, con seguro (Seguros Confianza). Oficinas Administrativas / Matriz — Quito, Av. Galo Plaza N55-52 y Pedro Barrios: 80% de capacidad utilizada, 1.115,54 mts, con seguro (Seguros Confianza).',
+    'pb-seguroinventario': 'No tiene seguro de inventario.',
+    'pb-mercadovalores': 'No',
+    'pb-nuevasemisiones': 'No proyecta nuevas emisiones.',
+    'pb-lineascredito': 'N/A (2024)',
+    'pb-factoring': 'No',
+    'pb-financext': 'No',
+    'pb-estrategias': 'Comerciales: en el corto plazo, líneas de producción de medidores. Inversión: instalación de un complejo productivo. Otras: a corto plazo, certificación ISO 9001.',
+    'pb-fechacreacion': '2025-09-05',
+    'pb-responsable': 'JUAN CARLOS MORENO TUFIÑO',
+  },
+  acc: [
+    { nombre:'NAVARRO LUNA JAVIER AMADOR', ident:'1719207647', nac:'ECUADOR', pct:87.5 },
+    { nombre:'NAVARRO LUNA DIANA PATRICIA', ident:'1717555104', nac:'ECUADOR', pct:12.5 },
+  ],
+  adm: [
+    { nombre:'MORENO TUFIÑO JUAN CARLOS', ident:'1707782916', nac:'ECUADOR', cargo:'CONTADOR', tiempo:'más de 10 años' },
+    { nombre:'NAVARRO RAMON JAVIER MARCEL', ident:'1707019772', nac:'ECUADOR', cargo:'FIRMA AUTORIZADA', tiempo:'1 año' },
+    { nombre:'NAVARRO LUNA JAVIER AMADOR', ident:'1719207647', nac:'ECUADOR', cargo:'FIRMA AUTORIZADA', tiempo:'4 años' },
+  ],
+  dir: [],
+  rel: [],
+  anioActual: 2025, anioAnterior: 2024,
+  /* Mix de ventas 2024 (columna "año anterior" del formulario). El año actual (2025) se deja
+     vacío para que el usuario lo complete. Cuadre: suma = $8,379,231 (Total Ingresos/Ventas
+     Netas 2024 según el IBC real). */
+  mix: [
+    { linea:'MEDIDORES ELECTRÓNICOS BIFASICOS PREPAGO', ventasant:5200560, costosant:0 },
+    { linea:'MEDIDORES ELECTRONICOS BIFASICOS RADIO FREC', ventasant:578965, costosant:0 },
+    { linea:'MEDIDORES ELECTRÓNICOS BIFÁSICOS', ventasant:522565, costosant:0 },
+    { linea:'CARROS CANASTA (16 Y 18 MTRS)', ventasant:0, costosant:0 },
+    { linea:'VARILLAS', ventasant:1559200, costosant:0 },
+    { linea:'Otros varios', ventasant:517941, costosant:0 },
+  ],
+};
+function pbEmpresaCoincideDatos2024(){
+  const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  if(!emp) return false;
+  const ruc = String(emp.ruc||'').replace(/\D/g,'');
+  if(ruc && ruc===PRODUBANCO_EMPRESA_2024_REF.ruc) return true;
+  const nom = String(emp.nombre||'').toUpperCase();
+  return nom.includes(PRODUBANCO_EMPRESA_2024_REF.nombreContiene);
+}
+function pbSetValIfEmpty(id, val){
+  const el = document.getElementById(id);
+  if(el && !el.value && val!==undefined && val!==null && val!=='') el.value = val;
+}
+/* Aplica los datos de referencia 2024 SOLO si la empresa seleccionada en Área Bancaria coincide
+   (RUC/nombre) con PRODUBANCO_EMPRESA_2024_REF, y SOLO sobre campos vacíos de un formulario recién
+   pintado (no sobrescribe nada que el usuario ya haya escrito). Para otras empresas no hace nada:
+   el formulario queda en blanco como siempre. */
+function pbPrefillDatos2024(){
+  if(!pbEmpresaCoincideDatos2024()) return;
+  const d = PRODUBANCO_DATOS_2024_DEFAULT;
+  Object.keys(d.campos).forEach(id=>pbSetValIfEmpty(id, d.campos[id]));
+  d.acc.forEach((r,i)=>{
+    pbSetValIfEmpty(`pb-acc-${i}-nombre`, r.nombre); pbSetValIfEmpty(`pb-acc-${i}-ident`, r.ident);
+    pbSetValIfEmpty(`pb-acc-${i}-nac`, r.nac); pbSetValIfEmpty(`pb-acc-${i}-pct`, r.pct);
+  });
+  d.adm.forEach((r,i)=>{
+    pbSetValIfEmpty(`pb-adm-${i}-nombre`, r.nombre); pbSetValIfEmpty(`pb-adm-${i}-ident`, r.ident);
+    pbSetValIfEmpty(`pb-adm-${i}-nac`, r.nac); pbSetValIfEmpty(`pb-adm-${i}-cargo`, r.cargo);
+    pbSetValIfEmpty(`pb-adm-${i}-tiempo`, r.tiempo);
+  });
+  d.mix.forEach((r,i)=>{
+    pbSetValIfEmpty(`pb-mix-${i}-linea`, r.linea); pbSetValIfEmpty(`pb-mix-${i}-ventasant`, r.ventasant);
+    pbSetValIfEmpty(`pb-mix-${i}-costosant`, r.costosant);
+  });
+  const elA = document.getElementById('pb-anio-actual'); if(elA) elA.value = d.anioActual;
+  const elB = document.getElementById('pb-anio-anterior'); if(elB) elB.value = d.anioAnterior;
+  pbAccionistasLive(); pbRRHHLive(); pbVentasLive();
+}
+
 let pbDocsGuardados = [];
 
 /* --- Firebase: historial de informes Produbanco --- */
@@ -8875,6 +8993,7 @@ async function pintarDocsBancoProdubanco(){
   const cont = document.getElementById("vistaBancariaInterna");
   cont.innerHTML = `
     <p class="helpNote">📋 Informe Básico del Cliente Corporativo/Empresa — formulario oficial de Produbanco para el conocimiento del cliente, con cálculo automático de % de participación y totales.</p>
+    ${pbEmpresaCoincideDatos2024() ? '<p class="helpNote" style="background:#fff8e1;border-color:#f0c419;">⚠️ Datos de referencia 2024 precargados para esta empresa (Informe Básico del Cliente real, ejercicio fiscal 2024). Verifique y actualice cada campo, y complete la columna del año en curso (2025) en la sección 4.1 Mix de Ventas, que se dejó en blanco intencionalmente.</p>' : ''}
     <div id="pbDocsRoot">
       <div class="doc-content active" id="pbdoc-informe">
         <div class="doc-form-preview">
@@ -8890,6 +9009,549 @@ async function pintarDocsBancoProdubanco(){
   `;
   await pintarPBHistLista();
   bpPrefillEmpresaEnDocs();
+  pbPrefillDatos2024();
+}
+
+/* =========================================================================
+   MÓDULO: FLUJO DE CAJA PROYECTADO PRODUBANCO (2025 base / 2026 proyectado)
+   Replica fila por fila la hoja de trabajo real "FLUJO DE CAJA PROYECTADO
+   PRODUBANCO 2025" (hojas "FLUJO DE CAJA 2025", "FLUJO DE CAJA 2026" y
+   "ESTADO DE RESULTADOS PROYECTADO") de ALTA TENSIÓN ALTATEN S.A. (RUC
+   1791189159001). TODOS los porcentajes/ratios que en el Excel real
+   determinan el año 2026 a partir del 2025 (crecimiento de ventas,
+   % ventas al contado/crédito, % proveedores nacional/exterior, % crédito
+   directo, y el % de crecimiento implícito de cada rubro de gastos) son
+   campos editables en el panel "⚙️ Supuestos / Porcentajes": cualquier
+   cambio recalcula en vivo (oninput) el flujo de caja completo (2025 y
+   2026, mensual y TOTAL) y el Estado de Resultados Proyectado enlazado
+   (que se deriva 100% de los totales del flujo, igual que en el Excel).
+   Los valores por defecto (reales, 2025 y 2026) SOLO se precargan si la
+   empresa seleccionada coincide con PRODUBANCO_EMPRESA_2024_REF (mismo
+   patrón que pbPrefillDatos2024); para cualquier otra empresa el
+   formulario nace en blanco. Guarda historial en
+   banco_produbanco_flujo/${DATOS_UID}/${empresaId} y exporta a Excel
+   con SheetJS (mismo patrón que efExportarExcel).
+   ========================================================================= */
+const PF_MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+
+/* --- Datos reales 2025/2026 (hoja de trabajo Produbanco de ALTATEN) --- */
+const PF_DEF2025 = {
+  ventas: [587523.88,463635.81,7642.22,34504.04,138179.38,313311.68,774038.44,1100000,1400000,1100000,1200000,1500000],
+  recCarteraApertura: 153587,
+  saldoInicialCaja: 916510.68,
+  otrosIngOp: Array(12).fill(0),
+  cartasCredito: Array(12).fill(0),
+  gastosAdmin: Array(12).fill(43600),
+  gastosVentas: [38000,62300,62300,62300,62300,62300,62300,62300,62300,62300,62300,62300],
+  gastosPersonal: [31250,31250,31250,31250,31250,31250,31250,36852,36852,36852,36852,42250],
+  otrosGastosOperativos: Array(12).fill(10000),
+  impuestos: [25000,35000,1200,105288,15000,25000,45000,55000,60000,45000,62000,55000],
+  participacionTrab: [0,0,0,147989.42,0,0,0,0,0,0,0,0],
+  otrosEgresosOp: Array(12).fill(5000),
+  ingVentaActivos: Array(12).fill(0), ingVentaInversiones: Array(12).fill(0),
+  egrInfraestructura: Array(12).fill(0), egrActivosFijos: Array(12).fill(0), egrInversionesPerm: Array(12).fill(0),
+  finAporteAccionistas: Array(12).fill(0), finPrestamoAccionistas: Array(12).fill(0), finPrestamoBancario: Array(12).fill(0),
+  finDividendos: Array(12).fill(0), finOtrosCapInt: Array(12).fill(0), finCapitalBanco: Array(12).fill(0), finInteresesBanco: Array(12).fill(0),
+};
+const PF_DEF2026 = {
+  recCarteraApertura: 240000,
+  otrosIngOp: Array(12).fill(0),
+  cartasCredito: Array(12).fill(0),
+  gastosAdmin: Array(12).fill(45000),
+  gastosVentas: Array(12).fill(65000),
+  gastosPersonal: [41000,45000,41000,41000,41000,41000,41000,58000,41000,41000,41000,72000],
+  otrosGastosOperativos: Array(12).fill(10000),
+  impuestos: [8500,11200,11200,220000,10200,15100,15100,15100,40000,30000,35000,45000],
+  participacionTrab: [0,0,0,115000,0,0,0,0,0,0,0,0],
+  otrosEgresosOp: Array(12).fill(5000),
+  ingVentaActivos: Array(12).fill(0), ingVentaInversiones: Array(12).fill(0),
+  egrInfraestructura: Array(12).fill(0), egrActivosFijos: Array(12).fill(0), egrInversionesPerm: Array(12).fill(0),
+  finAporteAccionistas: Array(12).fill(0), finPrestamoAccionistas: Array(12).fill(0), finPrestamoBancario: Array(12).fill(0),
+  finDividendos: Array(12).fill(0), finOtrosCapInt: Array(12).fill(0), finCapitalBanco: Array(12).fill(0), finInteresesBanco: Array(12).fill(0),
+};
+/* Supuestos/porcentajes reales de la hoja "FLUJO DE CAJA 2026" (fórmulas
+   =2025*X%+2025, =VENTAS*X%, etc.) más el % de crecimiento implícito de
+   cada rubro de gastos (calculado del propio total 2026/2025 real de la
+   hoja de trabajo, para que el valor por defecto reproduzca exactamente
+   los montos reales y quede 100% editable para simular otros escenarios). */
+const PF_DEF_PCT = {
+  crecVentas: 3.74,
+  contado2025: 80, contado2026: 80,
+  provNac2025: 45.6525, provNac2026: 45.5102,
+  provExt2025: 20.6398, provExt2026: 19.3232,
+  creditoDirecto2025: 30, creditoDirecto2026: 30,
+  gastosAdminGrowth: 3.211010, gastosVentasGrowth: 7.839071, gastosPersonalGrowth: 33.200133,
+  otrosGastosOperativosGrowth: 0, impuestosGrowth: -13.640423, participacionGrowth: -22.291742, otrosEgresosGrowth: 0,
+};
+/* Filas editables (mensuales, ambos años) — [key, etiqueta, grupo, growthKey opcional] */
+const PF_FILAS_EDITABLES = [
+  ['otrosIngOp','Otros Ingresos Operacionales'],
+  ['cartasCredito','Cartas de Crédito'],
+  ['gastosAdmin','Gastos Administrativos','gastosAdminGrowth'],
+  ['gastosVentas','Gastos de Ventas','gastosVentasGrowth'],
+  ['gastosPersonal','Gastos de Personal','gastosPersonalGrowth'],
+  ['otrosGastosOperativos','Otros Gastos Operativos','otrosGastosOperativosGrowth'],
+  ['impuestos','Impuestos','impuestosGrowth'],
+  ['participacionTrab','Participación Trabajadores','participacionGrowth'],
+  ['otrosEgresosOp','Otros Egresos Operacionales','otrosEgresosGrowth'],
+  ['ingVentaActivos','Venta de Activos Fijos'],
+  ['ingVentaInversiones','Venta de Inversiones Permanentes'],
+  ['egrInfraestructura','Inversión en Obras de Infraestructura'],
+  ['egrActivosFijos','Compra de Activos Fijos'],
+  ['egrInversionesPerm','Compra de Inversiones Permanentes'],
+  ['finAporteAccionistas','Aporte Accionistas'],
+  ['finPrestamoAccionistas','Préstamos de Accionistas'],
+  ['finPrestamoBancario','Préstamos Bancarios'],
+  ['finDividendos','Pago de Dividendos a Accionistas'],
+  ['finOtrosCapInt','Otros (Capitales e Intereses)'],
+  ['finCapitalBanco','Capital Préstamo Bancario'],
+  ['finInteresesBanco','Intereses Préstamo Bancario'],
+];
+function pfN(id){ const el=document.getElementById(id); return el ? (parseFloat(el.value)||0) : 0; }
+function pfSetTxt(id,val){ const el=document.getElementById(id); if(el) el.textContent = bpUSD(val); }
+function pfSumArr(a){ return (a||[]).reduce((x,b)=>x+(Number(b)||0),0); }
+function pfGetArr(year, key){ return PF_MESES.map((_,i)=>pfN(`pf-in-${year}-${key}-m${i}`)); }
+function pfRound2(n){ return Math.round((Number(n)||0)*100)/100; }
+
+/* Calcula un año completo (2025 o 2026) a partir de las ventas base, los
+   % de la sección y el saldo inicial de caja — misma cadena de fórmulas
+   que la hoja real (filas 14,17-22,25-36,38,41-53,56-73,75,78). */
+function pfCalcularAnio(year, ventas, contadoPct, provNacPct, provExtPct, creditoDirectoPct, recCarteraApertura, saldoInicial){
+  const n=12;
+  const contado = ventas.map(v=>v*contadoPct/100);
+  const credito = ventas.map(v=>v*(100-contadoPct)/100);
+  const recCartera = []; for(let i=0;i<n;i++) recCartera.push(i===0?recCarteraApertura:credito[i-1]);
+  const otrosIngOp = pfGetArr(year,'otrosIngOp');
+  const recaudaciones = contado.map((v,i)=>v+recCartera[i]);
+  const totalIngOp = recaudaciones.map((v,i)=>v+otrosIngOp[i]);
+  const provNac = ventas.map(v=>v*provNacPct/100);
+  const provExt = ventas.map(v=>v*provExtPct/100);
+  const cartasCredito = pfGetArr(year,'cartasCredito');
+  const creditoDirecto = provExt.map(v=>v*creditoDirectoPct/100);
+  const gastosAdmin = pfGetArr(year,'gastosAdmin');
+  const gastosVentas = pfGetArr(year,'gastosVentas');
+  const gastosPersonal = pfGetArr(year,'gastosPersonal');
+  const otrosGastosOperativos = pfGetArr(year,'otrosGastosOperativos');
+  const impuestos = pfGetArr(year,'impuestos');
+  const participacionTrab = pfGetArr(year,'participacionTrab');
+  const otrosEgresosOp = pfGetArr(year,'otrosEgresosOp');
+  const totalEgrOp = provNac.map((_,i)=>provNac[i]+provExt[i]+gastosAdmin[i]+gastosVentas[i]+gastosPersonal[i]+otrosGastosOperativos[i]+impuestos[i]+participacionTrab[i]+otrosEgresosOp[i]);
+  const flujoNetoOp = totalIngOp.map((v,i)=>v-totalEgrOp[i]);
+
+  const ingVentaActivos = pfGetArr(year,'ingVentaActivos'), ingVentaInversiones = pfGetArr(year,'ingVentaInversiones');
+  const totalIngInv = ingVentaActivos.map((v,i)=>v+ingVentaInversiones[i]);
+  const egrInfraestructura = pfGetArr(year,'egrInfraestructura'), egrActivosFijos = pfGetArr(year,'egrActivosFijos'), egrInversionesPerm = pfGetArr(year,'egrInversionesPerm');
+  const totalEgrInv = egrInfraestructura.map((v,i)=>v+egrActivosFijos[i]+egrInversionesPerm[i]);
+  const flujoNetoInv = totalIngInv.map((v,i)=>v-totalEgrInv[i]);
+  const fcf = flujoNetoOp.map((v,i)=>v+flujoNetoInv[i]);
+
+  const finAporteAccionistas = pfGetArr(year,'finAporteAccionistas'), finPrestamoAccionistas = pfGetArr(year,'finPrestamoAccionistas'), finPrestamoBancario = pfGetArr(year,'finPrestamoBancario');
+  const totalIngFin = finAporteAccionistas.map((v,i)=>v+finPrestamoAccionistas[i]+finPrestamoBancario[i]);
+  const finDividendos = pfGetArr(year,'finDividendos'), finOtrosCapInt = pfGetArr(year,'finOtrosCapInt'), finCapitalBanco = pfGetArr(year,'finCapitalBanco'), finInteresesBanco = pfGetArr(year,'finInteresesBanco');
+  const totalEgrFin = finDividendos.map((v,i)=>v+finOtrosCapInt[i]+finCapitalBanco[i]+finInteresesBanco[i]);
+  const flujoNetoFin = totalIngFin.map((v,i)=>v-totalEgrFin[i]);
+  const flujoNetoGenerado = fcf.map((v,i)=>v+flujoNetoFin[i]);
+
+  const saldoInicialM = [], flujoAcumulado = [];
+  for(let i=0;i<n;i++){ saldoInicialM[i] = i===0?saldoInicial:flujoAcumulado[i-1]; flujoAcumulado[i]=flujoNetoGenerado[i]+saldoInicialM[i]; }
+
+  return { ventas, contado, credito, recCartera, otrosIngOp, recaudaciones, totalIngOp,
+    provNac, provExt, cartasCredito, creditoDirecto, gastosAdmin, gastosVentas, gastosPersonal, otrosGastosOperativos, impuestos, participacionTrab, otrosEgresosOp, totalEgrOp, flujoNetoOp,
+    ingVentaActivos, ingVentaInversiones, totalIngInv, egrInfraestructura, egrActivosFijos, egrInversionesPerm, totalEgrInv, flujoNetoInv, fcf,
+    finAporteAccionistas, finPrestamoAccionistas, finPrestamoBancario, totalIngFin, finDividendos, finOtrosCapInt, finCapitalBanco, finInteresesBanco, totalEgrFin, flujoNetoFin, flujoNetoGenerado, saldoInicialM, flujoAcumulado,
+    tot: { ventas:pfSumArr(ventas), contado:pfSumArr(contado), credito:pfSumArr(credito), recCartera:pfSumArr(recCartera), otrosIngOp:pfSumArr(otrosIngOp), recaudaciones:pfSumArr(recaudaciones), totalIngOp:pfSumArr(totalIngOp),
+      provNac:pfSumArr(provNac), provExt:pfSumArr(provExt), cartasCredito:pfSumArr(cartasCredito), creditoDirecto:pfSumArr(creditoDirecto), gastosAdmin:pfSumArr(gastosAdmin), gastosVentas:pfSumArr(gastosVentas), gastosPersonal:pfSumArr(gastosPersonal), otrosGastosOperativos:pfSumArr(otrosGastosOperativos), impuestos:pfSumArr(impuestos), participacionTrab:pfSumArr(participacionTrab), otrosEgresosOp:pfSumArr(otrosEgresosOp), totalEgrOp:pfSumArr(totalEgrOp), flujoNetoOp:pfSumArr(flujoNetoOp),
+      totalIngInv:pfSumArr(totalIngInv), totalEgrInv:pfSumArr(totalEgrInv), flujoNetoInv:pfSumArr(flujoNetoInv), fcf:pfSumArr(fcf),
+      totalIngFin:pfSumArr(totalIngFin), totalEgrFin:pfSumArr(totalEgrFin), flujoNetoFin:pfSumArr(flujoNetoFin), flujoNetoGenerado:pfSumArr(flujoNetoGenerado) },
+  };
+}
+function pfCalcular(){
+  const pct = {
+    crecVentas: pfN('pf-pct-crecVentas'),
+    contado2025: pfN('pf-pct-contado2025'), contado2026: pfN('pf-pct-contado2026'),
+    provNac2025: pfN('pf-pct-provNac2025'), provNac2026: pfN('pf-pct-provNac2026'),
+    provExt2025: pfN('pf-pct-provExt2025'), provExt2026: pfN('pf-pct-provExt2026'),
+    creditoDirecto2025: pfN('pf-pct-creditoDirecto2025'), creditoDirecto2026: pfN('pf-pct-creditoDirecto2026'),
+  };
+  const ventas2025 = pfGetArr(2025,'ventas');
+  const recCarteraApertura2025 = pfN('pf-in-2025-recCarteraApertura');
+  const saldoInicial2025 = pfN('pf-in-2025-saldoInicialCaja');
+  const y2025 = pfCalcularAnio(2025, ventas2025, pct.contado2025, pct.provNac2025, pct.provExt2025, pct.creditoDirecto2025, recCarteraApertura2025, saldoInicial2025);
+
+  const ventas2026 = ventas2025.map(v=>v*(1+pct.crecVentas/100));
+  const recCarteraApertura2026 = pfN('pf-in-2026-recCarteraApertura');
+  const saldoInicial2026 = y2025.flujoAcumulado[11]; // = saldo final dic-2025 (misma fórmula que B75 real: '+M78 del año anterior')
+  const y2026 = pfCalcularAnio(2026, ventas2026, pct.contado2026, pct.provNac2026, pct.provExt2026, pct.creditoDirecto2026, recCarteraApertura2026, saldoInicial2026);
+  return { y2025, y2026, pct, saldoInicial2026 };
+}
+/* Estado de Resultados Proyectado — se deriva 100% de los totales del
+   flujo de caja (misma fórmula exacta de la hoja real, incluida la
+   particularidad de que "Participación Trabajadores" en 2026 toma el
+   valor del mes de abril (fila 34, col E) en vez de la suma anual, tal
+   cual la fórmula original ='FLUJO DE CAJA 2026'!E34). */
+function pfCalcularEstadoResultados(y2025, y2026){
+  function er(y, esProyectado){
+    const ingresos = y.tot.ventas;
+    const costoVentas = y.tot.provNac + y.tot.provExt;
+    const utilidadBruta = ingresos - costoVentas;
+    const gAdmin = y.tot.gastosAdmin, gVentas = y.tot.gastosVentas;
+    const otrosGOp = y.tot.gastosPersonal + y.tot.otrosGastosOperativos + y.tot.otrosEgresosOp;
+    const totalGastosOp = gAdmin + gVentas + otrosGOp;
+    const utilidadOperacional = utilidadBruta - totalGastosOp;
+    const gastosFinancieros = esProyectado ? pfSumArr(y.finInteresesBanco) : y.tot.totalIngFin;
+    const participacionTrabajadores = esProyectado ? (y.participacionTrab[3]||0) : y.tot.participacionTrab;
+    const impuestos = y.tot.impuestos;
+    const utilidadEjercicio = utilidadOperacional - gastosFinancieros - participacionTrabajadores - impuestos;
+    return { ingresos, costoVentas, utilidadBruta, gAdmin, gVentas, otrosGOp, totalGastosOp, utilidadOperacional, gastosFinancieros, participacionTrabajadores, impuestos, utilidadEjercicio };
+  }
+  return { e2025: er(y2025,false), e2026: er(y2026,true) };
+}
+
+function pfUpdateMonthly(year, key, arr){ arr.forEach((v,i)=>pfSetTxt(`pf-out-${year}-${key}-m${i}`, v)); }
+function pfPintarAnio(year, y){
+  if(year===2026) pfUpdateMonthly(2026,'ventas',y.ventas);
+  pfSetTxt(`pf-out-${year}-ventas-tot`, y.tot.ventas);
+  ['contado','credito','recCartera','recaudaciones','totalIngOp','provNac','provExt','creditoDirecto','totalEgrOp','flujoNetoOp','totalIngInv','totalEgrInv','flujoNetoInv','fcf','totalIngFin','totalEgrFin','flujoNetoFin','flujoNetoGenerado'].forEach(k=>{
+    pfUpdateMonthly(year,k,y[k]); pfSetTxt(`pf-out-${year}-${k}-tot`, y.tot[k]);
+  });
+  ['otrosIngOp','cartasCredito','gastosAdmin','gastosVentas','gastosPersonal','otrosGastosOperativos','impuestos','participacionTrab','otrosEgresosOp'].forEach(k=>{
+    pfSetTxt(`pf-out-${year}-${k}-tot`, y.tot[k]);
+  });
+  ['ingVentaActivos','ingVentaInversiones','egrInfraestructura','egrActivosFijos','egrInversionesPerm','finAporteAccionistas','finPrestamoAccionistas','finPrestamoBancario','finDividendos','finOtrosCapInt','finCapitalBanco','finInteresesBanco'].forEach(k=>{
+    pfSetTxt(`pf-out-${year}-${k}-tot`, pfSumArr(y[k]));
+  });
+  pfUpdateMonthly(year,'saldoInicialM',y.saldoInicialM);
+  pfUpdateMonthly(year,'flujoAcumulado',y.flujoAcumulado);
+  pfSetTxt(`pf-out-${year}-flujoAcumulado-tot`, y.flujoAcumulado[11]);
+}
+function pfPintarEstadoResultados(y2025, y2026){
+  const er = pfCalcularEstadoResultados(y2025, y2026);
+  Object.keys(er.e2025).forEach(k=>pfSetTxt(`pf-er-2025-${k}`, er.e2025[k]));
+  Object.keys(er.e2026).forEach(k=>pfSetTxt(`pf-er-2026-${k}`, er.e2026[k]));
+  return er;
+}
+function pfRecalcularTodo(){
+  const r = pfCalcular();
+  pfPintarAnio(2025, r.y2025);
+  pfPintarAnio(2026, r.y2026);
+  const credLbl2025 = document.getElementById('pf-pct-credito2025-lbl'); if(credLbl2025) credLbl2025.textContent = (100-r.pct.contado2025).toFixed(2)+'%';
+  const credLbl2026 = document.getElementById('pf-pct-credito2026-lbl'); if(credLbl2026) credLbl2026.textContent = (100-r.pct.contado2026).toFixed(2)+'%';
+  pfPintarEstadoResultados(r.y2025, r.y2026);
+  return r;
+}
+/* Recalcula los 12 meses de 2026 de un rubro de gastos aplicando su %
+   de crecimiento/decrecimiento sobre el valor de cada mes de 2025 — el
+   usuario puede luego seguir editando cualquier mes a mano. */
+function pfAplicarCrecimientoGasto(key){
+  const growthId = 'pf-pct-'+key+'Growth';
+  const pct = pfN(growthId);
+  for(let i=0;i<12;i++){
+    const base = pfN(`pf-in-2025-${key}-m${i}`);
+    const el = document.getElementById(`pf-in-2026-${key}-m${i}`);
+    if(el) el.value = pfRound2(base*(1+pct/100));
+  }
+  pfRecalcularTodo();
+}
+
+/* --- Datos de referencia reales (SOLO se aplican si la empresa coincide
+   con PRODUBANCO_EMPRESA_2024_REF — mismo criterio que pbPrefillDatos2024;
+   para cualquier otra empresa el formulario se mantiene en blanco). --- */
+function pfPrefillDatosReales(){
+  if(!pbEmpresaCoincideDatos2024()) return;
+  pbSetValIfEmpty('pf-in-2025-ventas-m0', null); // noop de referencia (las filas mensuales se llenan abajo)
+  PF_MESES.forEach((_,i)=>{
+    pbSetValIfEmpty(`pf-in-2025-ventas-m${i}`, PF_DEF2025.ventas[i]);
+    PF_FILAS_EDITABLES.forEach(([key])=>{
+      pbSetValIfEmpty(`pf-in-2025-${key}-m${i}`, PF_DEF2025[key][i]);
+      pbSetValIfEmpty(`pf-in-2026-${key}-m${i}`, PF_DEF2026[key][i]);
+    });
+  });
+  pbSetValIfEmpty('pf-in-2025-recCarteraApertura', PF_DEF2025.recCarteraApertura);
+  pbSetValIfEmpty('pf-in-2026-recCarteraApertura', PF_DEF2026.recCarteraApertura);
+  pbSetValIfEmpty('pf-in-2025-saldoInicialCaja', PF_DEF2025.saldoInicialCaja);
+  Object.keys(PF_DEF_PCT).forEach(k=>pbSetValIfEmpty('pf-pct-'+k, PF_DEF_PCT[k]));
+  pfRecalcularTodo();
+}
+
+/* --- Generación de HTML --- */
+function pfInputMes(year, key, i){
+  return `<td><input type="number" step="0.01" id="pf-in-${year}-${key}-m${i}" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>`;
+}
+function pfCeldaOut(year, key, i, bold){
+  return `<td class="num"${bold?' style="font-weight:700"':''} id="pf-out-${year}-${key}-m${i}">$0.00</td>`;
+}
+function pfTotOut(year, key, bold){
+  return `<td class="num" style="${bold?'font-weight:700;':''}background:#eef5fb" id="pf-out-${year}-${key}-tot">$0.00</td>`;
+}
+function pfFilaEditable(year, key, label){
+  return `<tr><td>${escapeHtml(label)}</td>${PF_MESES.map((_,i)=>pfInputMes(year,key,i)).join('')}${pfTotOut(year,key)}</tr>`;
+}
+function pfFilaComputada(year, key, label, bold){
+  return `<tr${bold?' style="background:#f7fafc;font-weight:700"':''}><td>${escapeHtml(label)}</td>${PF_MESES.map((_,i)=>pfCeldaOut(year,key,i,bold)).join('')}${pfTotOut(year,key,bold)}</tr>`;
+}
+function pfTablaAnioHTML(year){
+  const esBase = year===2025;
+  let html = `<div style="overflow-x:auto"><table style="min-width:1200px"><thead><tr><th>Concepto</th>${PF_MESES.map(m=>`<th class="num">${m}</th>`).join('')}<th class="num">TOTAL</th></tr></thead><tbody>`;
+  html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">INGRESOS OPERACIONALES</td></tr>`;
+  html += esBase
+    ? `<tr><td><b>Ventas Valoradas</b></td>${PF_MESES.map((_,i)=>pfInputMes(2025,'ventas',i)).join('')}${pfTotOut(2025,'ventas',true)}</tr>`
+    : pfFilaComputada(2026,'ventas','Ventas Valoradas (2025 × (1 + % crecimiento))',true);
+  html += pfFilaComputada(year,'recaudaciones','Recaudaciones por Ventas (Contado + Recuperación Cartera)',true);
+  html += pfFilaComputada(year,'contado','&nbsp;&nbsp;Ventas al Contado');
+  html += pfFilaComputada(year,'credito','&nbsp;&nbsp;Ventas a Crédito (informativo)');
+  html += esBase
+    ? `<tr><td>Recuperación Cartera Periodo Anterior (mes 1 = saldo inicial CxC)</td><td><input type="number" step="0.01" id="pf-in-2025-recCarteraApertura" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>${PF_MESES.slice(1).map((_,i)=>pfCeldaOut(2025,'recCartera',i+1)).join('')}${pfTotOut(2025,'recCartera')}</tr>`
+    : `<tr><td>Recuperación Cartera Periodo Anterior (mes 1 = saldo inicial CxC)</td><td><input type="number" step="0.01" id="pf-in-2026-recCarteraApertura" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>${PF_MESES.slice(1).map((_,i)=>pfCeldaOut(2026,'recCartera',i+1)).join('')}${pfTotOut(2026,'recCartera')}</tr>`;
+  html += pfFilaEditable(year,'otrosIngOp','Otros Ingresos Operacionales');
+  html += pfFilaComputada(year,'totalIngOp','TOTAL INGRESOS OPERACIONALES',true);
+
+  html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">EGRESOS OPERACIONALES</td></tr>`;
+  html += pfFilaComputada(year,'provNac','Proveedores Nacionales (% de Ventas Valoradas)');
+  html += pfFilaComputada(year,'provExt','Proveedores Exterior (% de Ventas Valoradas)');
+  html += pfFilaEditable(year,'cartasCredito','Cartas de Crédito');
+  html += pfFilaComputada(year,'creditoDirecto','Crédito Directo (% de Proveedores Exterior)');
+  PF_FILAS_EDITABLES.slice(2,9).forEach(([key,label])=>{ html += pfFilaEditable(year,key,label); });
+  html += pfFilaComputada(year,'totalEgrOp','TOTAL EGRESOS OPERACIONALES',true);
+  html += pfFilaComputada(year,'flujoNetoOp','FLUJO NETO OPERACIONAL',true);
+
+  html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">ACTIVIDADES DE INVERSIÓN</td></tr>`;
+  PF_FILAS_EDITABLES.slice(9,14).forEach(([key,label])=>{ html += pfFilaEditable(year,key,label); });
+  html += pfFilaComputada(year,'totalIngInv','Total Ingresos por Inversión');
+  html += pfFilaComputada(year,'totalEgrInv','Total Egresos por Inversión');
+  html += pfFilaComputada(year,'flujoNetoInv','FLUJO NETO DE INVERSIÓN',true);
+  html += pfFilaComputada(year,'fcf','FLUJO DE CAJA DISPONIBLE PARA ACREEDORES (FCF)',true);
+
+  html += `<tr style="background:#0057A3;color:#fff"><td colspan="14">ACTIVIDADES DE FINANCIAMIENTO</td></tr>`;
+  PF_FILAS_EDITABLES.slice(14,20).forEach(([key,label])=>{ html += pfFilaEditable(year,key,label); });
+  html += pfFilaComputada(year,'totalIngFin','Total Ingresos por Financiamiento');
+  html += pfFilaComputada(year,'totalEgrFin','Total Egresos por Financiamiento');
+  html += pfFilaComputada(year,'flujoNetoFin','FLUJO NETO POR FINANCIAMIENTO',true);
+  html += pfFilaComputada(year,'flujoNetoGenerado','FLUJO NETO GENERADO',true);
+
+  html += esBase
+    ? `<tr><td>Saldo Inicial de Caja (mes 1 editable; meses 2-12 = saldo final del mes anterior)</td><td><input type="number" step="0.01" id="pf-in-2025-saldoInicialCaja" oninput="pfRecalcularTodo()" style="width:76px;font-size:10.5px;padding:3px"></td>${PF_MESES.slice(1).map((_,i)=>pfCeldaOut(2025,'saldoInicialM',i+1)).join('')}<td></td></tr>`
+    : `<tr><td>Saldo Inicial de Caja (mes 1 = saldo final Dic-2025, automático)</td>${PF_MESES.map((_,i)=>pfCeldaOut(2026,'saldoInicialM',i)).join('')}<td></td></tr>`;
+  html += pfFilaComputada(year,'flujoAcumulado','FLUJO TOTAL ACUMULADO (Saldo Final de Caja)',true);
+  html += `</tbody></table></div>`;
+  return html;
+}
+function pfSupuestosHTML(){
+  const camp = (id, label, def, step) => `<div class="form-group"><label>${label}</label><input type="number" step="${step||'0.01'}" id="${id}" oninput="pfRecalcularTodo()"></div>`;
+  return `
+  <div class="card" style="border:2px solid #0057A3;">
+    <h3 style="margin-top:0;color:#0057A3;">⚙️ Supuestos / Porcentajes (100% editables — recalculan todo en vivo)</h3>
+    <p class="helpNote">Estos son los mismos porcentajes/ratios reales de la hoja de trabajo de Produbanco (crecimiento de ventas, mezcla contado/crédito, proveedores nacional/exterior, crédito directo y el % de crecimiento de cada rubro de gasto). Cambia cualquier valor y el Flujo de Caja 2025/2026 y el Estado de Resultados Proyectado se recalculan automáticamente.</p>
+    <div class="grid3">
+      ${camp('pf-pct-crecVentas','% Crecimiento de Ventas (2025 → 2026)',3.74,'0.0001')}
+      <div class="form-group"><label>% Ventas al Contado — 2025 (Crédito = <span id="pf-pct-credito2025-lbl">20.00%</span>)</label><input type="number" step="0.0001" id="pf-pct-contado2025" oninput="pfRecalcularTodo()"></div>
+      <div class="form-group"><label>% Ventas al Contado — 2026 (Crédito = <span id="pf-pct-credito2026-lbl">20.00%</span>)</label><input type="number" step="0.0001" id="pf-pct-contado2026" oninput="pfRecalcularTodo()"></div>
+      ${camp('pf-pct-provNac2025','% Proveedores Nacionales / Ventas — 2025',45.6525,'0.0001')}
+      ${camp('pf-pct-provNac2026','% Proveedores Nacionales / Ventas — 2026',45.5102,'0.0001')}
+      ${camp('pf-pct-provExt2025','% Proveedores Exterior / Ventas — 2025',20.6398,'0.0001')}
+      ${camp('pf-pct-provExt2026','% Proveedores Exterior / Ventas — 2026',19.3232,'0.0001')}
+      ${camp('pf-pct-creditoDirecto2025','% Crédito Directo / Proveedores Exterior — 2025',30,'0.01')}
+      ${camp('pf-pct-creditoDirecto2026','% Crédito Directo / Proveedores Exterior — 2026',30,'0.01')}
+    </div>
+    <h4>% Crecimiento/Decrecimiento de Gastos (2025 → 2026 — al cambiar, recalcula los 12 meses de 2026 de ese rubro)</h4>
+    <div class="grid3">
+      ${camp('pf-pct-gastosAdminGrowth','% Gastos Administrativos',3.211010,'0.0001').replace('oninput="pfRecalcularTodo()"','oninput="pfAplicarCrecimientoGasto(\'gastosAdmin\')"')}
+      ${camp('pf-pct-gastosVentasGrowth','% Gastos de Ventas',7.839071,'0.0001').replace('oninput="pfRecalcularTodo()"','oninput="pfAplicarCrecimientoGasto(\'gastosVentas\')"')}
+      ${camp('pf-pct-gastosPersonalGrowth','% Gastos de Personal',33.200133,'0.0001').replace('oninput="pfRecalcularTodo()"','oninput="pfAplicarCrecimientoGasto(\'gastosPersonal\')"')}
+      ${camp('pf-pct-otrosGastosOperativosGrowth','% Otros Gastos Operativos',0,'0.0001').replace('oninput="pfRecalcularTodo()"','oninput="pfAplicarCrecimientoGasto(\'otrosGastosOperativos\')"')}
+      ${camp('pf-pct-impuestosGrowth','% Impuestos',-13.640423,'0.0001').replace('oninput="pfRecalcularTodo()"','oninput="pfAplicarCrecimientoGasto(\'impuestos\')"')}
+      ${camp('pf-pct-participacionGrowth','% Participación Trabajadores',-22.291742,'0.0001').replace('oninput="pfRecalcularTodo()"','oninput="pfAplicarCrecimientoGasto(\'participacionTrab\')"')}
+      ${camp('pf-pct-otrosEgresosGrowth','% Otros Egresos Operacionales',0,'0.0001').replace('oninput="pfRecalcularTodo()"','oninput="pfAplicarCrecimientoGasto(\'otrosEgresosOp\')"')}
+    </div>
+    <p style="font-size:11px;color:var(--muted)">Nota: para Ventas Valoradas y Proveedores (Nacional/Exterior/Crédito Directo) el 2026 se calcula 100% desde el % (igual que el Excel real: no son celdas editables mes a mes). Para los rubros de Gastos, el 2026 nace con los montos reales mensuales de la hoja de trabajo — al cambiar su "% de crecimiento" arriba se recalculan los 12 meses tomando como base el mes equivalente de 2025; también puede editar cualquier mes de 2026 directamente en la tabla.</p>
+  </div>`;
+}
+function pfEstadoResultadosHTML(){
+  const fila = (label,key,bold) => `<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td><td class="num" id="pf-er-2025-${key}">$0.00</td><td class="num" id="pf-er-2026-${key}">$0.00</td></tr>`;
+  return `
+  <div class="card">
+    <h3 style="margin-top:0;">📊 Estado de Resultados Proyectado (derivado 100% del Flujo de Caja)</h3>
+    <p class="helpNote">Ingresos, Costo de Ventas y Gastos se toman directamente de los TOTALES (columna TOTAL) del Flujo de Caja de cada año — igual que las fórmulas de la hoja "ESTADO DE RESULTADOS PROYECTADO" del Excel real (ej. Ingresos = Total Ventas Valoradas; Costo de Ventas = Proveedores Nacionales + Proveedores Exterior).</p>
+    <div style="overflow-x:auto"><table><thead><tr><th>Concepto</th><th class="num">2025 (Base)</th><th class="num">2026 (Proyectado)</th></tr></thead><tbody>
+      ${fila('INGRESOS','ingresos',true)}
+      ${fila('COSTO DE VENTAS','costoVentas')}
+      ${fila('UTILIDAD BRUTA EN VENTA','utilidadBruta',true)}
+      ${fila('Gastos Administrativos','gAdmin')}
+      ${fila('Gastos de Ventas','gVentas')}
+      ${fila('Otros Gastos Operacionales (Personal + Otros Gastos Operativos + Otros Egresos)','otrosGOp')}
+      ${fila('TOTAL GASTOS OPERACIONALES','totalGastosOp',true)}
+      ${fila('UTILIDAD OPERACIONAL','utilidadOperacional',true)}
+      ${fila('Gastos Financieros','gastosFinancieros')}
+      ${fila('Participación Trabajadores','participacionTrabajadores')}
+      ${fila('Impuestos','impuestos')}
+      ${fila('UTILIDAD DEL EJERCICIO','utilidadEjercicio',true)}
+    </tbody></table></div>
+  </div>`;
+}
+function pfFlujoFormHTML(){
+  return `
+    <div class="doc-literatura"><strong>Guía Metodológica:</strong> Replica fila por fila la hoja de trabajo real "FLUJO DE CAJA PROYECTADO PRODUBANCO" (hojas 2025/2026 + Estado de Resultados Proyectado). El año 2025 es la base editable mes a mes; el año 2026 se calcula en vivo a partir de 2025 y de los porcentajes del panel de Supuestos.</p>
+    </div>
+    ${pfSupuestosHTML()}
+    <div class="card"><h3 style="margin-top:0;">📅 Flujo de Caja 2025 (Año Base)</h3>${pfTablaAnioHTML(2025)}</div>
+    <div class="card"><h3 style="margin-top:0;">📈 Flujo de Caja 2026 (Proyectado)</h3>${pfTablaAnioHTML(2026)}</div>
+    ${pfEstadoResultadosHTML()}
+    <div class="doc-btn-row">
+      <button class="btn-secondary" onclick="pfImprimir()">🖨 Imprimir</button>
+      <button class="btn-secondary" onclick="pfExportarExcel()">⬇ Exportar Excel</button>
+      <button class="btn-calc" onclick="terminarYGuardarPF()" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
+    </div>
+  `;
+}
+
+/* --- Impresión (mismo estilo "papel del banco" que bpAbrirVentanaImpresion) --- */
+function pfImprimir(){
+  const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  const r = pfRecalcularTodo();
+  const contenido = `
+    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado 2025-2026</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado</div></div>
+    <h4>Flujo de Caja 2025 (Base)</h4>${pfTablaAnioHTML(2025)}
+    <h4>Flujo de Caja 2026 (Proyectado)</h4>${pfTablaAnioHTML(2026)}
+    ${pfEstadoResultadosHTML()}
+    <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco. Todos los porcentajes de crecimiento/decrecimiento y de composición (ventas, proveedores, gastos) son parámetros editables por el usuario.</div>
+  `;
+  bpAbrirVentanaImpresion(contenido, 'Flujo de Caja Proyectado Produbanco');
+  setTimeout(()=>{ pfRecalcularTodo(); }, 400); // repinta la tabla original (la de impresión es una copia del innerHTML)
+}
+
+/* --- Exportar a Excel (SheetJS, mismo patrón que efExportarExcel) --- */
+function pfExportarExcel(){
+  const r = pfRecalcularTodo();
+  const er = pfCalcularEstadoResultados(r.y2025, r.y2026);
+  const wb = XLSX.utils.book_new();
+  function hojaAnio(nombre, y){
+    const filas = [['CONCEPTO', ...PF_MESES, 'TOTAL']];
+    const push = (label, arr, tot) => filas.push([label, ...arr.map(v=>pfRound2(v)), pfRound2(tot)]);
+    push('VENTAS VALORADAS', y.ventas, y.tot.ventas);
+    push('RECAUDACIONES POR VENTAS', y.recaudaciones, y.tot.recaudaciones);
+    push('  Ventas al Contado', y.contado, y.tot.contado);
+    push('  Recuperación Cartera Periodo Anterior', y.recCartera, y.tot.recCartera);
+    push('Otros Ingresos Operacionales', y.otrosIngOp, y.tot.otrosIngOp);
+    push('TOTAL INGRESOS OPERACIONALES', y.totalIngOp, y.tot.totalIngOp);
+    push('Proveedores Nacionales', y.provNac, y.tot.provNac);
+    push('Proveedores Exterior', y.provExt, y.tot.provExt);
+    push('Crédito Directo', y.creditoDirecto, y.tot.creditoDirecto);
+    push('Gastos Administrativos', y.gastosAdmin, y.tot.gastosAdmin);
+    push('Gastos de Ventas', y.gastosVentas, y.tot.gastosVentas);
+    push('Gastos de Personal', y.gastosPersonal, y.tot.gastosPersonal);
+    push('Otros Gastos Operativos', y.otrosGastosOperativos, y.tot.otrosGastosOperativos);
+    push('Impuestos', y.impuestos, y.tot.impuestos);
+    push('Participación Trabajadores', y.participacionTrab, y.tot.participacionTrab);
+    push('Otros Egresos Operacionales', y.otrosEgresosOp, y.tot.otrosEgresosOp);
+    push('TOTAL EGRESOS OPERACIONALES', y.totalEgrOp, y.tot.totalEgrOp);
+    push('FLUJO NETO OPERACIONAL', y.flujoNetoOp, y.tot.flujoNetoOp);
+    push('FLUJO NETO DE INVERSIÓN', y.flujoNetoInv, y.tot.flujoNetoInv);
+    push('FLUJO NETO POR FINANCIAMIENTO', y.flujoNetoFin, y.tot.flujoNetoFin);
+    push('FLUJO NETO GENERADO', y.flujoNetoGenerado, y.tot.flujoNetoGenerado);
+    push('SALDO INICIAL DE CAJA', y.saldoInicialM, '');
+    push('FLUJO TOTAL ACUMULADO', y.flujoAcumulado, y.flujoAcumulado[11]);
+    const ws = XLSX.utils.aoa_to_sheet(filas);
+    XLSX.utils.book_append_sheet(wb, ws, nombre);
+  }
+  hojaAnio('FLUJO DE CAJA 2025', r.y2025);
+  hojaAnio('FLUJO DE CAJA 2026', r.y2026);
+  const erFilas = [
+    ['CONCEPTO','2025 (Base)','2026 (Proyectado)'],
+    ['INGRESOS', pfRound2(er.e2025.ingresos), pfRound2(er.e2026.ingresos)],
+    ['COSTO DE VENTAS', pfRound2(er.e2025.costoVentas), pfRound2(er.e2026.costoVentas)],
+    ['UTILIDAD BRUTA EN VENTA', pfRound2(er.e2025.utilidadBruta), pfRound2(er.e2026.utilidadBruta)],
+    ['Gastos Administrativos', pfRound2(er.e2025.gAdmin), pfRound2(er.e2026.gAdmin)],
+    ['Gastos de Ventas', pfRound2(er.e2025.gVentas), pfRound2(er.e2026.gVentas)],
+    ['Otros Gastos Operacionales', pfRound2(er.e2025.otrosGOp), pfRound2(er.e2026.otrosGOp)],
+    ['TOTAL GASTOS OPERACIONALES', pfRound2(er.e2025.totalGastosOp), pfRound2(er.e2026.totalGastosOp)],
+    ['UTILIDAD OPERACIONAL', pfRound2(er.e2025.utilidadOperacional), pfRound2(er.e2026.utilidadOperacional)],
+    ['Gastos Financieros', pfRound2(er.e2025.gastosFinancieros), pfRound2(er.e2026.gastosFinancieros)],
+    ['Participación Trabajadores', pfRound2(er.e2025.participacionTrabajadores), pfRound2(er.e2026.participacionTrabajadores)],
+    ['Impuestos', pfRound2(er.e2025.impuestos), pfRound2(er.e2026.impuestos)],
+    ['UTILIDAD DEL EJERCICIO', pfRound2(er.e2025.utilidadEjercicio), pfRound2(er.e2026.utilidadEjercicio)],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(erFilas), 'ESTADO DE RESULTADOS');
+  const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  XLSX.writeFile(wb, `Flujo_Caja_Produbanco_${(emp?emp.nombre:'empresa')}`.replace(/\s+/g,'_').replace(/[^a-z0-9_]+/gi,'')+'.xlsx');
+}
+
+/* --- Firebase: historial de Flujo de Caja Produbanco (scoped por empresa) --- */
+async function cargarPFFlujoGuardados(empresaId){
+  if(!empresaId) return [];
+  const snap = await db.ref(`banco_produbanco_flujo/${DATOS_UID}/${empresaId}`).once("value");
+  const val = snap.val() || {};
+  return Object.keys(val).map(id=>({id,...val[id]})).sort((a,b)=>(b.creado||0)-(a.creado||0));
+}
+async function guardarPFFlujo(datos){
+  const payload = limpiarUndefined({...datos, creado: Date.now()});
+  const ref = db.ref(`banco_produbanco_flujo/${DATOS_UID}/${empresaBancariaSeleccionada}`).push();
+  await ref.set(payload);
+  return ref.key;
+}
+async function eliminarPFFlujoGuardado(id){
+  await db.ref(`banco_produbanco_flujo/${DATOS_UID}/${empresaBancariaSeleccionada}/${id}`).remove();
+}
+let pfDocsGuardados = [];
+async function pintarPFHistLista(){
+  const cont = document.getElementById('pfHistLista'); if(!cont) return;
+  cont.innerHTML = `<div class="emptyState">Cargando...</div>`;
+  try{ pfDocsGuardados = await cargarPFFlujoGuardados(empresaBancariaSeleccionada); }
+  catch(e){
+    cont.innerHTML = `<div class="emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "banco_produbanco_flujo" a las reglas de Realtime Database.</span></div>`;
+    return;
+  }
+  cont.innerHTML = !pfDocsGuardados.length ? `<div class="emptyState">Aún no hay flujos de caja guardados para esta empresa.</div>` : `
+    <table><thead><tr><th>Descripción</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${pfDocsGuardados.map(d=>`<tr>
+        <td>${escapeHtml(d.descripcion||'-')}</td><td>${fmtFecha(d.creado)}</td>
+        <td><button class="btn small" onclick="verPFDocGuardado('${d.id}')">👁️ Ver / Imprimir</button>
+        <button class="btn small danger" onclick="eliminarPFDocGuardado('${d.id}')">Eliminar</button></td>
+      </tr>`).join("")}
+    </tbody></table>`;
+}
+function verPFDocGuardado(id){
+  const d = pfDocsGuardados.find(x=>x.id===id); if(!d) return;
+  bpAbrirVentanaImpresion(d.contenidoHtml||'<p>Sin contenido.</p>', d.descripcion||'Flujo de Caja Proyectado Produbanco');
+}
+async function eliminarPFDocGuardado(id){
+  if(!confirm('¿Eliminar este flujo de caja guardado?')) return;
+  await eliminarPFFlujoGuardado(id);
+  await pintarPFHistLista();
+}
+async function terminarYGuardarPF(){
+  if(!empresaBancariaSeleccionada){ toast('Seleccione una empresa primero', 'warning'); return; }
+  const r = pfRecalcularTodo();
+  const er = pfCalcularEstadoResultados(r.y2025, r.y2026);
+  const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
+  const datos = {};
+  document.querySelectorAll('#pfDocsRoot input').forEach(inp=>{ if(inp.id) datos[inp.id] = inp.value; });
+  const contenidoHtml = `
+    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado 2025-2026</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')}</div></div>
+    <h4>Flujo de Caja 2025 (Base)</h4>${pfTablaAnioHTML(2025)}
+    <h4>Flujo de Caja 2026 (Proyectado)</h4>${pfTablaAnioHTML(2026)}
+    ${pfEstadoResultadosHTML()}`;
+  const descripcion = `Flujo de Caja Proyectado — Total Ventas 2025: ${bpUSD(r.y2025.tot.ventas)} / 2026: ${bpUSD(r.y2026.tot.ventas)}`;
+  await guardarPFFlujo({ descripcion, datos, contenidoHtml, empresaId: empresaBancariaSeleccionada });
+  await registrarCambio("Área Bancaria", "generar", `Flujo de Caja Proyectado Produbanco: ${descripcion}`);
+  toast('Flujo de Caja guardado en historial ✓', 'success');
+  await pintarPFHistLista();
+}
+
+async function pintarPFFlujoProdubanco(){
+  const cont = document.getElementById("vistaBancariaInterna");
+  cont.innerHTML = `
+    <p class="helpNote">📈 Flujo de Caja Proyectado 2025-2026 (Produbanco) — replica la hoja de trabajo real, con todos los porcentajes de crecimiento/composición 100% editables y el Estado de Resultados Proyectado enlazado automáticamente.</p>
+    ${pbEmpresaCoincideDatos2024() ? '<p class="helpNote" style="background:#fff8e1;border-color:#f0c419;">⚠️ Datos reales 2025/2026 precargados para esta empresa (hoja de trabajo real de Flujo de Caja Proyectado Produbanco). Verifique y ajuste los supuestos según corresponda.</p>' : ''}
+    <div id="pfDocsRoot">
+      ${pfFlujoFormHTML()}
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0;">📚 Historial de Flujos de Caja Guardados</h3>
+        <div id="pfHistLista"></div>
+      </div>
+    </div>
+  `;
+  pfPrefillDatosReales();
+  pfRecalcularTodo();
+  await pintarPFHistLista();
 }
 
 /* =========================================================================
@@ -8903,7 +9565,414 @@ async function pintarDocsBancoProdubanco(){
    convenciones de imprimirReporteActivos: .tarjetas, .tarjeta, h2.seccion,
    tfoot, @page) y exportación a Excel real usando SheetJS (xlsx.full.min,
    ya cargado por la app — sin nuevas dependencias externas).
+
+   Plan de cuentas: el usuario puede (a) usar el catálogo NIIF para PYMES
+   predefinido (PLAN_CUENTAS_NIIF_PYMES_DEFAULT, ~180 cuentas jerárquicas),
+   (b) importar su propio CSV/Excel (flujo existente sin cambios), o
+   (c) crear cuentas manualmente desde cero. Convención de código
+   jerárquico: "1", "1.1", "1.1.01", "1.1.01.01" (nivel = # de segmentos).
+   Las cuentas de agrupación (nivel 1-3) no se usan para capturar valores
+   (se dejan en 0); efCalcularEstados() suma TODAS las cuentas de un tipo
+   sin hacer rollup por prefijo de código, así que mientras solo se ingresen
+   valores en las cuentas de detalle (nivel más profundo de cada rama), los
+   totales por tipo cuadran correctamente — no fue necesario modificar esa
+   lógica de cálculo.
    ========================================================================= */
+const PLAN_CUENTAS_NIIF_PYMES_DEFAULT = [
+  {codigo:"1",nombre:"ACTIVO",tipo:"Activo",nivel:1,corriente:""},
+  {codigo:"1.1",nombre:"ACTIVO CORRIENTE",tipo:"Activo",nivel:2,corriente:"Sí"},
+  {codigo:"1.1.01",nombre:"Efectivo y equivalentes de efectivo",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1.1.01.01",nombre:"Caja general",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.01.02",nombre:"Caja chica",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.01.03",nombre:"Bancos - cuentas corrientes",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.01.04",nombre:"Bancos - cuentas de ahorro",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.01.05",nombre:"Inversiones temporales (equivalentes de efectivo)",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.02",nombre:"Activos financieros / Documentos y cuentas por cobrar clientes",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1.1.02.01",nombre:"Documentos y cuentas por cobrar clientes no relacionados",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.02.02",nombre:"Documentos y cuentas por cobrar clientes relacionados",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.02.03",nombre:"(-) Provisión cuentas incobrables (deterioro)",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.03",nombre:"Otras cuentas por cobrar",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1.1.03.01",nombre:"Cuentas por cobrar empleados",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.03.02",nombre:"Cuentas por cobrar accionistas/socios",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.03.03",nombre:"Otras cuentas por cobrar relacionadas",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.03.04",nombre:"Otras cuentas por cobrar no relacionadas",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.03.05",nombre:"(-) Provisión otras cuentas incobrables",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.04",nombre:"Inventarios",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1.1.04.01",nombre:"Inventario de materia prima",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.04.02",nombre:"Inventario de productos en proceso",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.04.03",nombre:"Inventario de productos terminados",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.04.04",nombre:"Inventario de mercadería en almacén (reventa)",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.04.05",nombre:"Inventario de suministros y materiales",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.04.06",nombre:"Inventario de repuestos y herramientas",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.04.07",nombre:"(-) Provisión por deterioro de inventarios",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.05",nombre:"Servicios y otros pagos anticipados",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1.1.05.01",nombre:"Arriendos pagados por anticipado",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.05.02",nombre:"Seguros pagados por anticipado",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.05.03",nombre:"Anticipos a proveedores",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.05.04",nombre:"Otros anticipos",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.06",nombre:"Activos por impuestos corrientes",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1.1.06.01",nombre:"IVA pagado (crédito tributario)",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.06.02",nombre:"Anticipo de impuesto a la renta",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.06.03",nombre:"Retenciones en la fuente que le han efectuado (IR)",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.06.04",nombre:"Retenciones de IVA que le han efectuado",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.06.05",nombre:"Crédito tributario a favor SRI (otros)",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.1.07",nombre:"Activos no corrientes mantenidos para la venta",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1.1.07.01",nombre:"Activos mantenidos para la venta",tipo:"Activo",nivel:4,corriente:"Sí"},
+  {codigo:"1.2",nombre:"ACTIVO NO CORRIENTE",tipo:"Activo",nivel:2,corriente:"No"},
+  {codigo:"1.2.01",nombre:"Propiedades, planta y equipo",tipo:"Activo",nivel:3,corriente:"No"},
+  {codigo:"1.2.01.01",nombre:"Terrenos",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.02",nombre:"Edificios",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.03",nombre:"(-) Depreciación acumulada edificios",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.04",nombre:"Maquinaria y equipo",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.05",nombre:"(-) Depreciación acumulada maquinaria y equipo",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.06",nombre:"Muebles y enseres",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.07",nombre:"(-) Depreciación acumulada muebles y enseres",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.08",nombre:"Equipo de computación",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.09",nombre:"(-) Depreciación acumulada equipo de computación",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.10",nombre:"Vehículos",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.11",nombre:"(-) Depreciación acumulada vehículos",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.12",nombre:"Otras propiedades, planta y equipo",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.13",nombre:"(-) Depreciación acumulada otras PPE",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.01.14",nombre:"Construcciones en curso",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.02",nombre:"Propiedades de inversión",tipo:"Activo",nivel:3,corriente:"No"},
+  {codigo:"1.2.02.01",nombre:"Terrenos de inversión",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.02.02",nombre:"Edificios de inversión",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.02.03",nombre:"(-) Depreciación acumulada propiedades de inversión",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.03",nombre:"Activos intangibles",tipo:"Activo",nivel:3,corriente:"No"},
+  {codigo:"1.2.03.01",nombre:"Plusvalía (goodwill)",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.03.02",nombre:"Marcas, patentes y derechos de llave",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.03.03",nombre:"Licencias y franquicias",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.03.04",nombre:"Software y licencias informáticas",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.03.05",nombre:"(-) Amortización acumulada de intangibles",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.04",nombre:"Activos por impuestos diferidos",tipo:"Activo",nivel:3,corriente:"No"},
+  {codigo:"1.2.04.01",nombre:"Activo por impuesto diferido",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.05",nombre:"Otros activos no corrientes",tipo:"Activo",nivel:3,corriente:"No"},
+  {codigo:"1.2.05.01",nombre:"Inversiones en asociadas/subsidiarias",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.05.02",nombre:"Garantías entregadas a largo plazo",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"1.2.05.03",nombre:"Otros activos diversos",tipo:"Activo",nivel:4,corriente:"No"},
+  {codigo:"2",nombre:"PASIVO",tipo:"Pasivo",nivel:1,corriente:""},
+  {codigo:"2.1",nombre:"PASIVO CORRIENTE",tipo:"Pasivo",nivel:2,corriente:"Sí"},
+  {codigo:"2.1.01",nombre:"Cuentas y documentos por pagar",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2.1.01.01",nombre:"Proveedores locales",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.01.02",nombre:"Proveedores del exterior",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.01.03",nombre:"Cuentas por pagar relacionadas",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.02",nombre:"Obligaciones con instituciones financieras (corriente)",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2.1.02.01",nombre:"Préstamos bancarios corto plazo",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.02.02",nombre:"Porción corriente de deuda a largo plazo",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.02.03",nombre:"Sobregiros bancarios",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03",nombre:"Otras obligaciones corrientes",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2.1.03.01",nombre:"IVA por pagar (débito tributario)",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.02",nombre:"Retenciones en la fuente de IR por pagar",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.03",nombre:"Retenciones de IVA por pagar",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.04",nombre:"Impuesto a la renta por pagar",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.05",nombre:"Aportes al IESS por pagar",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.06",nombre:"Sueldos y salarios por pagar",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.07",nombre:"Beneficios sociales por pagar (décimos, vacaciones)",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.08",nombre:"Participación trabajadores por pagar (15%)",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.03.09",nombre:"Provisiones sociales por pagar",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.04",nombre:"Otros pasivos financieros",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2.1.04.01",nombre:"Documentos por pagar diversos",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.05",nombre:"Anticipos de clientes",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2.1.05.01",nombre:"Anticipos recibidos de clientes",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.06",nombre:"Provisiones corrientes",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2.1.06.01",nombre:"Provisión por garantías",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.1.06.02",nombre:"Provisión por litigios",tipo:"Pasivo",nivel:4,corriente:"Sí"},
+  {codigo:"2.2",nombre:"PASIVO NO CORRIENTE",tipo:"Pasivo",nivel:2,corriente:"No"},
+  {codigo:"2.2.01",nombre:"Obligaciones con instituciones financieras (largo plazo)",tipo:"Pasivo",nivel:3,corriente:"No"},
+  {codigo:"2.2.01.01",nombre:"Préstamos bancarios largo plazo",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"2.2.01.02",nombre:"Obligaciones por leasing financiero",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"2.2.02",nombre:"Cuentas por pagar diversas/relacionadas largo plazo",tipo:"Pasivo",nivel:3,corriente:"No"},
+  {codigo:"2.2.02.01",nombre:"Cuentas por pagar relacionadas largo plazo",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"2.2.02.02",nombre:"Otras cuentas por pagar largo plazo",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"2.2.03",nombre:"Pasivo por impuesto diferido",tipo:"Pasivo",nivel:3,corriente:"No"},
+  {codigo:"2.2.03.01",nombre:"Pasivo por impuesto diferido",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"2.2.04",nombre:"Provisiones por beneficios a empleados largo plazo",tipo:"Pasivo",nivel:3,corriente:"No"},
+  {codigo:"2.2.04.01",nombre:"Provisión para jubilación patronal",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"2.2.04.02",nombre:"Provisión para desahucio",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"2.2.05",nombre:"Otros pasivos no corrientes",tipo:"Pasivo",nivel:3,corriente:"No"},
+  {codigo:"2.2.05.01",nombre:"Otros pasivos diversos largo plazo",tipo:"Pasivo",nivel:4,corriente:"No"},
+  {codigo:"3",nombre:"PATRIMONIO",tipo:"Patrimonio",nivel:1,corriente:""},
+  {codigo:"3.1",nombre:"Capital social",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"3.1.01",nombre:"Capital suscrito y pagado",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.2",nombre:"Aportes de socios/accionistas para futura capitalización",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"3.2.01",nombre:"Aportes para futura capitalización",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.3",nombre:"Reservas",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"3.3.01",nombre:"Reserva legal",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.3.02",nombre:"Reserva facultativa y estatutaria",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.4",nombre:"Resultados acumulados",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"3.4.01",nombre:"Utilidades acumuladas de ejercicios anteriores",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.4.02",nombre:"(-) Pérdidas acumuladas de ejercicios anteriores",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.5",nombre:"Resultados del ejercicio",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"3.5.01",nombre:"Utilidad del ejercicio",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.5.02",nombre:"(-) Pérdida del ejercicio",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"3.6",nombre:"Superávit por revaluación",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"3.6.01",nombre:"Superávit por revaluación de propiedades, planta y equipo",tipo:"Patrimonio",nivel:3,corriente:""},
+  {codigo:"4",nombre:"INGRESOS",tipo:"Ingreso",nivel:1,corriente:""},
+  {codigo:"4.1",nombre:"Ingresos de actividades ordinarias",tipo:"Ingreso",nivel:2,corriente:""},
+  {codigo:"4.1.01",nombre:"Ventas de bienes",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.1.02",nombre:"Prestación de servicios",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.1.03",nombre:"Descuento en ventas (contra-ingreso)",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.1.04",nombre:"Devoluciones en ventas (contra-ingreso)",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.2",nombre:"Otros ingresos operacionales",tipo:"Ingreso",nivel:2,corriente:""},
+  {codigo:"4.2.01",nombre:"Arrendamientos ganados",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.2.02",nombre:"Comisiones ganadas",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.3",nombre:"Ingresos financieros",tipo:"Ingreso",nivel:2,corriente:""},
+  {codigo:"4.3.01",nombre:"Intereses ganados",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.3.02",nombre:"Rendimientos financieros",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.4",nombre:"Otros ingresos no operacionales",tipo:"Ingreso",nivel:2,corriente:""},
+  {codigo:"4.4.01",nombre:"Utilidad en venta de activos fijos",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.4.02",nombre:"Ingresos por recuperación de seguros",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"4.4.03",nombre:"Otras rentas",tipo:"Ingreso",nivel:3,corriente:""},
+  {codigo:"5",nombre:"COSTOS",tipo:"Costo",nivel:1,corriente:""},
+  {codigo:"5.1",nombre:"Costo de ventas",tipo:"Costo",nivel:2,corriente:""},
+  {codigo:"5.1.01",nombre:"Costo de ventas de mercadería",tipo:"Costo",nivel:3,corriente:""},
+  {codigo:"5.2",nombre:"Costo de producción",tipo:"Costo",nivel:2,corriente:""},
+  {codigo:"5.2.01",nombre:"Materia prima directa utilizada",tipo:"Costo",nivel:3,corriente:""},
+  {codigo:"5.2.02",nombre:"Mano de obra directa",tipo:"Costo",nivel:3,corriente:""},
+  {codigo:"5.2.03",nombre:"Costos indirectos de fabricación",tipo:"Costo",nivel:3,corriente:""},
+  {codigo:"5.2.04",nombre:"Depreciación de planta y maquinaria (producción)",tipo:"Costo",nivel:3,corriente:""},
+  {codigo:"6",nombre:"GASTOS",tipo:"Gasto",nivel:1,corriente:""},
+  {codigo:"6.1",nombre:"Gastos de venta",tipo:"Gasto",nivel:2,corriente:""},
+  {codigo:"6.1.01",nombre:"Sueldos y beneficios sociales - ventas",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.1.02",nombre:"Comisiones sobre ventas",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.1.03",nombre:"Publicidad y marketing",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.1.04",nombre:"Transporte y fletes en ventas",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.1.05",nombre:"Otros gastos de venta",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2",nombre:"Gastos de administración",tipo:"Gasto",nivel:2,corriente:""},
+  {codigo:"6.2.01",nombre:"Sueldos y beneficios sociales - administración",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.02",nombre:"Honorarios profesionales",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.03",nombre:"Arriendos",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.04",nombre:"Servicios básicos (agua, luz, teléfono, internet)",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.05",nombre:"Depreciaciones",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.06",nombre:"Amortizaciones",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.07",nombre:"Suministros y materiales de oficina",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.08",nombre:"Mantenimiento y reparaciones",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.09",nombre:"Seguros",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.10",nombre:"Impuestos, contribuciones y multas",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.11",nombre:"Provisión cuentas incobrables",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.12",nombre:"Gastos de viaje y viáticos",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.2.13",nombre:"Otros gastos de administración",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.3",nombre:"Gastos financieros",tipo:"Gasto",nivel:2,corriente:""},
+  {codigo:"6.3.01",nombre:"Intereses pagados",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.3.02",nombre:"Comisiones bancarias",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.3.03",nombre:"Otros gastos financieros",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.4",nombre:"Otros gastos",tipo:"Gasto",nivel:2,corriente:""},
+  {codigo:"6.4.01",nombre:"Pérdida en venta de activos fijos",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.4.02",nombre:"Gastos no deducibles",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.4.03",nombre:"Otros gastos diversos",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.5",nombre:"Gasto por impuesto a la renta",tipo:"Gasto",nivel:2,corriente:""},
+  {codigo:"6.5.01",nombre:"Gasto por impuesto a la renta corriente",tipo:"Gasto",nivel:3,corriente:""},
+  {codigo:"6.5.02",nombre:"Gasto por impuesto a la renta diferido",tipo:"Gasto",nivel:3,corriente:""}
+];
+
+/* -------------------------------------------------------------------------
+   PLAN_CUENTAS_SUPERCIAS_DEFAULT: segundo catálogo predefinido, estructurado
+   para coincidir con la codificación que usa el portal de la Superintendencia
+   de Compañías, Valores y Seguros (SUPERCIAS) del Ecuador para la presentación
+   anual de Estados Financieros bajo NIIF (Estado de Situación Financiera +
+   Estado de Resultado Integral): 1=Activo, 2=Pasivo, 3=Patrimonio, 4x=Ingresos,
+   42/5x=Costos y Gastos.
+
+   ⚠ PROVENIENCIA / ADVERTENCIA IMPORTANTE: este catálogo fue reconstruido a
+   partir de la estructura pública y conocida de codificación NIIF de
+   SUPERCIAS, NO fue descargado directamente del PDF oficial vigente (no hubo
+   acceso a supercias.gob.ec desde este entorno de desarrollo). Antes de usar
+   este catálogo para una presentación regulatoria real, el usuario DEBE
+   verificar los códigos exactos contra el "Plan de Cuentas" oficial más
+   reciente publicado por la Superintendencia (appscvsmovil.supercias.gob.ec).
+   Este mismo aviso se muestra también en la interfaz junto al botón que
+   carga este catálogo.
+
+   Cuentas "contra" (ej. "(-) Depreciación Acumulada", "(-) Inventario Final",
+   "(-) Pérdidas Acumuladas"): se marcan con la bandera contra:true. El motor
+   de cálculo (efValorCuenta, ver efCalcularEstados) resta automáticamente su
+   valor absoluto del total de su tipo, sin que el usuario deba ingresar el
+   número en negativo.
+
+   La línea "92 — GANANCIA (PÉRDIDA) NETA DEL PERIODO" (tipo "Resultado" en la
+   estructura oficial) se excluye deliberadamente de este catálogo importable:
+   ese valor ya es el resultado calculado por efCalcularEstados() a partir de
+   Ingresos - Costos - Gastos, por lo que no es una cuenta capturable/sumable
+   más — incluirla como cuenta de tipo propio duplicaría o distorsionaría la
+   utilidad del ejercicio.
+   ------------------------------------------------------------------------- */
+const PLAN_CUENTAS_SUPERCIAS_DEFAULT = [
+  {codigo:"1",nombre:"ACTIVO",tipo:"Activo",nivel:1,corriente:""},
+  {codigo:"101",nombre:"ACTIVO CORRIENTE",tipo:"Activo",nivel:2,corriente:"Sí"},
+  {codigo:"10101",nombre:"EFECTIVO Y EQUIVALENTES AL EFECTIVO",tipo:"Activo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"10102",nombre:"ACTIVOS FINANCIEROS",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1010201",nombre:"Activos Financieros a Valor Razonable con Cambios en Resultados",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010202",nombre:"Documentos y Cuentas por Cobrar Clientes No Relacionados",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010203",nombre:"Documentos y Cuentas por Cobrar Clientes Relacionados",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010204",nombre:"Otras Cuentas por Cobrar Relacionadas",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010205",nombre:"Otras Cuentas por Cobrar",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010206",nombre:"(-) Provisión Cuentas Incobrables y Deterioro",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true,contra:true},
+  {codigo:"10103",nombre:"INVENTARIOS",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1010301",nombre:"Inventarios de Materia Prima",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010302",nombre:"Inventarios de Productos en Proceso",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010303",nombre:"Inventarios de Suministros o Materiales a ser Consumidos",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010304",nombre:"Inventarios de Prod. Term. y Mercadería en Almacén - Producidos por la Compañía",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010305",nombre:"Mercaderías en Tránsito",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010306",nombre:"(-) Provisión por Valor Neto de Realización y Otras Pérdidas en Inventario",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true,contra:true},
+  {codigo:"10104",nombre:"SERVICIOS Y OTROS PAGOS ANTICIPADOS",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1010401",nombre:"Seguros Pagados por Anticipado",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010402",nombre:"Arriendos Pagados por Anticipado",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010403",nombre:"Otros Anticipos Entregados por Bienes y Servicios",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"10105",nombre:"ACTIVOS POR IMPUESTOS CORRIENTES",tipo:"Activo",nivel:3,corriente:"Sí"},
+  {codigo:"1010501",nombre:"Crédito Tributario a Favor de la Empresa (IVA)",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010502",nombre:"Crédito Tributario a Favor de la Empresa (I. R.)",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"1010503",nombre:"Anticipo de Impuesto a la Renta",tipo:"Activo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"10106",nombre:"ACTIVOS NO CORRIENTES MANTENIDOS PARA LA VENTA",tipo:"Activo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"102",nombre:"ACTIVO NO CORRIENTE",tipo:"Activo",nivel:2,corriente:"No"},
+  {codigo:"10201",nombre:"PROPIEDADES, PLANTA Y EQUIPO",tipo:"Activo",nivel:3,corriente:"No"},
+  {codigo:"1020101",nombre:"Terrenos",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020102",nombre:"Edificios",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020103",nombre:"Maquinaria y Equipo",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020104",nombre:"Muebles y Enseres",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020105",nombre:"Equipo de Computación",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020106",nombre:"Vehículos, Equipos de Transporte y Equipo Caminero Móvil",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020107",nombre:"Otras Propiedades, Planta y Equipo",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020108",nombre:"Construcciones en Proceso",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020109",nombre:"(-) Depreciación Acumulada Propiedades, Planta y Equipo",tipo:"Activo",nivel:4,corriente:"No",detalle:true,contra:true},
+  {codigo:"1020110",nombre:"(-) Deterioro Acumulado de Propiedades, Planta y Equipo",tipo:"Activo",nivel:4,corriente:"No",detalle:true,contra:true},
+  {codigo:"10202",nombre:"PROPIEDADES DE INVERSIÓN",tipo:"Activo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"10203",nombre:"ACTIVOS BIOLÓGICOS",tipo:"Activo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"10204",nombre:"ACTIVO INTANGIBLE",tipo:"Activo",nivel:3,corriente:"No"},
+  {codigo:"1020401",nombre:"Plusvalías",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020402",nombre:"Marcas, Patentes, Derechos de Llave, Cuotas Patrimoniales y Otros Similares",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020403",nombre:"Licencias y Software",tipo:"Activo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"1020404",nombre:"(-) Amortización Acumulada de Activos Intangibles",tipo:"Activo",nivel:4,corriente:"No",detalle:true,contra:true},
+  {codigo:"1020405",nombre:"(-) Deterioro Acumulado de Activo Intangible",tipo:"Activo",nivel:4,corriente:"No",detalle:true,contra:true},
+  {codigo:"10205",nombre:"ACTIVOS POR IMPUESTOS DIFERIDOS",tipo:"Activo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"10206",nombre:"OTROS ACTIVOS NO CORRIENTES",tipo:"Activo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"2",nombre:"PASIVO",tipo:"Pasivo",nivel:1,corriente:""},
+  {codigo:"201",nombre:"PASIVO CORRIENTE",tipo:"Pasivo",nivel:2,corriente:"Sí"},
+  {codigo:"20101",nombre:"PASIVOS FINANCIEROS A VALOR RAZONABLE CON CAMBIOS EN RESULTADOS",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20102",nombre:"PASIVOS POR CONTRATOS DE ARRENDAMIENTO FINANCIERO",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20103",nombre:"CUENTAS Y DOCUMENTOS POR PAGAR",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2010301",nombre:"Locales",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010302",nombre:"Del Exterior",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"20104",nombre:"OBLIGACIONES CON INSTITUCIONES FINANCIERAS",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20105",nombre:"PROVISIONES",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2010501",nombre:"Beneficios a Empleados",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010502",nombre:"Otras Provisiones",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"20106",nombre:"OTRAS OBLIGACIONES CORRIENTES",tipo:"Pasivo",nivel:3,corriente:"Sí"},
+  {codigo:"2010601",nombre:"Con la Administración Tributaria - IVA por Pagar",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010602",nombre:"Retenciones en la Fuente del Impuesto a la Renta por Pagar del 1%",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010603",nombre:"Retenciones en la Fuente del Impuesto a la Renta por Pagar del 2%",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010604",nombre:"Retenciones en la Fuente del Impuesto a la Renta por Pagar del 8%",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010605",nombre:"Retenciones del IVA por Pagar",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010606",nombre:"Con la Seguridad Social (IESS)",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010607",nombre:"Por Beneficios de Ley a Empleados - Sueldos por Pagar",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010608",nombre:"Participación Trabajadores por Pagar del Ejercicio",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"2010609",nombre:"Impuesto a la Renta por Pagar del Ejercicio",tipo:"Pasivo",nivel:4,corriente:"Sí",detalle:true},
+  {codigo:"20107",nombre:"CUENTAS POR PAGAR DIVERSAS/RELACIONADAS",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20108",nombre:"OTROS PASIVOS FINANCIEROS",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20109",nombre:"ANTICIPOS DE CLIENTES",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20110",nombre:"PASIVOS DIRECTAMENTE ASOCIADOS CON ACTIVOS NO CORRIENTES MANTENIDOS PARA LA VENTA",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20111",nombre:"PORCIÓN CORRIENTE DE PROVISIONES POR BENEFICIOS A EMPLEADOS",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"20112",nombre:"OTROS PASIVOS CORRIENTES",tipo:"Pasivo",nivel:3,corriente:"Sí",detalle:true},
+  {codigo:"202",nombre:"PASIVO NO CORRIENTE",tipo:"Pasivo",nivel:2,corriente:"No"},
+  {codigo:"20201",nombre:"PASIVOS POR CONTRATOS DE ARRENDAMIENTO FINANCIERO",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20202",nombre:"CUENTAS Y DOCUMENTOS POR PAGAR",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20203",nombre:"OBLIGACIONES CON INSTITUCIONES FINANCIERAS",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20204",nombre:"CUENTAS POR PAGAR DIVERSAS/RELACIONADAS",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20205",nombre:"OTROS PASIVOS FINANCIEROS",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20206",nombre:"ANTICIPOS DE CLIENTES",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20207",nombre:"PROVISIONES POR BENEFICIOS A EMPLEADOS",tipo:"Pasivo",nivel:3,corriente:"No"},
+  {codigo:"2020701",nombre:"Jubilación Patronal",tipo:"Pasivo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"2020702",nombre:"Otros Beneficios No Corrientes para los Empleados - Desahucio",tipo:"Pasivo",nivel:4,corriente:"No",detalle:true},
+  {codigo:"20208",nombre:"OTRAS PROVISIONES",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20209",nombre:"PASIVO POR IMPUESTO DIFERIDO",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20210",nombre:"INGRESOS DIFERIDOS",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"20211",nombre:"OTROS PASIVOS NO CORRIENTES",tipo:"Pasivo",nivel:3,corriente:"No",detalle:true},
+  {codigo:"3",nombre:"PATRIMONIO NETO",tipo:"Patrimonio",nivel:1,corriente:""},
+  {codigo:"301",nombre:"CAPITAL",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"30101",nombre:"Capital Suscrito o Asignado",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true},
+  {codigo:"30102",nombre:"(-) Capital Suscrito no Pagado, Acciones en Tesorería",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true,contra:true},
+  {codigo:"302",nombre:"APORTES DE SOCIOS O ACCIONISTAS PARA FUTURA CAPITALIZACIÓN",tipo:"Patrimonio",nivel:2,corriente:"",detalle:true},
+  {codigo:"303",nombre:"PRIMA POR EMISIÓN PRIMARIA DE ACCIONES",tipo:"Patrimonio",nivel:2,corriente:"",detalle:true},
+  {codigo:"304",nombre:"RESERVAS",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"30401",nombre:"Reserva Legal",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true},
+  {codigo:"30402",nombre:"Reservas Facultativa y Estatutaria",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true},
+  {codigo:"305",nombre:"OTROS RESULTADOS INTEGRALES",tipo:"Patrimonio",nivel:2,corriente:"",detalle:true},
+  {codigo:"306",nombre:"RESULTADOS ACUMULADOS",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"30601",nombre:"Ganancias Acumuladas",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true},
+  {codigo:"30602",nombre:"(-) Pérdidas Acumuladas",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true,contra:true},
+  {codigo:"30603",nombre:"Resultados Acumulados provenientes de la Adopción por Primera vez de las NIIF",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true},
+  {codigo:"307",nombre:"RESULTADOS DEL EJERCICIO",tipo:"Patrimonio",nivel:2,corriente:""},
+  {codigo:"30701",nombre:"Ganancia Neta del Periodo",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true},
+  {codigo:"30702",nombre:"(-) Pérdida Neta del Periodo",tipo:"Patrimonio",nivel:3,corriente:"",detalle:true,contra:true},
+  {codigo:"41",nombre:"INGRESOS DE ACTIVIDADES ORDINARIAS",tipo:"Ingreso",nivel:1,corriente:""},
+  {codigo:"4101",nombre:"Venta de Bienes",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"4102",nombre:"Prestación de Servicios",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"4103",nombre:"Contratos de Construcción",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"4104",nombre:"Subvenciones del Gobierno",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"4105",nombre:"Regalías",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"4106",nombre:"Intereses",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"4107",nombre:"Dividendos",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"4108",nombre:"Otros Ingresos de Actividades Ordinarias",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"42",nombre:"(-) COSTO DE VENTAS Y PRODUCCIÓN",tipo:"Costo",nivel:1,corriente:""},
+  {codigo:"4201",nombre:"Materiales Utilizados o Productos Vendidos",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4202",nombre:"(+) Inventario Inicial de Materia Prima",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4203",nombre:"(+) Compras Netas Locales de Materia Prima",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4204",nombre:"(-) Inventario Final de Materia Prima",tipo:"Costo",nivel:2,corriente:"",detalle:true,contra:true},
+  {codigo:"4205",nombre:"(+) Mano de Obra Directa",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4206",nombre:"(+) Mano de Obra Indirecta",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4207",nombre:"(+) Otros Costos Indirectos de Fabricación",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4208",nombre:"(+) Inventario Inicial de Productos en Proceso",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4209",nombre:"(-) Inventario Final de Productos en Proceso",tipo:"Costo",nivel:2,corriente:"",detalle:true,contra:true},
+  {codigo:"4210",nombre:"(+) Inventario Inicial de Productos Terminados",tipo:"Costo",nivel:2,corriente:"",detalle:true},
+  {codigo:"4211",nombre:"(-) Inventario Final de Productos Terminados",tipo:"Costo",nivel:2,corriente:"",detalle:true,contra:true},
+  {codigo:"51",nombre:"GASTOS DE VENTAS",tipo:"Gasto",nivel:1,corriente:""},
+  {codigo:"5101",nombre:"Sueldos, Salarios y Demás Remuneraciones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5102",nombre:"Beneficios Sociales e Indemnizaciones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5103",nombre:"Aporte a la Seguridad Social (Incluido Fondo de Reserva)",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5104",nombre:"Honorarios, Comisiones y Dietas a Personas Naturales",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5105",nombre:"Mantenimiento y Reparaciones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5106",nombre:"Arrendamiento Operativo",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5107",nombre:"Comisiones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5108",nombre:"Promoción y Publicidad",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5109",nombre:"Combustibles",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5110",nombre:"Transporte",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5111",nombre:"Provisión Cuentas Incobrables",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5112",nombre:"Depreciación de Propiedades, Planta y Equipo",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5113",nombre:"Amortización de Intangibles",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5114",nombre:"Otros Gastos de Venta",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"52",nombre:"GASTOS ADMINISTRATIVOS",tipo:"Gasto",nivel:1,corriente:""},
+  {codigo:"5201",nombre:"Sueldos, Salarios y Demás Remuneraciones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5202",nombre:"Beneficios Sociales e Indemnizaciones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5203",nombre:"Aporte a la Seguridad Social (Incluido Fondo de Reserva)",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5204",nombre:"Honorarios, Comisiones y Dietas a Personas Naturales",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5205",nombre:"Mantenimiento y Reparaciones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5206",nombre:"Arrendamiento Operativo",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5207",nombre:"Suministros, Materiales y Repuestos",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5208",nombre:"Servicios Públicos (Luz, Agua, Teléfono, Internet)",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5209",nombre:"Seguros y Reaseguros (No Vida)",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5210",nombre:"Impuestos, Contribuciones y Otros",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5211",nombre:"Depreciación de Propiedades, Planta y Equipo",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5212",nombre:"Amortización de Intangibles",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5213",nombre:"Provisión Cuentas Incobrables",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5214",nombre:"Otros Gastos de Administración",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"53",nombre:"GASTOS FINANCIEROS",tipo:"Gasto",nivel:1,corriente:""},
+  {codigo:"5301",nombre:"Intereses",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5302",nombre:"Comisiones",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5303",nombre:"Gastos de Financiamiento de Activos",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5304",nombre:"Diferencia en Cambio",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5305",nombre:"Otros Gastos Financieros",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"54",nombre:"OTROS INGRESOS",tipo:"Ingreso",nivel:1,corriente:""},
+  {codigo:"5401",nombre:"Otras Rentas",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"5402",nombre:"Ganancia en Venta de Propiedades, Planta y Equipo",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"5403",nombre:"Ingresos Financieros",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"5404",nombre:"Recuperación de Costo por Deterioro",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"5405",nombre:"Otras Rentas No Operacionales",tipo:"Ingreso",nivel:2,corriente:"",detalle:true},
+  {codigo:"55",nombre:"OTROS GASTOS",tipo:"Gasto",nivel:1,corriente:""},
+  {codigo:"5501",nombre:"Pérdida en Venta de Propiedades, Planta y Equipo",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"5502",nombre:"Otros",tipo:"Gasto",nivel:2,corriente:"",detalle:true},
+  {codigo:"90",nombre:"15% PARTICIPACIÓN TRABAJADORES",tipo:"Gasto",nivel:1,corriente:"",detalle:true},
+  {codigo:"91",nombre:"GASTO POR IMPUESTO A LA RENTA",tipo:"Gasto",nivel:1,corriente:"",detalle:true}
+];
+
 let efPlanCuentas = [];
 let efEstados = [];
 let efEstadoActivo = 0;
@@ -8940,12 +10009,16 @@ async function pintarEstadosFinancieros(){
     <p class="helpNote">📊 Define tu plan de cuentas y captura hasta 5 estados (periodos/años/escenarios) para generar el Estado de Situación Financiera y el Estado de Resultados automáticamente, con presentación ejecutiva lista para imprimir o exportar a Excel.</p>
     <div class="card">
       <h3 style="margin-top:0;">Plan de Cuentas</h3>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <button class="btn small" onclick="efAgregarCuenta()">+ Agregar cuenta</button>
-        <label class="btn small" style="cursor:pointer;">📥 Importar CSV/Excel<input type="file" id="efImportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="efImportarPlanCuentas(event)"></label>
+      <p class="helpNote" style="margin-top:0;">Elige cómo quieres armar tu plan de cuentas: usa uno de los catálogos predefinidos (listos para usar), importa el tuyo propio, o créalo manualmente cuenta por cuenta.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+        <button class="btn small primary" onclick="efUsarPlanPredefinido('niif')">📋 Usar plan de cuentas NIIF PYMES predefinido</button>
+        <button class="btn small primary" onclick="efUsarPlanPredefinido('supercias')">🏛️ Usar plan de cuentas Superintendencia de Compañías</button>
+        <label class="btn small" style="cursor:pointer;">📥 Importar mi propio plan de cuentas<input type="file" id="efImportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="efImportarPlanCuentas(event)"></label>
+        <button class="btn small" onclick="efAgregarCuenta()">✏️ Crear manualmente (+ cuenta)</button>
         <button class="btn small" onclick="efExportarPlanCuentasCSV()">⬇ Exportar plan (CSV)</button>
         <button class="btn primary small" onclick="efGuardarPlanCuentas()">💾 Guardar plan de cuentas</button>
       </div>
+      <p class="helpNote" style="margin-top:0;margin-bottom:10px;color:#a15c00;">⚠️ El catálogo "Superintendencia de Compañías" está basado en la estructura pública de códigos NIIF de la Superintendencia de Compañías, Valores y Seguros (no se descargó directamente del PDF oficial vigente por falta de acceso a internet en este entorno). Verifica los códigos exactos contra el plan de cuentas oficial vigente (appscvsmovil.supercias.gob.ec) antes de usar para una presentación regulatoria.</p>
       <div id="efTablaPlan"></div>
     </div>
     <div class="card">
@@ -8977,6 +10050,25 @@ function efPintarTablaPlan(){
 }
 function efAgregarCuenta(){ efPlanCuentas.push({codigo:'',nombre:'',tipo:'Activo',corriente:'',nivel:1}); efPintarTablaPlan(); }
 function efEliminarCuenta(i){ efPlanCuentas.splice(i,1); efPintarTablaPlan(); efPintarValoresEstado(); }
+/* catalogo: 'niif' (NIIF PYMES genérico) o 'supercias' (Superintendencia de
+   Compañías). Comparten la misma lógica de confirmación antes de sobrescribir
+   un plan de cuentas ya existente. */
+function efUsarPlanPredefinido(catalogo){
+  const esSupercias = catalogo === 'supercias';
+  const fuente = esSupercias ? PLAN_CUENTAS_SUPERCIAS_DEFAULT : PLAN_CUENTAS_NIIF_PYMES_DEFAULT;
+  const nombreCatalogo = esSupercias ? 'Superintendencia de Compañías' : 'NIIF PYMES';
+  const cargar = () => {
+    efPlanCuentas = fuente.map(c=>({...c}));
+    efPintarTablaPlan();
+    efPintarValoresEstado();
+    const avisoSupercias = esSupercias ? ' — recuerda verificar los códigos contra el plan de cuentas oficial vigente antes de una presentación regulatoria' : '';
+    toast(`Plan de cuentas ${nombreCatalogo} cargado (${efPlanCuentas.length} cuentas) ✓ — recuerda guardar${avisoSupercias}`, 'success');
+  };
+  if(efPlanCuentas.length){
+    if(!confirm(`Ya tienes un plan de cuentas con ${efPlanCuentas.length} cuenta(s). ¿Reemplazarlo con el catálogo ${nombreCatalogo} predefinido? Esta acción no se puede deshacer.`)) return;
+  }
+  cargar();
+}
 async function efGuardarPlanCuentas(){
   if(!empresaBancariaSeleccionada){ toast('Selecciona una empresa', 'warning'); return; }
   await guardarEstadosFinancieros();
@@ -9096,10 +10188,19 @@ async function efGuardarValores(){
    Verificado con dataset de prueba: Activo = Pasivo + Patrimonio + Utilidad
    dispara el indicador "cuadrado"/"no cuadra" correctamente (ver validación
    en Node adjunta al cierre de esta sesión de cambios). */
+/* Cuentas "contra" (ej. depreciación acumulada, provisiones, inventario final
+   en costo de ventas): el usuario ingresa el valor como magnitud positiva y
+   aquí se resta automáticamente del total de su tipo/grupo, sin depender de
+   que el usuario recuerde escribir el número en negativo. Las cuentas del
+   catálogo NIIF PYMES original no usan esta bandera (compatibilidad total). */
+function efValorCuenta(c, valores){
+  const v = Number((valores||{})[c.codigo]||0);
+  return c.contra ? -Math.abs(v) : v;
+}
 function efCalcularEstados(valores){
   valores = valores || {};
   const grupo = t => efPlanCuentas.filter(c=>c.tipo===t);
-  const sum = arr => arr.reduce((s,c)=>s+Number(valores[c.codigo]||0),0);
+  const sum = arr => arr.reduce((s,c)=>s+efValorCuenta(c,valores),0);
   const activo = grupo('Activo'), pasivo = grupo('Pasivo'), patrimonio = grupo('Patrimonio');
   const ingreso = grupo('Ingreso'), costo = grupo('Costo'), gasto = grupo('Gasto');
   const activoCorriente = activo.filter(c=>c.corriente==='Sí'), activoNoCorriente = activo.filter(c=>c.corriente!=='Sí');
@@ -9120,7 +10221,7 @@ function efCalcularEstados(valores){
 function efGenerarEstados(idx){
   const est = efEstados[idx];
   const r = efCalcularEstados(est.valores);
-  const fila = c => `<tr><td>${escapeHtml(c.codigo||'-')}</td><td>${escapeHtml(c.nombre||'-')}</td><td class="num">${pbUSD(est.valores[c.codigo]||0)}</td></tr>`;
+  const fila = c => `<tr><td>${escapeHtml(c.codigo||'-')}</td><td>${escapeHtml(c.nombre||'-')}</td><td class="num">${pbUSD(efValorCuenta(c,est.valores))}</td></tr>`;
   document.getElementById('efResultado').innerHTML = `
     <h3>Estado de Situación Financiera — ${escapeHtml(est.label||'')}</h3>
     <table><thead><tr><th>Código</th><th>Cuenta</th><th class="num">Valor</th></tr></thead><tbody>
@@ -9186,7 +10287,7 @@ function efImprimirEstados(idx){
   const est = efEstados[idx];
   const r = efCalcularEstados(est.valores);
   const empresa = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
-  const fila = c => `<tr><td>${escapeHtml(c.codigo||'-')}</td><td>${escapeHtml(c.nombre||'-')}</td><td class="num">$${Number(est.valores[c.codigo]||0).toFixed(2)}</td></tr>`;
+  const fila = c => `<tr><td>${escapeHtml(c.codigo||'-')}</td><td>${escapeHtml(c.nombre||'-')}</td><td class="num">$${efValorCuenta(c,est.valores).toFixed(2)}</td></tr>`;
   const win = window.open("", "_blank");
   win.document.write(`<html><head><title>Estados Financieros - ${escapeHtml(empresa?.nombre||'')}</title>
     <style>
@@ -9258,7 +10359,7 @@ function efExportarExcel(idx){
   const r = efCalcularEstados(est.valores);
   const empresa = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
   const wb = XLSX.utils.book_new();
-  const filaArr = c => [c.codigo||'', c.nombre||'', Number(est.valores[c.codigo]||0)];
+  const filaArr = c => [c.codigo||'', c.nombre||'', efValorCuenta(c,est.valores)];
   const balanceRows = [
     ['ESTADO DE SITUACIÓN FINANCIERA','',''],
     [empresa?.nombre||'', 'Periodo:', est.label||''],

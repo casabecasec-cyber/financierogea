@@ -278,6 +278,49 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
   exactas, para mantener el formulario manejable. **Requiere agregar la ruta nueva
   `banco_produbanco_docs` a las reglas de Realtime Database.**
 
+- **Nuevo: precarga de datos de referencia 2024 en el Informe Básico Produbanco** — se cargó el
+  IBC real y ya lleno de **ALTA TENSIÓN ALTATEN S.A. (RUC 1791189159001)**, ejercicio fiscal
+  2024, como valores por defecto (`PRODUBANCO_DATOS_2024_DEFAULT`): Generalidades, los 2
+  accionistas finales, los 3 administradores/ejecutivos, empleados (12 administrativos + 4 de
+  producción + 8 comerciales = 24; 15 hombres/9 mujeres; nómina $22,300), las 6 líneas del Mix
+  de Ventas 2024 (cuadra con el total real de $8,379,231) y el resto de secciones descriptivas
+  (gobierno corporativo, SSO, canales, competidores, clientes/proveedores, eventos, ambiental,
+  instalaciones, líneas de crédito y estrategias). La precarga es **específica de esa empresa**:
+  `pbPrefillDatos2024()` solo actúa cuando la empresa seleccionada en Área Bancaria coincide por
+  RUC o por nombre con `PRODUBANCO_EMPRESA_2024_REF`; para cualquier otra empresa el formulario
+  queda completamente en blanco, igual que antes. Además solo rellena campos vacíos de un
+  formulario recién pintado (mismo patrón que `bpPrefillEmpresaEnDocs`), nunca sobrescribe lo que
+  el usuario ya haya escrito, y deja intencionalmente en blanco la columna del año en curso
+  (2025) en la sección 4.1 para que el usuario la complete. Cuando aplica, se muestra un aviso
+  amarillo en la pantalla: "Datos de referencia 2024 precargados... Verifique y actualice cada
+  campo".
+
+- **Nuevo: Flujo de Caja Proyectado Produbanco (dentro de Área Bancaria → pestaña "📈 Flujo de
+  Caja Proyectado Produbanco")** — replica fila por fila la hoja de trabajo real "FLUJO DE CAJA
+  PROYECTADO PRODUBANCO 2025" de **ALTA TENSIÓN ALTATEN S.A. (RUC 1791189159001)** (hojas "FLUJO
+  DE CAJA 2025", "FLUJO DE CAJA 2026" y "ESTADO DE RESULTADOS PROYECTADO"): año base 2025 editable
+  mes a mes, año proyectado 2026 calculado en vivo, y el Estado de Resultados Proyectado (ambos
+  años) derivado 100% de los totales del flujo, igual que las fórmulas del Excel. Todos los
+  porcentajes/ratios reales que en el Excel determinan el 2026 a partir del 2025 quedan en un
+  panel **"⚙️ Supuestos / Porcentajes" 100% editable** que recalcula todo en vivo (`oninput`): %
+  de crecimiento de ventas (3.74%), % ventas al contado/crédito (80%/20%, por año), % proveedores
+  nacionales/exterior sobre ventas (45.6525%/45.5102% y 20.6398%/19.3232%), % crédito directo
+  sobre proveedores exterior (30%), y el % de crecimiento/decrecimiento de cada rubro de gasto
+  (Gastos Administrativos, de Ventas, de Personal, Otros Gastos Operativos, Impuestos,
+  Participación Trabajadores, Otros Egresos Operacionales) — estos últimos, calculados por
+  defecto desde la razón real 2026/2025 de la propia hoja de trabajo, recalculan los 12 meses de
+  2026 de ese rubro al cambiar el %, y cada mes sigue siendo editable a mano. Verificado a mano
+  (script Node) contra los valores reales cacheados del Excel (ventas, proveedores, crédito
+  directo, egresos operacionales, utilidad operacional y utilidad del ejercicio de ambos años
+  coinciden al centavo; el saldo final de caja difiere en menos de $1 porque la hoja fuente
+  redondea a dólares enteros el saldo inicial del año siguiente). Vista previa, impresión con el
+  mismo estilo "papel del banco", exportación a Excel (SheetJS, 3 hojas: Flujo 2025, Flujo 2026,
+  Estado de Resultados) y guardado en historial **por empresa**
+  (`banco_produbanco_flujo/${DATOS_UID}/${empresaId}`). Los valores reales 2025/2026 solo se
+  precargan cuando la empresa seleccionada coincide con `PRODUBANCO_EMPRESA_2024_REF` (mismo
+  criterio que `pbPrefillDatos2024`); para cualquier otra empresa el formulario nace en blanco.
+  **Requiere agregar la ruta nueva `banco_produbanco_flujo` a las reglas de Realtime Database.**
+
 - **Nuevo: Estados Financieros (dentro de Área Bancaria → pestaña "📊 Estados Financieros")** —
   plan de cuentas editable en tabla (código, nombre, tipo Activo/Pasivo/Patrimonio/Ingreso/
   Costo/Gasto, corriente Sí/No, nivel para la jerarquía) que se puede escribir a mano o
@@ -294,6 +337,51 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
   (SheetJS, 3 hojas: Situación Financiera, Resultados y Plan de Cuentas). Datos guardados en
   `estados_financieros/{uid}/{empresaId}` (plan de cuentas + los hasta 5 estados). **Requiere
   agregar la ruta nueva `estados_financieros` a las reglas de Realtime Database.**
+
+- **Nuevo: Plan de Cuentas NIIF PYMES predefinido (dentro de Estados Financieros → Plan de
+  Cuentas)** — ahora, además de importar un CSV/Excel propio o crear cuentas manualmente, se
+  puede cargar con un clic un **catálogo de cuentas NIIF para PYMES completo y listo para usar**
+  (184 cuentas, siguiendo la estructura corporativa típica usada en Ecuador: Activo Corriente/No
+  Corriente, Pasivo Corriente/No Corriente, Patrimonio, Ingresos, Costos y Gastos, con
+  codificación jerárquica tipo `1.1.01.01` e IVA/retenciones/IESS/jubilación patronal/desahucio
+  ya incluidos como cuentas típicas ecuatorianas). Las tres opciones — predefinido, importar o
+  manual — conviven como botones separados en la parte superior de la sección; si ya existe un
+  plan de cuentas con datos, cargar el predefinido pide confirmación antes de reemplazarlo (no
+  sobrescribe en silencio). El catálogo usa exactamente el mismo modelo de datos que ya tenía la
+  sección (código/nombre/tipo/nivel/corriente) y no requiere ningún cambio en el cálculo de
+  totales o en las reglas de Realtime Database.
+
+- **Nuevo: segundo catálogo predefinido "🏛️ Superintendencia de Compañías" (dentro de Estados
+  Financieros → Plan de Cuentas)** — junto al catálogo NIIF PYMES genérico, ahora hay un segundo
+  botón que carga con un clic un catálogo (`PLAN_CUENTAS_SUPERCIAS_DEFAULT`, 174 cuentas)
+  estructurado para calzar con la codificación numérica que usa el portal de la Superintendencia
+  de Compañías, Valores y Seguros para la presentación anual de Estados Financieros bajo NIIF
+  (Estado de Situación Financiera + Estado de Resultado Integral): 1=Activo, 2=Pasivo,
+  3=Patrimonio, 4x=Ingresos, 42/5x=Costos y Gastos, con codificación jerárquica de 1/3/5/7
+  dígitos (ej. `1`→`101`→`10101`→`1010201`) en vez del formato con puntos del catálogo NIIF PYMES
+  genérico. Reutiliza la misma función `efUsarPlanPredefinido(catalogo)` (ahora recibe `'niif'` o
+  `'supercias'`) y el mismo flujo de confirmación antes de sobrescribir un plan existente. Incluye
+  **12 cuentas "contra"** (ej. "(-) Depreciación Acumulada de Propiedades, Planta y Equipo", "(-)
+  Provisión Cuentas Incobrables y Deterioro", "(-) Inventario Final..." en el costo de ventas,
+  "(-) Pérdidas Acumuladas") marcadas con la bandera `contra:true`: el usuario ingresa el valor
+  como magnitud positiva y el motor de cálculo (`efValorCuenta`, usado ahora por
+  `efCalcularEstados`, la vista de resultados, la impresión y la exportación a Excel) le resta el
+  valor absoluto al total de su tipo automáticamente — verificado a mano en Node (ej. PPE bruto
+  $100,000 con depreciación acumulada $20,000 neta correctamente a $80,000 en Activo No
+  Corriente, y un caso completo Activo = Pasivo + Patrimonio + Utilidad cuadrando con una cuenta
+  contra de por medio). El catálogo NIIF PYMES original no usa esta bandera y sigue funcionando
+  exactamente igual que antes (compatibilidad hacia atrás verificada). La línea oficial "92 —
+  GANANCIA (PÉRDIDA) NETA DEL PERIODO" se excluyó a propósito del catálogo importable porque ya es
+  el resultado que calcula `efCalcularEstados()` (Ingresos − Costos − Gastos), no una cuenta
+  capturable. **⚠️ Advertencia de proveniencia (best-effort, verificar antes de usar para una
+  presentación regulatoria real):** este catálogo se reconstruyó a partir de la estructura pública
+  y conocida de codificación NIIF de la Superintendencia de Compañías; **no se descargó
+  directamente del PDF oficial vigente** porque este entorno de desarrollo no tuvo acceso a
+  internet hacia supercias.gob.ec. La misma advertencia se muestra de forma visible en la interfaz
+  junto a los botones de plan de cuentas ("Basado en la estructura pública de códigos NIIF de la
+  Superintendencia de Compañías. Verifica los códigos exactos contra el plan de cuentas oficial
+  vigente (appscvsmovil.supercias.gob.ec) antes de usar para una presentación regulatoria."). No
+  requiere ningún cambio en las reglas de Realtime Database.
 
 - **Nuevo: botón "✏️ Corregir monto" en Cuentas por Pagar (Forma de Pago de una retención)** —
   antes solo se podía SUMAR al monto acumulado ("+ Agregar"), sin forma de corregirlo si
