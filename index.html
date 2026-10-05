@@ -7055,6 +7055,122 @@ let bancosCache = [];
 let empresaBancariaSeleccionada = null;
 let vistaBancariaActual = "bancos";
 
+/* =========================================================================
+   BORRADORES AUTOGUARDADOS DE ÁREA BANCARIA (9na iteración)
+   Reporte: "también los otros campos del área bancaria se borran y no se
+   guardan". Causa raíz encontrada (una por cada sub-sección, ver README):
+   las pestañas "📄 Documentos Banco Pacífico", "📋 Informe Básico
+   Produbanco" y "📊 Estados Financieros" reconstruyen su formulario desde
+   cero (cont.innerHTML = ...) cada vez que se vuelve a entrar a esa pestaña
+   (incluida la recarga de página), y ninguna de ellas tenía una fuente de
+   estado que sobreviviera a ese repintado salvo guardando explícitamente el
+   documento/plan completo — exactamente el mismo patrón de causa raíz ya
+   diagnosticado y corregido para "Flujo de Caja Proyectado Produbanco" en
+   la 6ta iteración (pfEstadoPorEmpresa/pfCapturarEstadoInput/
+   pfRestaurarEstado), solo que ese arreglo anterior vivía SOLO en memoria
+   (se perdía igual al recargar la página o reabrir sesión — ver el fix de
+   autoguardado real más abajo, en el bloque de Flujo Produbanco).
+   Esta sección agrega un mecanismo GENÉRICO reutilizable por las 3
+   secciones de "formulario largo que se llena antes de guardar" (Pacífico/
+   Informe Básico Produbanco/Estados Financieros): cada tecleo se captura
+   en memoria (por empresa + por sección, para no mezclar datos entre
+   empresas ni entre secciones) y además se autoguarda a Firebase con
+   debounce (~1.5s tras la última tecla) en la ruta
+   `banco_borradores_auto/${DATOS_UID}/${empresaId}/${areaKey}` — así los
+   datos sobreviven tanto a un cambio de pestaña/empresa dentro de la
+   sesión (restaurados desde memoria, instantáneo) como a un recargo de
+   página o un cierre/reapertura de sesión (restaurados desde Firebase, la
+   primera vez que se abre esa sección para esa empresa en la sesión
+   actual). Este borrador autoguardado es independiente del botón
+   "✅ Terminar y Guardar" de cada sección (que sigue guardando, como
+   antes, una copia final en su propio historial/registro) — el borrador
+   solo evita perder lo tecleado ANTES de llegar a presionar ese botón. */
+let abBorradorCache = {}; // { empresaId: { areaKey: {fieldId: valor} } }
+let abAutosaveTimers = {}; // { 'empresaId|areaKey': timeoutId }
+let abBorradorCargado = {}; // { 'empresaId|areaKey': true } — ya se intentó cargar desde Firebase en esta sesión
+function abBorradorKey(){ return (empresaBancariaSeleccionada||'_sinEmpresa'); }
+function abGetBorrador(areaKey){
+  const emp = abBorradorKey();
+  if(!abBorradorCache[emp]) abBorradorCache[emp] = {};
+  if(!abBorradorCache[emp][areaKey]) abBorradorCache[emp][areaKey] = {};
+  return abBorradorCache[emp][areaKey];
+}
+/* Delegado de 'input'/'change' sobre el contenedor raíz de la sección —
+   captura cualquier <input>/<select>/<textarea> con id hacia el borrador en
+   memoria de (empresa actual, areaKey), sin tener que tocar los atributos
+   oninput/onchange ya existentes de cada campo. */
+function abCapturarInput(areaKey){
+  return function(ev){
+    const t = ev.target;
+    if(!t || !t.id) return;
+    const tag = t.tagName;
+    if(tag!=='INPUT' && tag!=='SELECT' && tag!=='TEXTAREA') return;
+    const val = (t.type==='checkbox'||t.type==='radio') ? t.checked : t.value;
+    abGetBorrador(areaKey)[t.id] = val;
+    abProgramarAutoguardado(areaKey);
+  };
+}
+/* Restaura, sobre el HTML recién reconstruido de la sección, el borrador en
+   memoria de la empresa actual — se llama DESPUÉS de cualquier prellenado
+   de datos de referencia (bpPrefillEmpresaEnDocs/pbPrefillDatos2024/etc.)
+   para que una edición real del usuario siempre gane sobre un valor de
+   referencia, igual que pfRestaurarEstado(). */
+function abRestaurar(areaKey){
+  const b = abGetBorrador(areaKey);
+  Object.keys(b).forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(el.type==='checkbox'||el.type==='radio') el.checked = !!b[id];
+    else el.value = b[id];
+  });
+}
+function abProgramarAutoguardado(areaKey){
+  if(!empresaBancariaSeleccionada) return;
+  const k = abBorradorKey()+'|'+areaKey;
+  clearTimeout(abAutosaveTimers[k]);
+  abAutosaveTimers[k] = setTimeout(()=>abGuardarBorrador(areaKey), 1500);
+}
+async function abGuardarBorrador(areaKey){
+  const emp = empresaBancariaSeleccionada;
+  if(!emp) return;
+  const b = abGetBorrador(areaKey);
+  try{
+    await db.ref(`banco_borradores_auto/${DATOS_UID}/${emp}/${areaKey}`).set(limpiarUndefined({...b, actualizado: Date.now()}));
+    abMostrarIndicador(areaKey, true);
+  }catch(e){ abMostrarIndicador(areaKey, false); /* autoguardado best-effort: no interrumpir al usuario */ }
+}
+/* Carga el borrador autoguardado de Firebase la PRIMERA vez que se visita
+   esta sección para esta empresa en la sesión actual — si ya hay algo en
+   memoria (el usuario ya tecleó algo en esta sesión, o ya se cargó antes),
+   no lo vuelve a pisar con lo de Firebase (evita perder un tecleo más
+   reciente que el último autoguardado por una carga concurrente). */
+async function abCargarBorradorSiHaceFalta(areaKey){
+  const emp = empresaBancariaSeleccionada;
+  if(!emp) return;
+  const k = emp+'|'+areaKey;
+  if(abBorradorCargado[k]) return;
+  abBorradorCargado[k] = true;
+  const yaHayEnMemoria = Object.keys(abGetBorrador(areaKey)).length>0;
+  if(yaHayEnMemoria) return;
+  try{
+    const snap = await db.ref(`banco_borradores_auto/${DATOS_UID}/${emp}/${areaKey}`).once('value');
+    const val = snap.val()||{};
+    delete val.actualizado;
+    if(Object.keys(val).length) abBorradorCache[emp] = Object.assign(abBorradorCache[emp]||{}, {[areaKey]: val});
+  }catch(e){ /* si falla (p.ej. reglas de Firebase sin esta ruta), seguir sin borrador — no bloquear la sección */ }
+}
+function abMostrarIndicador(areaKey, ok){
+  const el = document.getElementById('abIndicador-'+areaKey);
+  if(!el) return;
+  el.textContent = ok ? ('💾 Autoguardado ✓ '+new Date().toLocaleTimeString('es-EC')) : '⚠️ No se pudo autoguardar (revise conexión)';
+  el.style.color = ok ? 'var(--muted)' : 'var(--danger)';
+}
+/* HTML del indicador discreto de autoguardado, para insertar al tope de
+   cada una de las 3 secciones que usan este mecanismo. */
+function abIndicadorHTML(areaKey){
+  return `<p class="helpNote" id="abIndicador-${areaKey}" style="margin-top:0;font-size:12px;color:var(--muted);">Los cambios en este formulario se autoguardan automáticamente como borrador mientras escribe (además del botón "Terminar y Guardar", que registra una copia final en el historial).</p>`;
+}
+
 async function renderAreaBancaria(){
   const main = document.getElementById("main");
   main.innerHTML = `
@@ -8501,6 +8617,7 @@ async function pintarDocsBancoPacifico(){
   const cont = document.getElementById("vistaBancariaInterna");
   cont.innerHTML = `
     <p class="helpNote">📄 Formatos oficiales del Banco del Pacífico listos para llenar, calcular e imprimir con el mismo diagramado que el banco solicita.</p>
+    ${abIndicadorHTML('pacifico')}
     <div id="bpDocsRoot">
       <div class="doc-tabs" id="bpDocTabsBar"></div>
       ${Object.keys(BANCO_PACIFICO_DOC_TIPOS).map((tipo,idx)=>`
@@ -8521,10 +8638,18 @@ async function pintarDocsBancoPacifico(){
   pintarBPDocTabs();
   pintarBPHistTabs();
   await pintarBPHistLista(bpDocHistTipoActual);
+  // Autoguardado (9na iteración): delegado de captura + restauración del
+  // borrador (memoria de esta sesión, o Firebase si es la primera vez que
+  // se abre esta sección para esta empresa) ANTES de las funciones de
+  // cálculo en vivo, para que totales/porcentajes ya reflejen lo restaurado.
+  const bpRoot = document.getElementById('bpDocsRoot');
+  if(bpRoot) bpRoot.addEventListener('input', abCapturarInput('pacifico'));
+  await abCargarBorradorSiHaceFalta('pacifico');
+  bpPrefillEmpresaEnDocs();
+  abRestaurar('pacifico');
   if(document.getElementById('fc2-resumen-live')) bpFlujoCajaLive();
   if(document.getElementById('anx-cart-total')) bpAnexosLive();
   if(document.getElementById('ib-total-personal')) bpInfoBasicaLive();
-  bpPrefillEmpresaEnDocs();
 }
 
 /* Pre-llena nombre/RUC de la empresa seleccionada en Área Bancaria dentro
@@ -9023,6 +9148,7 @@ async function pintarDocsBancoProdubanco(){
   const cont = document.getElementById("vistaBancariaInterna");
   cont.innerHTML = `
     <p class="helpNote">📋 Informe Básico del Cliente Corporativo/Empresa — formulario oficial de Produbanco para el conocimiento del cliente, con cálculo automático de % de participación y totales.</p>
+    ${abIndicadorHTML('produbanco_informe')}
     ${pbEmpresaCoincideDatos2024() ? '<p class="helpNote" style="background:#fff8e1;border-color:#f0c419;">⚠️ Datos de referencia 2024 precargados para esta empresa (Informe Básico del Cliente real, ejercicio fiscal 2024). Verifique y actualice cada campo, y complete la columna del año en curso (2025) en la sección 4.1 Mix de Ventas, que se dejó en blanco intencionalmente.</p>' : ''}
     <div id="pbDocsRoot">
       <div class="doc-content active" id="pbdoc-informe">
@@ -9038,8 +9164,19 @@ async function pintarDocsBancoProdubanco(){
     </div>
   `;
   await pintarPBHistLista();
+  // Autoguardado (9na iteración): mismo mecanismo genérico que Documentos
+  // Banco Pacífico — ver bloque "BORRADORES AUTOGUARDADOS DE ÁREA
+  // BANCARIA" más arriba. La restauración del borrador va DESPUÉS de los
+  // prellenados (empresa/datos 2024) para que una edición real del
+  // usuario siempre gane sobre un valor de referencia, y las funciones de
+  // % en vivo se vuelven a invocar al final para que reflejen lo restaurado.
+  const pbRoot = document.getElementById('pbDocsRoot');
+  if(pbRoot) pbRoot.addEventListener('input', abCapturarInput('produbanco_informe'));
+  await abCargarBorradorSiHaceFalta('produbanco_informe');
   bpPrefillEmpresaEnDocs();
   pbPrefillDatos2024();
+  abRestaurar('produbanco_informe');
+  pbAccionistasLive(); pbRRHHLive(); pbVentasLive();
 }
 
 /* =========================================================================
@@ -9790,7 +9927,74 @@ function pfEstadoActualRef(){
    no solo al guardar. */
 function pfCapturarEstadoInput(ev){
   const t = ev.target;
-  if(t && t.tagName==='INPUT' && t.id && (/^pf-(in|pct)-/.test(t.id) || t.id==='pf-anio-base')) pfEstadoActualRef()[t.id] = t.value;
+  // NOTA (bugfix "año base muestra el valor viejo"): "pf-anio-base" se
+  // EXCLUYE a propósito de esta captura genérica por tecleo. Si se incluyera
+  // aquí (como antes), cada tecla que el usuario presiona en el campo de año
+  // base ya escribiría el valor NUEVO en pfEstadoActualRef()['pf-anio-base']
+  // ANTES de que se dispare el evento 'change' que invoca pfCambiarAnioBase()
+  // — y esa función lee "anterior = pfGetAnioBase()" del MISMO estado, por lo
+  // que "anterior" terminaba leyendo el valor que el usuario ACABA de escribir
+  // (no el valor previo real). Entonces "if(nuevo===anterior) return;" se
+  // cumplía casi siempre y la función salía SIN repintar — pero el <input>
+  // ya mostraba en pantalla lo que el usuario tecleó (p.ej. 2026) mientras el
+  // resto de la herramienta (títulos, Supuestos, años proyectados) seguía
+  // reflejando el último año base realmente repintado — de ahí el reporte de
+  // "el recuadro muestra un año viejo/inconsistente con el resto de la
+  // pantalla". pfCambiarAnioBase() ya escribe explícitamente esta clave en el
+  // estado (ver más abajo) en el momento correcto (dentro de 'onchange', tras
+  // comparar con el valor anterior real) — no hace falta ni conviene que la
+  // captura genérica de 'input' también la toque.
+  if(t && t.tagName==='INPUT' && t.id && /^pf-(in|pct)-/.test(t.id)){ pfEstadoActualRef()[t.id] = t.value; pfProgramarAutoguardado(); }
+}
+/* =========================================================================
+   AUTOGUARDADO A FIREBASE DEL BORRADOR EN VIVO (9na iteración)
+   Reporte: "también los otros campos del área bancaria se borran y no se
+   guardan". Para esta herramienta en particular, el estado en memoria
+   (pfEstadoPorEmpresa, fix de la 6ta iteración) YA sobrevivía a un cambio
+   de pestaña/empresa DENTRO de la misma sesión — pero nunca se escribía a
+   Firebase salvo al presionar "✅ Terminar y Guardar" (que además guarda un
+   snapshot de HISTORIAL, no un borrador recuperable), y no existía ningún
+   código que leyera de vuelta ese estado al reabrir la pestaña/la app — por
+   lo que recargar la página, cerrar sesión, o simplemente nunca haber
+   presionado ese botón, perdía TODO lo tecleado. Se agrega: (a) autoguardado
+   con debounce (~1.5s tras la última tecla) hacia
+   `banco_produbanco_flujo_borrador/${DATOS_UID}/${empresaId}` con el mismo
+   mapa de pfEstadoPorEmpresa[empresa] que ya se usa para restaurar en
+   memoria, y (b) una carga de ese borrador la PRIMERA vez que se entra a
+   esta pestaña para esta empresa en la sesión (pfCargarBorradorSiHaceFalta,
+   invocada al inicio de pintarPFFlujoProdubanco), que solo rellena si no hay
+   ya algo en memoria de esta sesión (para no pisar un tecleo más reciente
+   con una carga de red más lenta). */
+let pfAutosaveTimer = null;
+let pfBorradorCargado = {}; // { empresaId: true } — ya se intentó cargar el borrador en esta sesión
+function pfProgramarAutoguardado(){
+  if(!empresaBancariaSeleccionada) return;
+  clearTimeout(pfAutosaveTimer);
+  pfAutosaveTimer = setTimeout(()=>pfGuardarBorrador(), 1500);
+}
+async function pfGuardarBorrador(){
+  const emp = empresaBancariaSeleccionada;
+  if(!emp) return;
+  try{
+    await db.ref(`banco_produbanco_flujo_borrador/${DATOS_UID}/${emp}`).set(limpiarUndefined({...pfEstadoActualRef(), actualizado: Date.now()}));
+    const ind = document.getElementById('pfAutosaveIndicador');
+    if(ind){ ind.textContent = '💾 Autoguardado ✓ '+new Date().toLocaleTimeString('es-EC'); ind.style.color = 'var(--muted)'; }
+  }catch(e){
+    const ind = document.getElementById('pfAutosaveIndicador');
+    if(ind){ ind.textContent = '⚠️ No se pudo autoguardar (revise conexión)'; ind.style.color = 'var(--danger)'; }
+  }
+}
+async function pfCargarBorradorSiHaceFalta(){
+  const emp = empresaBancariaSeleccionada;
+  if(!emp || pfBorradorCargado[emp]) return;
+  pfBorradorCargado[emp] = true;
+  if(Object.keys(pfEstadoActualRef()).length) return; // ya hay algo en memoria de esta sesión: eso gana
+  try{
+    const snap = await db.ref(`banco_produbanco_flujo_borrador/${DATOS_UID}/${emp}`).once('value');
+    const val = snap.val()||{};
+    delete val.actualizado;
+    if(Object.keys(val).length) pfEstadoPorEmpresa[emp] = val;
+  }catch(e){ /* best-effort: si falla (reglas de Firebase sin esta ruta), seguir sin borrador */ }
 }
 /* Aplica, sobre el HTML recién reconstruido, las ediciones en vivo ya
    capturadas de la empresa actual — se llama DESPUÉS de
@@ -9852,6 +10056,7 @@ async function pfCambiarAnioBase(inputEl){
     return;
   }
   pfEstadoActualRef()['pf-anio-base'] = String(nuevo);
+  pfProgramarAutoguardado();
   toast(`Año base cambiado a ${nuevo}`, 'success');
   await pintarPFFlujoProdubanco();
 }
@@ -10387,9 +10592,21 @@ async function terminarYGuardarPF(){
 
 async function pintarPFFlujoProdubanco(){
   const cont = document.getElementById("vistaBancariaInterna");
+  // IMPORTANTE (9na iteración): el borrador autoguardado (si existe en
+  // Firebase y aún no se cargó en esta sesión) se carga ANTES de construir
+  // la plantilla, no después — pfGetAnioBase()/pfAnioReal() se leen varias
+  // veces DENTRO del innerHTML de abajo (título, aviso, encabezado del año
+  // base, etc.), así que si se cargara después del pintado (como el resto
+  // de valores, vía pfRestaurarEstado) se reproduciría exactamente el mismo
+  // bug ya corregido en la 8va iteración: el <input> del año base quedaría
+  // con el valor restaurado pero el resto de etiquetas de esta misma
+  // plantilla seguirían mostrando el año base por defecto con el que se
+  // armó el innerHTML.
+  await pfCargarBorradorSiHaceFalta();
   pfColapsado = { 2026:false, 2027:true, 2028:true, 2029:true, 2030:true };
   cont.innerHTML = `
     <p class="helpNote">📈 Flujo de Caja Proyectado ${pfAnioReal(2025)}-${pfAnioReal(2030)} (Produbanco) — replica la hoja de trabajo real y proyecta automáticamente 5 años (${pfAnioReal(2026)}-${pfAnioReal(2030)}), con todos los porcentajes de crecimiento/composición 100% editables y el Estado de Resultados Proyectado enlazado automáticamente.</p>
+    <p class="helpNote" id="pfAutosaveIndicador" style="margin-top:0;font-size:12px;color:var(--muted);">Los cambios en este flujo de caja se autoguardan automáticamente como borrador mientras escribe (además del botón "Terminar y Guardar", que registra una copia final en el historial).</p>
     ${(pbEmpresaCoincideDatos2024() && pfGetAnioBase()===2025) ? '<p class="helpNote" style="background:#fff8e1;border-color:#f0c419;">⚠️ Datos reales 2025/2026 precargados para esta empresa (hoja de trabajo real de Flujo de Caja Proyectado Produbanco). Verifique y ajuste los supuestos según corresponda.</p>' : ''}
     <div id="pfDocsRoot">
       <div class="card" style="border:2px solid #0057A3;background:#eef5fb;">
@@ -10842,6 +11059,33 @@ let efEstados = [];
 let efEstadoActivo = 0;
 const EF_TIPOS = ["Activo","Pasivo","Patrimonio","Ingreso","Costo","Gasto"];
 
+/* --- Autoguardado / caché en memoria por empresa (9na iteración) ---
+   Mismo bug de fondo que el resto de Área Bancaria: pintarEstadosFinancieros()
+   reasignaba efPlanCuentas/efEstados con el último valor GUARDADO en Firebase
+   en CADA entrada a esta pestaña — incluso si el usuario tenía ediciones sin
+   guardar y solo había cambiado de pestaña dentro de Área Bancaria (o de
+   empresa y vuelta). Arreglo: una caché en memoria por empresa
+   (efCachePorEmpresa) que, si ya existe, se usa en vez de volver a leer de
+   Firebase (igual criterio que pfEstadoPorEmpresa); y un autoguardado real a
+   Firebase con debounce (~1.5s) en cada tecleo de plan de cuentas o valores,
+   para que tampoco se pierda nada al recargar la página o reabrir sesión sin
+   haber presionado "Guardar" a propósito. */
+let efCachePorEmpresa = {}; // { empresaId: {planCuentas, estados} } — misma referencia que efPlanCuentas/efEstados activos
+function efSyncCache(){
+  if(!empresaBancariaSeleccionada) return;
+  efCachePorEmpresa[empresaBancariaSeleccionada] = { planCuentas: efPlanCuentas, estados: efEstados };
+}
+let efAutosaveTimer = null;
+function efProgramarAutoguardado(){
+  efSyncCache();
+  if(!empresaBancariaSeleccionada) return;
+  clearTimeout(efAutosaveTimer);
+  efAutosaveTimer = setTimeout(async ()=>{
+    try{ await guardarEstadosFinancieros(); const ind=document.getElementById('efAutosaveIndicador'); if(ind){ ind.textContent='💾 Autoguardado ✓ '+new Date().toLocaleTimeString('es-EC'); ind.style.color='var(--muted)'; } }
+    catch(e){ const ind=document.getElementById('efAutosaveIndicador'); if(ind){ ind.textContent='⚠️ No se pudo autoguardar (revise conexión)'; ind.style.color='var(--danger)'; } }
+  }, 1500);
+}
+
 async function cargarEstadosFinancieros(empresaId){
   if(!empresaId) return { planCuentas: [], estados: [] };
   const snap = await db.ref(`estados_financieros/${DATOS_UID}/${empresaId}`).once("value");
@@ -10851,19 +11095,30 @@ async function cargarEstadosFinancieros(empresaId){
 async function guardarEstadosFinancieros(){
   if(!empresaBancariaSeleccionada) return;
   await db.ref(`estados_financieros/${DATOS_UID}/${empresaBancariaSeleccionada}`).set(limpiarUndefined({ planCuentas: efPlanCuentas, estados: efEstados, actualizado: Date.now() }));
+  efSyncCache();
 }
 
 async function pintarEstadosFinancieros(){
   const cont = document.getElementById("vistaBancariaInterna");
   cont.innerHTML = `<div class="emptyState">Cargando...</div>`;
-  let datos;
-  try{ datos = await cargarEstadosFinancieros(empresaBancariaSeleccionada); }
-  catch(e){
-    cont.innerHTML = `<div class="card emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "estados_financieros" a las reglas de Realtime Database.</span></div>`;
-    return;
+  const cacheExistente = empresaBancariaSeleccionada ? efCachePorEmpresa[empresaBancariaSeleccionada] : null;
+  if(cacheExistente){
+    // Ya hay estado en memoria de esta empresa en la sesión actual (con o
+    // sin ediciones sin guardar) — usarlo en vez de pisarlo con lo último
+    // guardado en Firebase, que puede estar desactualizado.
+    efPlanCuentas = cacheExistente.planCuentas;
+    efEstados = cacheExistente.estados;
+  } else {
+    let datos;
+    try{ datos = await cargarEstadosFinancieros(empresaBancariaSeleccionada); }
+    catch(e){
+      cont.innerHTML = `<div class="card emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "estados_financieros" a las reglas de Realtime Database.</span></div>`;
+      return;
+    }
+    efPlanCuentas = datos.planCuentas;
+    efEstados = datos.estados.length ? datos.estados : [{ label: String(new Date().getFullYear()), valores:{} }];
+    efSyncCache();
   }
-  efPlanCuentas = datos.planCuentas;
-  efEstados = datos.estados.length ? datos.estados : [{ label: String(new Date().getFullYear()), valores:{} }];
   if(efEstadoActivo >= efEstados.length) efEstadoActivo = 0;
   if(!empresaBancariaSeleccionada){
     cont.innerHTML = `<div class="card emptyState">Selecciona una empresa.</div>`;
@@ -10871,6 +11126,7 @@ async function pintarEstadosFinancieros(){
   }
   cont.innerHTML = `
     <p class="helpNote">📊 Define tu plan de cuentas y captura hasta 5 estados (periodos/años/escenarios) para generar el Estado de Situación Financiera y el Estado de Resultados automáticamente, con presentación ejecutiva lista para imprimir o exportar a Excel.</p>
+    <p class="helpNote" id="efAutosaveIndicador" style="margin-top:0;font-size:12px;color:var(--muted);">Los cambios en el plan de cuentas y en los valores de cada estado se autoguardan automáticamente mientras escribe (además de los botones "Guardar" de cada sección).</p>
     <div class="card">
       <h3 style="margin-top:0;">Plan de Cuentas</h3>
       <p class="helpNote" style="margin-top:0;">Elige cómo quieres armar tu plan de cuentas: usa uno de los catálogos predefinidos (listos para usar), importa el tuyo propio, o créalo manualmente cuenta por cuenta.</p>
@@ -10903,17 +11159,17 @@ function efPintarTablaPlan(){
   if(!efPlanCuentas.length){ cont.innerHTML = `<div class="emptyState">Sin cuentas. Agrega manualmente o importa un CSV/Excel con columnas: código, nombre, tipo (Activo/Pasivo/Patrimonio/Ingreso/Costo/Gasto).</div>`; return; }
   cont.innerHTML = `<table><thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Corriente</th><th>Nivel</th><th></th></tr></thead><tbody>
     ${efPlanCuentas.map((c,i)=>`<tr>
-      <td><input value="${escapeHtml(c.codigo||'')}" oninput="efPlanCuentas[${i}].codigo=this.value" style="width:100px"></td>
-      <td><input value="${escapeHtml(c.nombre||'')}" oninput="efPlanCuentas[${i}].nombre=this.value" style="width:220px"></td>
-      <td><select onchange="efPlanCuentas[${i}].tipo=this.value">${EF_TIPOS.map(t=>`<option ${c.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
-      <td><select onchange="efPlanCuentas[${i}].corriente=this.value"><option value="" ${!c.corriente?'selected':''}>N/A</option><option ${c.corriente==='Sí'?'selected':''}>Sí</option><option ${c.corriente==='No'?'selected':''}>No</option></select></td>
-      <td><input type="number" min="1" value="${c.nivel||1}" style="width:55px" oninput="efPlanCuentas[${i}].nivel=parseInt(this.value)||1"></td>
+      <td><input value="${escapeHtml(c.codigo||'')}" oninput="efPlanCuentas[${i}].codigo=this.value; efProgramarAutoguardado()" style="width:100px"></td>
+      <td><input value="${escapeHtml(c.nombre||'')}" oninput="efPlanCuentas[${i}].nombre=this.value; efProgramarAutoguardado()" style="width:220px"></td>
+      <td><select onchange="efPlanCuentas[${i}].tipo=this.value; efProgramarAutoguardado()">${EF_TIPOS.map(t=>`<option ${c.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
+      <td><select onchange="efPlanCuentas[${i}].corriente=this.value; efProgramarAutoguardado()"><option value="" ${!c.corriente?'selected':''}>N/A</option><option ${c.corriente==='Sí'?'selected':''}>Sí</option><option ${c.corriente==='No'?'selected':''}>No</option></select></td>
+      <td><input type="number" min="1" value="${c.nivel||1}" style="width:55px" oninput="efPlanCuentas[${i}].nivel=parseInt(this.value)||1; efProgramarAutoguardado()"></td>
       <td><button class="btn small danger" onclick="efEliminarCuenta(${i})">✕</button></td>
     </tr>`).join('')}
   </tbody></table>`;
 }
-function efAgregarCuenta(){ efPlanCuentas.push({codigo:'',nombre:'',tipo:'Activo',corriente:'',nivel:1}); efPintarTablaPlan(); }
-function efEliminarCuenta(i){ efPlanCuentas.splice(i,1); efPintarTablaPlan(); efPintarValoresEstado(); }
+function efAgregarCuenta(){ efPlanCuentas.push({codigo:'',nombre:'',tipo:'Activo',corriente:'',nivel:1}); efPintarTablaPlan(); efProgramarAutoguardado(); }
+function efEliminarCuenta(i){ efPlanCuentas.splice(i,1); efPintarTablaPlan(); efPintarValoresEstado(); efProgramarAutoguardado(); }
 /* catalogo: 'niif' (NIIF PYMES genérico) o 'supercias' (Superintendencia de
    Compañías). Comparten la misma lógica de confirmación antes de sobrescribir
    un plan de cuentas ya existente. */
@@ -10925,6 +11181,7 @@ function efUsarPlanPredefinido(catalogo){
     efPlanCuentas = fuente.map(c=>({...c}));
     efPintarTablaPlan();
     efPintarValoresEstado();
+    efProgramarAutoguardado();
     const avisoSupercias = esSupercias ? ' — recuerda verificar los códigos contra el plan de cuentas oficial vigente antes de una presentación regulatoria' : '';
     toast(`Plan de cuentas ${nombreCatalogo} cargado (${efPlanCuentas.length} cuentas) ✓ — recuerda guardar${avisoSupercias}`, 'success');
   };
@@ -10992,6 +11249,7 @@ function efImportarPlanCuentas(ev){
       efPlanCuentas = efPlanCuentas.concat(nuevas);
       efPintarTablaPlan();
       efPintarValoresEstado();
+      efProgramarAutoguardado();
       toast(`${nuevas.length} cuentas importadas ✓`, 'success');
     }catch(err){ toast('Error al leer el archivo: '+(err.message||err), 'error'); }
   };
@@ -11014,6 +11272,7 @@ function efAgregarEstado(){
   efEstados.push({ label:'Periodo '+(efEstados.length+1), valores:{} });
   efEstadoActivo = efEstados.length-1;
   efPintarEstadoTabs(); efPintarValoresEstado();
+  efProgramarAutoguardado();
 }
 function efEliminarEstado(i){
   if(efEstados.length<=1) return;
@@ -11021,6 +11280,7 @@ function efEliminarEstado(i){
   efEstados.splice(i,1);
   efEstadoActivo = 0;
   efPintarEstadoTabs(); efPintarValoresEstado();
+  efProgramarAutoguardado();
 }
 function efPintarValoresEstado(){
   const cont = document.getElementById("efEstadoValores");
@@ -11029,11 +11289,11 @@ function efPintarValoresEstado(){
   const est = efEstados[efEstadoActivo];
   if(!est.valores) est.valores = {};
   cont.innerHTML = `
-    <div class="field"><label>Etiqueta del periodo</label><input value="${escapeHtml(est.label||'')}" oninput="efEstados[${efEstadoActivo}].label=this.value; efPintarEstadoTabs()"></div>
+    <div class="field"><label>Etiqueta del periodo</label><input value="${escapeHtml(est.label||'')}" oninput="efEstados[${efEstadoActivo}].label=this.value; efPintarEstadoTabs(); efProgramarAutoguardado()"></div>
     <table><thead><tr><th>Código</th><th>Cuenta</th><th>Tipo</th><th>Valor (USD)</th></tr></thead><tbody>
       ${efPlanCuentas.map(c=>`<tr>
         <td>${escapeHtml(c.codigo||'-')}</td><td>${'&nbsp;'.repeat(Math.max(0,((c.nivel||1)-1))*2)}${escapeHtml(c.nombre||'-')}</td><td>${escapeHtml(c.tipo||'-')}</td>
-        <td><input type="number" step="0.01" value="${est.valores[c.codigo]!=null?est.valores[c.codigo]:''}" oninput="efEstados[${efEstadoActivo}].valores['${c.codigo}']=parseFloat(this.value)||0" style="width:130px;text-align:right"></td>
+        <td><input type="number" step="0.01" value="${est.valores[c.codigo]!=null?est.valores[c.codigo]:''}" oninput="efEstados[${efEstadoActivo}].valores['${c.codigo}']=parseFloat(this.value)||0; efProgramarAutoguardado()" style="width:130px;text-align:right"></td>
       </tr>`).join('')}
     </tbody></table>
     <div class="doc-btn-row" style="margin-top:10px;">

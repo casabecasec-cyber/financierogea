@@ -190,6 +190,18 @@ que exige inicio de sesión y limita a cada usuario a su propia rama de datos:
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
       }
+    },
+    "banco_borradores_auto": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "banco_produbanco_flujo_borrador": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }
@@ -231,6 +243,160 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
    y la revisión de soportes.
 
 ## Notas importantes
+
+- **Corregido: Área Bancaria — "también los otros campos del área bancaria se borran y no se
+  guardan" (9na iteración).** Reporte en español del usuario (literal): "tambien los otros
+  campos del area bancaria se borran y no se guardan". Se auditó, sub-sección por sub-sección,
+  el flujo guardar/cargar de las 5 partes de Área Bancaria (Bancos, Flujo de Caja simple,
+  Documentos Banco Pacífico, Informe Básico Produbanco, Flujo de Caja Proyectado Produbanco,
+  Estados Financieros) trazando el código real (no por suposición), con el siguiente resultado:
+  - **Bancos** y **Flujo de Caja simple** (pestañas "Bancos"/"Flujo de Caja"): YA guardaban y
+    cargaban correctamente — cada acción (agregar banco/línea/hipoteca, "Calcular y guardar
+    proyección") escribe de inmediato a Firebase, y la pestaña recarga desde Firebase
+    (`cargarBancos`/`cargarFlujoCaja`) cada vez que se abre. El reporte del usuario no aplica a
+    estas 2 sub-secciones.
+  - **📄 Documentos Banco Pacífico** (5 formatos) y **📋 Informe Básico Produbanco**: **bug real
+    confirmado** — `pintarDocsBancoPacifico()`/`pintarDocsBancoProdubanco()` reconstruían el
+    formulario completo (`cont.innerHTML = ...`) **cada vez que se volvía a entrar a esa pestaña**
+    (cambiar a otra pestaña de Área Bancaria y volver, cambiar de empresa y volver, o recargar la
+    página/reabrir sesión) — y, a diferencia de "Flujo de Caja Proyectado Produbanco" (que ya
+    tenía desde la 6ta iteración un mecanismo de estado en memoria, `pfEstadoPorEmpresa`), estas 2
+    secciones no tenían NINGÚN mecanismo que capturara lo tecleado antes de llegar a presionar su
+    botón "✅ Terminar y Guardar" — cualquier dato a medio llenar se perdía apenas ocurría ese
+    repintado. Causa raíz exacta: ninguna de las dos funciones leía nada de Firebase al abrirse
+    (solo cargaban el HISTORIAL de documentos ya finalizados, vía `cargarDocsBancoPacifico`/
+    `cargarDocsBancoProdubanco`, que es un registro aparte) ni conservaban nada en memoria entre
+    repintados.
+  - **📊 Estados Financieros**: **bug real confirmado**, de una naturaleza distinta y más sutil —
+    SÍ existía estado en memoria (`efPlanCuentas`/`efEstados`, mutado directamente por los
+    `oninput`/`onchange` de cada celda), por lo que cambiar entre los 5 "estados" (periodos) o
+    editar el plan de cuentas no se perdía DENTRO de esa misma pestaña. Pero
+    `pintarEstadosFinancieros()` volvía a ejecutar incondicionalmente
+    `efPlanCuentas = datos.planCuentas; efEstados = ...` (el resultado de `cargarEstadosFinancieros()`,
+    una lectura fresca de Firebase) **cada vez que se entraba a esta pestaña**, incluso si ya
+    había ediciones sin guardar en memoria de una visita anterior en la misma sesión — es decir,
+    cambiar a otra pestaña de Área Bancaria (p.ej. a "Bancos") y volver a "Estados Financieros"
+    pisaba cualquier cambio no guardado explícitamente con "💾 Guardar plan de cuentas"/"💾
+    Guardar valores" con la última versión ya guardada en Firebase (o con nada, si nunca se había
+    guardado).
+  - **📈 Flujo de Caja Proyectado Produbanco**: se confirmó el diagnóstico ya adelantado por la
+    investigación previa (ver 6ta/7ma/8va iteración abajo): `pfEstadoPorEmpresa` sobrevivía a un
+    cambio de pestaña/empresa DENTRO de la sesión, pero nunca se escribía a Firebase salvo al
+    presionar "✅ Terminar y Guardar" (que además guarda un snapshot de HISTORIAL para
+    ver/imprimir, no un borrador recuperable) — y no existía ningún código que leyera ese estado
+    de vuelta al reabrir la pestaña. Recargar la página, cerrar sesión, o simplemente no haber
+    presionado ese botón todavía, perdía absolutamente todo lo tecleado (año base incluido).
+  - **Selector de empresa de Área Bancaria** (`empresaBancariaSeleccionada`/
+    `cambiarEmpresaBancaria`): no tiene bug propio — ya estaba diseñado para aislar datos por
+    empresa (cada `cargarXXX(empresaId)` ya filtra por empresa). El riesgo real estaba en que las
+    4 sub-secciones de arriba, al no tener su propio estado por empresa, podían (en el caso de
+    Documentos Banco Pacífico/Informe Básico Produbanco) mezclar visualmente el prellenado de
+    nombre/RUC de una empresa con el formulario de otra si se cambiaba de empresa sin guardar
+    — igual se corrige con el mismo arreglo de abajo, que aísla todo por empresa.
+  - **Arreglo aplicado — autoguardado real, no solo "pedir que no se olvide guardar"**: se eligió
+    la opción (a) pedida por el reporte (autoguardado con debounce) en vez de solo mejorar la UI
+    del botón explícito, porque esta app no tenía ningún patrón de autoguardado ya establecido
+    que replicar (se buscó expresamente antes de decidir: no hay ningún `debounce`/`autosave`
+    previo en el resto de la app, fuera de Área Bancaria) — así que se diseñó uno nuevo, genérico,
+    reutilizando SIEMPRE los mismos ids de campo que ya usa cada botón "Terminar y Guardar"/
+    "Guardar" existente (no se tocó ningún id ni la lógica de cálculo de ninguna sección):
+    - **Documentos Banco Pacífico** e **Informe Básico Produbanco**: nuevo módulo genérico
+      (`abGetBorrador`/`abCapturarInput`/`abRestaurar`/`abProgramarAutoguardado`/
+      `abGuardarBorrador`/`abCargarBorradorSiHaceFalta`), con el mismo patrón ya probado de
+      `pfEstadoPorEmpresa` (un solo listener delegado de `'input'` sobre el contenedor raíz de
+      cada sección, captura por empresa+sección), pero además persistido con debounce (~1.5s tras
+      la última tecla) a la ruta nueva `banco_borradores_auto/${DATOS_UID}/${empresaId}/${areaKey}`
+      y recuperado la PRIMERA vez que se abre esa sección para esa empresa en la sesión (si ya
+      hay algo en memoria de esta sesión, eso gana — nunca se pisa un tecleo más reciente con una
+      carga de red más lenta). La restauración ocurre DESPUÉS de los prellenados de referencia
+      (`bpPrefillEmpresaEnDocs`/`pbPrefillDatos2024`), para que una edición real del usuario
+      siempre gane sobre un valor de referencia — mismo criterio que `pfRestaurarEstado()`. Se
+      agregó además un texto discreto ("Los cambios... se autoguardan automáticamente...") al
+      tope de cada sección para que quede claro que ya no depende solo de recordar presionar el
+      botón final.
+    - **Estados Financieros**: se agregó una caché en memoria por empresa (`efCachePorEmpresa`)
+      que `pintarEstadosFinancieros()` consulta PRIMERO — si ya hay algo en memoria de esta
+      sesión para la empresa actual, se usa esa referencia (viva, se sigue mutando igual que
+      antes) en vez de volver a leer de Firebase y pisarlo; además se agregó autoguardado real
+      con debounce (`efProgramarAutoguardado()`, que llama a la MISMA `guardarEstadosFinancieros()`
+      que ya usaban los botones "Guardar") enganchado a los mismos `oninput`/`onchange` que ya
+      mutan `efPlanCuentas`/`efEstados` (plan de cuentas, etiqueta de periodo, valor de cada
+      cuenta) y a las funciones que reemplazan el arreglo completo (plan predefinido NIIF/
+      Supercías, importar CSV/Excel, agregar/eliminar cuenta o periodo).
+    - **Flujo de Caja Proyectado Produbanco**: se extendió el mecanismo YA existente
+      (`pfEstadoPorEmpresa`/`pfCapturarEstadoInput`/`pfCambiarAnioBase`) con autoguardado real a
+      Firebase (`pfProgramarAutoguardado`/`pfGuardarBorrador`, debounce ~1.5s) hacia la ruta nueva
+      `banco_produbanco_flujo_borrador/${DATOS_UID}/${empresaId}`, y una carga
+      (`pfCargarBorradorSiHaceFalta`) que se ejecuta al inicio de `pintarPFFlujoProdubanco()`,
+      **ANTES** de construir el `innerHTML` de la pantalla (no después, como el resto de valores)
+      — esto es crítico: `pfGetAnioBase()`/`pfAnioReal()` se leen varias veces DENTRO de esa misma
+      plantilla (título, aviso, encabezado del año base), así que cargar el año base restaurado
+      DESPUÉS de pintar hubiera reproducido exactamente el mismo bug de desincronización ya
+      corregido en la 8va iteración. No se tocó `pfCapturarEstadoInput` en lo que respecta a la
+      exclusión de `"pf-anio-base"` de la captura genérica (sigue solo escribiéndose desde
+      `pfCambiarAnioBase`, que ahora también dispara el autoguardado).
+  - **Verificado con 5 simulaciones Node/jsdom del motor completo de la app** (cargando el
+    `<script>` real de `index.html` dentro de un `vm` con un Firebase simulado en memoria, sin
+    copiar/reescribir ninguna función): (1) el módulo genérico `ab*` — tecleo → autoguardado real
+    a Firebase tras el debounce → sobrevive un cambio de pestaña dentro de la sesión → sobrevive
+    una recarga completa simulada (estado en memoria vaciado a propósito, luego restaurado
+    exclusivamente desde el Firebase simulado); (2) el borrador de Flujo de Caja Produbanco
+    (año base + celdas mensuales) sobrevive una recarga completa simulada; (3) el render completo
+    de `pintarPFFlujoProdubanco()` tras una recarga simulada confirma que el `<input>` del año
+    base Y las etiquetas derivadas ("años proyectados...") quedan sincronizados en el mismo año
+    restaurado (2028 en la prueba, con "proyectados 2029-2033" correctamente derivado) — sin
+    reproducir el bug de la 8va iteración; (4) Estados Financieros: una cuenta agregada sin
+    presionar "Guardar" sobrevive tanto un cambio de pestaña dentro de la sesión como una recarga
+    completa simulada (tras esperar el debounce); (5) aislamiento por empresa: escribir en el
+    mismo campo para la empresa A y luego para la empresa B, cambiando de una a otra, nunca
+    mezcla ni pisa los datos de la otra (ni en memoria ni en los 2 nodos separados de Firebase).
+  **Ruta nueva en Realtime Database**: `banco_borradores_auto` (borradores de Documentos Banco
+  Pacífico e Informe Básico Produbanco) y `banco_produbanco_flujo_borrador` (borrador de Flujo de
+  Caja Proyectado Produbanco) — mismo patrón `$uid` que las demás; si tu proyecto no usa la regla
+  comodín `$other` de administrador, agrega estas 2 rutas a las reglas de Realtime Database.
+
+- **Corregido: Flujo de Caja Proyectado Produbanco — el recuadro "📅 Año Base de esta
+  proyección" quedaba desincronizado del resto de la pantalla tras cambiarlo (8va iteración).**
+  Reporte (con captura de pantalla): tras cambiar el año base, el `<input id="pf-anio-base">`
+  mostraba un año distinto al que mostraban, en la MISMA pantalla, el texto de ayuda justo debajo
+  ("...años proyectados automáticamente: **AAAA-AAAA**") y el encabezado del panel "⚙️ Supuestos /
+  Porcentajes — Año Base AAAA" — es decir, dos lecturas del mismo valor (`pfGetAnioBase()`)
+  divergiendo dentro de un mismo repintado, algo que en teoría no debería poder pasar porque TODAS
+  esas etiquetas (incluido el atributo `value` del propio input) se generan dentro de la MISMA
+  plantilla de `cont.innerHTML` en `pintarPFFlujoProdubanco()`, en una sola pasada síncrona. Se
+  reprodujo la causa exacta con una simulación Node/jsdom del motor completo de esta herramienta
+  (ver detalle abajo) ANTES de tocar nada, siguiendo el protocolo de este archivo: cambiar el año
+  base tecleando dígito por dígito (como realmente teclea un usuario) reproducía, de forma 100%
+  determinística, una desincronización real entre el input y las etiquetas derivadas — la causa
+  raíz: `pfCapturarEstadoInput()` (el listener delegado de `'input'` que guarda en vivo, tecla por
+  tecla, cada celda `pf-in-.../pf-pct-...` en el estado en memoria por empresa — ver 6ta iteración
+  abajo) incluía también, a propósito, el id `"pf-anio-base"` en esa captura genérica. Como el
+  navegador dispara el evento `'input'` en CADA tecla ANTES del evento `'change'` que finalmente
+  invoca `pfCambiarAnioBase()`, para el momento en que esa función corría, el valor NUEVO que el
+  usuario acababa de teclear ya estaba escrito en `pfEstadoActualRef()['pf-anio-base']` — el MISMO
+  lugar del que `pfCambiarAnioBase()` lee `anterior = pfGetAnioBase()` para decidir si de verdad
+  hubo un cambio. Es decir, `anterior` ya no reflejaba el año base previo realmente vigente, sino
+  el año que el usuario acababa de escribir — por lo que `if(nuevo === anterior) return;` se
+  cumplía y la función salía **sin repintar nada**, dejando en pantalla el último repintado
+  realmente exitoso (con las etiquetas del año base ANTERIOR), mientras que el propio `<input>` —
+  que nadie volvió a tocar porque el repintado nunca ocurrió — seguía mostrando en el DOM lo que el
+  usuario tecleó. Fix: `pfCapturarEstadoInput()` ya NO incluye `"pf-anio-base"` en su captura
+  genérica por tecleo (solo sigue capturando `pf-in-*`/`pf-pct-*`, las ~330 celdas de datos, igual
+  que antes); el año base sigue guardándose en el mismo estado en memoria por empresa, pero
+  EXCLUSIVAMENTE dentro de `pfCambiarAnioBase()`, en el momento correcto (ya comparado contra el
+  valor anterior real). Con eso, `anterior` vuelve a reflejar fielmente el último año base
+  repintado, la función repinta cuando corresponde, y el `<input>` y todas las etiquetas derivadas
+  (texto de años proyectados, encabezado de Supuestos, etc.) quedan siempre leyendo la misma
+  fuente de verdad. Verificado con una simulación Node/jsdom del motor completo de esta
+  herramienta: cambio de año base tecleando dígito por dígito (el escenario que de verdad
+  reproduce el bug — asignar el valor final de un solo golpe, sin disparar los eventos `'input'`
+  intermedios, NO lo reproducía), recarga completa de página simulada (reiniciando el script desde
+  cero, dado que el estado en memoria de esta herramienta nunca se persiste a Firebase — solo el
+  historial de flujos guardados vía "Terminar y Guardar" se persiste), cambio de pestaña dentro de
+  Área Bancaria y vuelta, y cambio de empresa y vuelta (cada empresa conserva su propio año base,
+  sin mezclarse con el de otra) — en todos los casos el `<input>` y las etiquetas derivadas
+  quedaron sincronizados antes y después del fix (antes del fix, solo el primer escenario —
+  cambiar el año base tecleando — fallaba, exactamente como en el reporte).
 
 - **Nuevo: Flujo de Caja Proyectado Produbanco — Año Base editable (7ma iteración).** El reporte
   anterior ("no puedo cambiar el año base") se había diagnosticado — correctamente, ver el bullet
