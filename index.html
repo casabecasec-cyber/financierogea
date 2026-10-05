@@ -9481,11 +9481,27 @@ function pfPintarAnio(year, y){
   pfUpdateMonthly(year,'flujoAcumulado',y.flujoAcumulado);
   pfSetTxt(`pf-out-${year}-flujoAcumulado-tot`, y.flujoAcumulado[11]);
 }
-function pfPintarEstadoResultados(y2025, y2026){
-  const er = pfCalcularEstadoResultados(y2025, y2026);
-  Object.keys(er.e2025).forEach(k=>pfSetTxt(`pf-er-2025-${k}`, er.e2025[k]));
-  Object.keys(er.e2026).forEach(k=>pfSetTxt(`pf-er-2026-${k}`, er.e2026[k]));
-  return er;
+/* BUGFIX (reporte de usuario: "el estado de resultados solo me sale
+   del 2027, me debe salir de todos los años"): esta función pintaba
+   el Estado de Resultados de la pestaña "Años Individuales" con SOLO
+   2 columnas fijas (ids pf-er-2025-x / pf-er-2026-x = año base + PRIMER
+   año proyectado), vía pfCalcularEstadoResultados(y2025,y2026) — nunca
+   iteraba los 5 años proyectados completos. Con el año base en su
+   valor original (2025) esto ya mostraba solo 2 de 6 años; al mover
+   el año base a 2026 (pfAnioReal), la 2ª columna pasó a mostrarse
+   como "2027", dando la falsa impresión de que el Estado de
+   Resultados "solo sale del 2027". El card-comparativo de 6 años
+   (pfEstadoResultadosTodosHTML/#pfEstadoResultadosTodosCont, pestaña
+   "Resumen Comparativo") SÍ iteraba PF_TODOS_ANIOS correctamente — ya
+   existía el cálculo completo, solo faltaba usarlo aquí también. Se
+   elimina el pintado de 2 columnas y se reemplaza por un re-render
+   completo (mismo patrón que #pfEstadoResultadosTodosCont) de la
+   tabla de 6 años dentro de #pfERDetalleTablaCont, ver pfRecalcularTodo. */
+function pfPintarEstadoResultados(anios){
+  const erTodos = pfCalcularEstadoResultadosTodos(anios);
+  const cont = document.getElementById('pfERDetalleTablaCont');
+  if(cont) cont.innerHTML = pfEstadoResultadosTodosHTML(erTodos);
+  return erTodos;
 }
 /* --- Colapsar/expandir cada año proyectado (2026-2030) --- */
 // Por defecto: 2026 (el año más cercano/activo) empieza EXPANDIDO y
@@ -9655,11 +9671,10 @@ function pfRecalcularTodo(){
     pfSetTxt(`pf-sum-${year}-egresos`, y.tot.totalEgrOp);
     pfSetTxt(`pf-sum-${year}-flujo`, y.tot.flujoNetoGenerado);
   });
-  pfPintarEstadoResultados(r.y2025, r.y2026);
+  const erTodos = pfPintarEstadoResultados(r.anios);
   const resumenCont = document.getElementById('pfResumenAnualCont');
   if(resumenCont) resumenCont.innerHTML = pfResumenAnualHTML(r);
   const erTodosCont = document.getElementById('pfEstadoResultadosTodosCont');
-  const erTodos = pfCalcularEstadoResultadosTodos(r.anios);
   if(erTodosCont) erTodosCont.innerHTML = pfEstadoResultadosTodosHTML(erTodos);
   const indicesCont = document.getElementById('pfIndicesCont');
   if(indicesCont) indicesCont.innerHTML = pfIndicesFinancierosHTML(pfCalcularIndices(r.anios, erTodos, r.pctBase2025, r.pctPorAnio));
@@ -10239,25 +10254,16 @@ function pfSupuestosAnioHTML(year){
   </div>`;
 }
 function pfEstadoResultadosHTML(){
-  const fila = (label,key,bold) => `<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td><td class="num" id="pf-er-2025-${key}">$0.00</td><td class="num" id="pf-er-2026-${key}">$0.00</td></tr>`;
+  // BUGFIX: antes esta tarjeta solo mostraba 2 columnas fijas (año base +
+  // primer año proyectado) — ver nota en pfPintarEstadoResultados. Ahora
+  // el contenido de la tabla (los PF_TODOS_ANIOS.length años, base +
+  // proyectados) se pinta/actualiza en #pfERDetalleTablaCont desde
+  // pfRecalcularTodo, igual que #pfEstadoResultadosTodosCont.
   return `
   <div class="card">
     <h3 style="margin-top:0;">📊 Estado de Resultados Proyectado (derivado 100% del Flujo de Caja)</h3>
-    <p class="helpNote">Ingresos, Costo de Ventas y Gastos se toman directamente de los TOTALES (columna TOTAL) del Flujo de Caja de cada año — igual que las fórmulas de la hoja "ESTADO DE RESULTADOS PROYECTADO" del Excel real (ej. Ingresos = Total Ventas Valoradas; Costo de Ventas = Proveedores Nacionales + Proveedores Exterior).</p>
-    <div style="overflow-x:auto"><table><thead><tr><th>Concepto</th><th class="num">${pfAnioReal(2025)} (Base)</th><th class="num">${pfAnioReal(2026)} (Proyectado)</th></tr></thead><tbody>
-      ${fila('INGRESOS','ingresos',true)}
-      ${fila('COSTO DE VENTAS','costoVentas')}
-      ${fila('UTILIDAD BRUTA EN VENTA','utilidadBruta',true)}
-      ${fila('Gastos Administrativos','gAdmin')}
-      ${fila('Gastos de Ventas','gVentas')}
-      ${fila('Otros Gastos Operacionales (Personal + Otros Gastos Operativos + Otros Egresos)','otrosGOp')}
-      ${fila('TOTAL GASTOS OPERACIONALES','totalGastosOp',true)}
-      ${fila('UTILIDAD OPERACIONAL','utilidadOperacional',true)}
-      ${fila('Gastos Financieros','gastosFinancieros')}
-      ${fila('Participación Trabajadores','participacionTrabajadores')}
-      ${fila('Impuestos','impuestos')}
-      ${fila('UTILIDAD DEL EJERCICIO','utilidadEjercicio',true)}
-    </tbody></table></div>
+    <p class="helpNote">Ingresos, Costo de Ventas y Gastos se toman directamente de los TOTALES (columna TOTAL) del Flujo de Caja de cada año — igual que las fórmulas de la hoja "ESTADO DE RESULTADOS PROYECTADO" del Excel real (ej. Ingresos = Total Ventas Valoradas; Costo de Ventas = Proveedores Nacionales + Proveedores Exterior). Se muestran los ${PF_TODOS_ANIOS.length} años (base + proyectados) lado a lado.</p>
+    <div id="pfERDetalleTablaCont"></div>
   </div>`;
 }
 /* Tarjeta colapsable de un año proyectado (2026-2030): encabezado con
@@ -10371,7 +10377,7 @@ function pfContenidoCompletoHTML(emp, incluirBase){
     <h4>📊 Resumen Anual Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfResumenAnualCont')}
     ${incluirBase ? `<h4>Flujo de Caja ${pfAnioReal(2025)} (Base)</h4>${pfSnapshotHTML('pfTabla2025')}` : ''}
     ${PF_PROJ_YEARS.map(y=>`<h4>Flujo de Caja ${y} (Proyectado)</h4>${pfSnapshotHTML('pfTabla'+y)}`).join('\n    ')}
-    <h4>Estado de Resultados Proyectado (${pfAnioReal(2025)} vs ${pfAnioReal(2026)})</h4>${pfSnapshotHTML('pfERDetalleCont')}
+    <h4>Estado de Resultados Proyectado (${pfAnioReal(2025)}-${pfAnioReal(2030)})</h4>${pfSnapshotHTML('pfERDetalleCont')}
     <h4>Estado de Resultados Proyectado — Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfEstadoResultadosTodosCont')}
     <h4>📐 Índices Financieros Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfIndicesCont')}
     <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco. Cada año proyectado (${pfAnioReal(2026)}-${pfAnioReal(2030)}) tiene su propio juego de porcentajes de crecimiento/decrecimiento y de composición (ventas, proveedores, gastos), 100% editable de forma independiente; un cambio en el % de un año se propaga solo hacia adelante (años posteriores), nunca hacia atrás.</div>
@@ -10418,7 +10424,6 @@ function pfImprimirResumen(){
 /* --- Exportar a Excel (SheetJS, mismo patrón que efExportarExcel) --- */
 function pfExportarExcel(){
   const r = pfRecalcularTodo();
-  const er = pfCalcularEstadoResultados(r.y2025, r.y2026);
   const wb = XLSX.utils.book_new();
   function hojaAnio(nombre, y){
     const filas = [['CONCEPTO', ...PF_MESES, 'TOTAL']];
@@ -10464,22 +10469,29 @@ function pfExportarExcel(){
   pushResumen('SALDO FINAL DE CAJA (DIC.)','flujoAcumulado');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumenFilas), `RESUMEN ANUAL ${pfAnioReal(2025)}-${pfAnioReal(2030)}`);
 
+  // BUGFIX (mismo reporte de usuario que pfPintarEstadoResultados): esta
+  // hoja ('ESTADO DE RESULTADOS') se generaba con pfCalcularEstadoResultados
+  // (SOLO 2 columnas: año base + primer año proyectado). Se reemplaza por
+  // la misma fuente de 6 años (pfCalcularEstadoResultadosTodos) que ya usa
+  // la hoja comparativa de abajo, para que ninguna hoja de Excel quede
+  // limitada a un solo año proyectado.
   const erTodos = pfCalcularEstadoResultadosTodos(r.anios);
   const erFilas = [
-    ['CONCEPTO', pfAnioReal(2025)+' (Base)', pfAnioReal(2026)+' (Proyectado)'],
-    ['INGRESOS', pfRound2(er.e2025.ingresos), pfRound2(er.e2026.ingresos)],
-    ['COSTO DE VENTAS', pfRound2(er.e2025.costoVentas), pfRound2(er.e2026.costoVentas)],
-    ['UTILIDAD BRUTA EN VENTA', pfRound2(er.e2025.utilidadBruta), pfRound2(er.e2026.utilidadBruta)],
-    ['Gastos Administrativos', pfRound2(er.e2025.gAdmin), pfRound2(er.e2026.gAdmin)],
-    ['Gastos de Ventas', pfRound2(er.e2025.gVentas), pfRound2(er.e2026.gVentas)],
-    ['Otros Gastos Operacionales', pfRound2(er.e2025.otrosGOp), pfRound2(er.e2026.otrosGOp)],
-    ['TOTAL GASTOS OPERACIONALES', pfRound2(er.e2025.totalGastosOp), pfRound2(er.e2026.totalGastosOp)],
-    ['UTILIDAD OPERACIONAL', pfRound2(er.e2025.utilidadOperacional), pfRound2(er.e2026.utilidadOperacional)],
-    ['Gastos Financieros', pfRound2(er.e2025.gastosFinancieros), pfRound2(er.e2026.gastosFinancieros)],
-    ['Participación Trabajadores', pfRound2(er.e2025.participacionTrabajadores), pfRound2(er.e2026.participacionTrabajadores)],
-    ['Impuestos', pfRound2(er.e2025.impuestos), pfRound2(er.e2026.impuestos)],
-    ['UTILIDAD DEL EJERCICIO', pfRound2(er.e2025.utilidadEjercicio), pfRound2(er.e2026.utilidadEjercicio)],
+    ['CONCEPTO', ...PF_TODOS_ANIOS.map(y=>String(pfAnioReal(y))+(y===2025?' (Base)':' (Proyectado)'))],
   ];
+  const pushErFila = (label, key) => erFilas.push([label, ...PF_TODOS_ANIOS.map(y=>pfRound2(erTodos[y][key]))]);
+  pushErFila('INGRESOS','ingresos');
+  pushErFila('COSTO DE VENTAS','costoVentas');
+  pushErFila('UTILIDAD BRUTA EN VENTA','utilidadBruta');
+  pushErFila('Gastos Administrativos','gAdmin');
+  pushErFila('Gastos de Ventas','gVentas');
+  pushErFila('Otros Gastos Operacionales','otrosGOp');
+  pushErFila('TOTAL GASTOS OPERACIONALES','totalGastosOp');
+  pushErFila('UTILIDAD OPERACIONAL','utilidadOperacional');
+  pushErFila('Gastos Financieros','gastosFinancieros');
+  pushErFila('Participación Trabajadores','participacionTrabajadores');
+  pushErFila('Impuestos','impuestos');
+  pushErFila('UTILIDAD DEL EJERCICIO','utilidadEjercicio');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(erFilas), 'ESTADO DE RESULTADOS');
 
   const erCompFilas = [['CONCEPTO', ...PF_TODOS_ANIOS.map(y=>String(pfAnioReal(y)))]];

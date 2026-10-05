@@ -244,6 +244,45 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: Flujo de Caja Proyectado Produbanco — "el estado de resultados solo me sale del
+  2027 me debe salir de todos los años" (10ma iteración).** Reporte en español del usuario
+  (literal, con el año base ya cambiado a 2026 en la conversación previa): "el estado de
+  resultados solo me sale del 2027 me debe salir de todos los años". Causa raíz confirmada por
+  reproducción (jsdom, con y sin la traducción de año base de la 8va iteración):
+  - Dentro de la pestaña "📅 Años Individuales" existe una tarjeta "📊 Estado de Resultados
+    Proyectado (derivado 100% del Flujo de Caja)" (`pfEstadoResultadosHTML`/`#pfERDetalleCont`),
+    **distinta** de la tabla de la pestaña "📊 Resumen Comparativo" (`#pfEstadoResultadosTodosCont`,
+    que sí usa `pfCalcularEstadoResultadosTodos`/`PF_TODOS_ANIOS` y ya mostraba los 6 años
+    correctamente — este bug NO la afectaba). Esa primera tarjeta estaba **hardcodeada a
+    exactamente 2 columnas** (año base + el PRIMER año proyectado) vía
+    `pfPintarEstadoResultados(y2025, y2026)` → `pfCalcularEstadoResultados(y2025, y2026)`
+    (firma de 2 parámetros, nunca iteraba `PF_PROJ_YEARS`/`PF_TODOS_ANIOS`). Esto es un **bug
+    preexistente, NO una regresión de la 8va/9na iteración**: ya existía con el año base en su
+    valor original 2025 (mostraba "2025 (Base)" / "2026 (Proyectado)", solo 2 de 6 años) — nadie
+    lo notó porque "2026" ahí coincidía casualmente con el primer año proyectado "de verdad". Al
+    mover el año base a 2026 (`pfAnioReal`), esa 2ª columna pasó a rotularse "2027 (Proyectado)",
+    y por eso el usuario ve literalmente "solo... 2027". La misma limitación de 2 columnas existía
+    también en la hoja de Excel `ESTADO DE RESULTADOS` (vía el mismo `pfCalcularEstadoResultados`),
+    mientras que la hoja `ESTADO RESULT. <base>-<base+5>` (comparativo) ya estaba correcta.
+  - **Fix:** se eliminó el pintado de 2 columnas fijas. `pfPintarEstadoResultados(anios)` ahora
+    recibe el objeto `anios` completo (los 6 años), calcula con
+    `pfCalcularEstadoResultadosTodos(anios)` y reusa `pfEstadoResultadosTodosHTML(erTodos)` —
+    la MISMA función que ya renderizaba correctamente el comparativo — para repintar
+    `#pfERDetalleTablaCont` (nuevo contenedor interno de la tarjeta, reemplaza los antiguos
+    spans fijos `pf-er-2025-*`/`pf-er-2026-*`). `pfRecalcularTodo()` ahora calcula `erTodos` una
+    sola vez y lo reutiliza para ambas tarjetas (detalle y comparativo) — ya no se calcula dos
+    veces. En el Excel, la hoja `ESTADO DE RESULTADOS` se regeneró con los 6 años (misma fuente
+    `erTodos`) en vez de los 2 fijos; la hoja comparativa no se tocó (ya estaba bien). No se
+    modificó la cadena de cálculo (`pfCalcularAnio`/`pfCalcularAnioAuto`) ni el motor `anios`: los
+    datos de los 5 años proyectados siempre existieron correctamente, era puramente un bug de
+    render (la tarjeta de detalle nunca pintaba más de 2 columnas).
+  - **Verificado con reproducción jsdom:** con año base = 2025 (valor original) la tarjeta de
+    detalle pasó de 2 columnas ("2025 (Base)"/"2026 (Proyectado)") a 6 columnas idénticas a las
+    del comparativo ("2025 (Base)" .. "2030 (Proy.)"); con año base = 2026 (escenario exacto del
+    usuario) pasó de 2 columnas ("2026 (Base)"/"2027 (Proyectado)") a 6 columnas ("2026 (Base)"
+    .. "2031 (Proy.)"), con valores numéricos idénticos fila por fila a la tabla comparativa —
+    confirmando que no es una regresión en los datos, solo en lo que se mostraba.
+
 - **Corregido: Área Bancaria — "también los otros campos del área bancaria se borran y no se
   guardan" (9na iteración).** Reporte en español del usuario (literal): "tambien los otros
   campos del area bancaria se borran y no se guardan". Se auditó, sub-sección por sub-sección,
