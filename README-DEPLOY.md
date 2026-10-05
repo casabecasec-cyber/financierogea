@@ -232,6 +232,39 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: Flujo de Caja Proyectado Produbanco — Año Base editable (7ma iteración).** El reporte
+  anterior ("no puedo cambiar el año base") se había diagnosticado — correctamente, ver el bullet
+  de la 6ta iteración abajo — como que el valor tecleado en una celda del año base no se conservaba
+  al repintar. Una vez corregido eso, el usuario aclaró el pedido real: no existía ningún control
+  en la UI para elegir CUÁL año es el año base — estaba fijo en 2025 (con los 5 años proyectados
+  fijos en 2026-2030) para siempre, lo cual ya no tiene sentido una vez pasado ese año. Se agregó
+  un control "📅 Año Base de esta proyección" (un `<input type="number" id="pf-anio-base">`) al
+  tope de la pestaña, justo encima del formulario de supuestos/tablas. Internamente, los ids/claves
+  de esta herramienta (`pf-in-2025-...`, `pf-pct-2026-...`, `PF_PROJ_YEARS=[2026..2030]`, etc.)
+  se mantienen como **posiciones fijas** (no fue necesario ni seguro renombrar ~330 ids ni la
+  cadena de cálculo compuesta `pfCalcular`/`pfCalcularAnioAuto`): la posición 2025 sigue siendo el
+  "año base" y 2026-2030 los "5 años proyectados", pero la función `pfAnioReal(posicion)` traduce
+  cada posición al año REAL que corresponde según el año base elegido (`pfGetAnioBase() + (posicion
+  - 2025)`), y se usa en vez del número fijo en absolutamente todas las etiquetas visibles al
+  usuario: títulos de tarjeta, encabezados de tabla (Resumen Comparativo, Estado de Resultados
+  Comparativo, Índices Financieros), encabezados/pies de impresión (todo, por año individual, y
+  resumen), nombres de hoja y encabezados de columna del Excel exportado, el reporte de
+  verificación de consistencia, y la descripción guardada en el historial. El año base elegido se
+  guarda en el MISMO estado en memoria por empresa del fix anterior (`pfEstadoPorEmpresa` bajo la
+  clave de id `"pf-anio-base"`), así que cambiar de pestaña/empresa y volver lo conserva, y se
+  guarda a Firebase automáticamente junto con el resto de los campos de este formulario (es un
+  `<input>` más dentro de `#pfDocsRoot`, así que `terminarYGuardarPF()` ya lo incluye sin cambios).
+  Si ya hay cifras digitadas para el año base actual, cambiar el año pide confirmación (no se
+  pierde nada — las cifras quedan en los mismos ids internos — pero el usuario debe saber que
+  pasarán a mostrarse bajo la etiqueta del año nuevo). Si una empresa nunca eligió un año base,
+  por defecto se usa el año real actual (`new Date().getFullYear()`), no 2025. Los valores de
+  referencia reales de la hoja de trabajo (`pfPrefillDatosReales`/`PF_DEF2025`/`PF_PCT_DEFAULTS`)
+  ahora solo se precargan cuando el año base elegido es efectivamente 2025 **y** la empresa
+  coincide con Alta Tensión Altaten S.A. — para cualquier otro año base, o cualquier otra empresa,
+  el formulario nace en blanco/cero, igual que antes. Verificado con una simulación Node/jsdom del
+  motor completo de esta herramienta (cambio de año base con y sin datos previos, cancelar/
+  confirmar el diálogo, cambio de empresa y vuelta, y el gating del prefill real 2025/ALTATEN).
+
 - **Corregido: Flujo de Caja Proyectado Produbanco — "no puedo cambiar el año base" y "si paso
   de pestaña se pierde la información" (6ta iteración).** Se reportaron dos bugs que, tras leer
   de punta a punta el motor completo de esta herramienta (`pfCalcularAnio`, `pfRecalcularTodo`,
