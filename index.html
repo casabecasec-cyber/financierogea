@@ -9745,6 +9745,62 @@ function pfMostrarReporteValidacion(){
     </div>`;
 }
 
+/* =========================================================================
+   BUGFIX (reporte: "no puedo cambiar el año base" / "si paso de pestaña se
+   pierde la información") — RAÍZ COMÚN de ambos bugs: pintarPFFlujoProdubanco()
+   es la ÚNICA fuente de "estado" de esta herramienta y reconstruye TODO el
+   HTML del contenedor desde cero (cont.innerHTML = ...) cada vez que se
+   invoca — no solo al entrar por primera vez, sino CADA VEZ que se cambia
+   de pestaña dentro de Área Bancaria (Bancos/Flujo/Documentos/Informe
+   Básico/Flujo Proyectado/Estados Financieros, incluso volver a pulsar la
+   pestaña YA activa) y cada vez que se cambia de empresa. Como el único
+   relleno que sobrevive a ese reinicio es pfPrefillDatosReales() (que solo
+   aplica, para UNA empresa específica, un juego de valores de REFERENCIA
+   fijos — no lo que el usuario tecleó), cualquier edición del usuario en
+   el año base 2025 (o en los % de los años proyectados) que no se haya
+   guardado explícitamente con "Terminar y Guardar" se perdía en el
+   siguiente repintado — por eso el año base "no se podía cambiar" en la
+   práctica: cada vez que algo disparaba un repintado (cambiar de pestaña y
+   volver, re-pulsar la misma pestaña, etc.) el valor recién tecleado
+   desaparecía y volvía a verse en blanco/el valor de referencia.
+   FIX: una única fuente de verdad en memoria (pfEstadoPorEmpresa, separada
+   por empresa para no mezclar datos entre empresas distintas) que se
+   actualiza en CADA tecleo (delegación de evento 'input' sobre el
+   contenedor, sin tener que tocar los ~330 atributos oninput= individuales
+   de cada celda) y que pintarPFFlujoProdubanco() usa para RESTAURAR esas
+   ediciones en vivo cada vez que reconstruye el HTML — con prioridad sobre
+   los valores de referencia (pfPrefillDatosReales): si el usuario ya
+   tecleó algo (incluido dejar la celda vacía a propósito), eso es lo que
+   se restaura; los valores de referencia solo rellenan lo que el usuario
+   nunca tocó. */
+let pfEstadoPorEmpresa = {};
+function pfEstadoActualRef(){
+  const emp = empresaBancariaSeleccionada || '_sinEmpresa';
+  if(!pfEstadoPorEmpresa[emp]) pfEstadoPorEmpresa[emp] = {};
+  return pfEstadoPorEmpresa[emp];
+}
+/* Delegado: UN solo listener sobre el contenedor (#vistaBancariaInterna,
+   reasignado en cada repintado) captura cualquier tecleo en una celda
+   pf-in-.../pf-pct-... hacia el estado en memoria de la empresa actual —
+   así no hace falta añadir/mantener un oninput por cada una de las ~330
+   celdas de esta herramienta, y el estado queda al día con cada tecla,
+   no solo al guardar. */
+function pfCapturarEstadoInput(ev){
+  const t = ev.target;
+  if(t && t.tagName==='INPUT' && t.id && /^pf-(in|pct)-/.test(t.id)) pfEstadoActualRef()[t.id] = t.value;
+}
+/* Aplica, sobre el HTML recién reconstruido, las ediciones en vivo ya
+   capturadas de la empresa actual — se llama DESPUÉS de
+   pfPrefillDatosReales() para que una edición del usuario (incluso vaciar
+   una celda a propósito) SIEMPRE gane sobre el valor de referencia. */
+function pfRestaurarEstado(){
+  const estado = pfEstadoActualRef();
+  Object.keys(estado).forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value = estado[id];
+  });
+}
+
 /* --- Datos de referencia reales (SOLO se aplican si la empresa coincide
    con PRODUBANCO_EMPRESA_2024_REF — mismo criterio que pbPrefillDatos2024;
    para cualquier otra empresa el formulario se mantiene en blanco). --- */
@@ -10283,7 +10339,14 @@ async function pintarPFFlujoProdubanco(){
       </div>
     </div>
   `;
+  // Delegación de 'input' sobre el contenedor recién creado (ver bloque
+  // de BUGFIX arriba de pfPrefillDatosReales): captura cada tecleo del
+  // usuario en memoria para que sobreviva al próximo repintado completo
+  // de este contenedor (cambiar de pestaña dentro de Área Bancaria,
+  // volver a pulsar la misma pestaña, etc.).
+  cont.addEventListener('input', pfCapturarEstadoInput);
   pfPrefillDatosReales();
+  pfRestaurarEstado(); // las ediciones en vivo del usuario ganan sobre los valores de referencia
   pfRecalcularTodo();
   await pintarPFHistLista();
 }

@@ -232,6 +232,41 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Corregido: Flujo de Caja Proyectado Produbanco — "no puedo cambiar el año base" y "si paso
+  de pestaña se pierde la información" (6ta iteración).** Se reportaron dos bugs que, tras leer
+  de punta a punta el motor completo de esta herramienta (`pfCalcularAnio`, `pfRecalcularTodo`,
+  `pfCambiarVistaAnios`, `pintarPFFlujoProdubanco`, etc.), resultaron tener **una misma raíz
+  común**: esta herramienta no tenía ninguna fuente de estado en memoria — su único "estado" era
+  el propio DOM — y `pintarPFFlujoProdubanco()` reconstruye TODO ese DOM desde cero
+  (`cont.innerHTML = ...`) cada vez que se la invoca, lo cual ocurre no solo al entrar por
+  primera vez sino **cada vez que se cambia de pestaña dentro de Área Bancaria** (Bancos / Flujo
+  de Caja / Documentos Banco Pacífico / Informe Básico Produbanco / Flujo Proyectado Produbanco /
+  Estados Financieros — incluso al volver a pulsar la pestaña YA activa) y cada vez que se
+  cambia de empresa. Lo único que sobrevivía a ese reinicio era `pfPrefillDatosReales()`, que
+  solo rellena, para UNA empresa específica, un juego de valores de REFERENCIA fijos — nunca lo
+  que el usuario tecleó. Por eso cualquier edición en el año base 2025 (o en los % de los años
+  proyectados) que no se hubiera guardado explícitamente con "Terminar y Guardar" se perdía en
+  el siguiente repintado: eso es exactamente lo que se reportaba como "no puedo cambiar el año
+  base" (la celda editable SÍ aceptaba el tecleo — no estaba deshabilitada ni de solo lectura, y
+  `pfRecalcularTodo()` no la sobrescribía en cada tecla — pero el valor desaparecía apenas algo
+  disparaba un repintado completo) y como "si paso de pestaña se pierde la información" (el
+  mismo repintado, disparado explícitamente al cambiar de pestaña). Se confirmó con una
+  simulación Node/jsdom que reproduce la app completa: escribir en una celda del año base
+  funcionaba perfecto de forma aislada, pero cambiar de pestaña y volver (o re-seleccionar la
+  misma empresa) borraba el valor recién tecleado. **Arreglo**: una única fuente de verdad en
+  memoria (`pfEstadoPorEmpresa`, separada por empresa para no mezclar datos entre empresas
+  distintas al cambiar de una a otra) que se actualiza en cada tecleo mediante delegación de
+  evento `'input'` sobre el contenedor (`pfCapturarEstadoInput`, sin tener que tocar los ~330
+  atributos `oninput=` de cada celda individual), y que `pintarPFFlujoProdubanco()` usa para
+  **restaurar** esas ediciones en vivo (`pfRestaurarEstado()`) cada vez que reconstruye su HTML
+  — con prioridad sobre los valores de referencia precargados: si el usuario ya tecleó algo
+  (incluso dejar una celda vacía a propósito), eso es lo que se restaura; los valores de
+  referencia solo rellenan lo que el usuario nunca tocó. Con esto, los cambios de pestaña dentro
+  de Área Bancaria, la navegación entre "Años Individuales"/"Resumen Comparativo"/"Índices
+  Financieros", y colapsar/expandir una tarjeta de año ya NO borran datos sin guardar; solo se
+  sigue perdiendo lo no guardado si se cambia explícitamente de empresa (se mantiene aislado por
+  empresa, por diseño) o se navega a otra sección de la app fuera de Área Bancaria por completo.
+
 - **Corregido: Flujo de Caja Proyectado Produbanco — filas de gasto en $0.00 mensual y "Imprimir
   todo" mostrando solo un año (5ta iteración).** Dos bugs reales encontrados y corregidos tras
   leer el motor de cálculo/impresión completo de punta a punta:
