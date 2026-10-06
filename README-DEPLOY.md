@@ -244,6 +244,97 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: enviar el Flujo de Caja Produbanco al Flujo de Caja de Banco Pacífico con una casilla (12va iteración).**
+  Pedido en español del usuario (literal): "los datos del flujo de caja que hice en produbanco si yo pongo un
+  check envialos al flujo de banco pacifico". En **📈 Flujo de Caja Proyectado Produbanco** (debajo de la
+  verificación de consistencia) hay una tarjeta verde con la casilla **"☑ Enviar estos datos al Flujo de Caja de
+  Banco Pacífico"** (id `pf-enviar-pacifico`, apagada por defecto, **por empresa**). Se guarda en el MISMO estado
+  `pfEstadoPorEmpresa` y por tanto en el borrador existente `banco_produbanco_flujo_borrador` (sin rutas nuevas;
+  `reglas_firebase_completas.json` no cambia). Al marcarla: toast "Datos enviados al flujo de Banco Pacífico" y,
+  mientras siga marcada, cada recálculo (`pfRecalcularTodo` → `pfProgramarSyncPacifico`, debounce 400 ms) escribe en el
+  **borrador de Pacífico** de la misma empresa (`abGetBorrador('pacifico', empresa)`, ruta existente
+  `banco_borradores_auto`), así sobrevive a cambio de pestaña y recarga. Regla: mientras esté activa, los campos
+  vinculados se sobrescriben con Produbanco y en Pacífico quedan **de solo lectura**, con la etiqueta
+  "🔗 vinculado a Produbanco" y un banner "Datos tomados del Flujo Produbanco — 6 años, actualizado hh:mm". Al
+  desmarcarla se deja de sincronizar y los últimos valores copiados quedan editables. Lo que el usuario escribió en
+  Pacífico fuera de los campos vinculados (premisas, tablas de préstamos, nombre del cliente) nunca se toca. El
+  vínculo vive en el borrador de Pacífico como claves planas `_pfLink`/`_pfLinkTs`/`_pfLinkNota`, por eso al abrir
+  Pacífico primero tras una recarga ya se ve el estado correcto (aplicado en `pintarDocsBancoPacifico` después de
+  `abRestaurar` y antes de `bpFlujoCajaLive`, vía `bpAplicarVinculoProdubanco()`). El envío es por empresa: aunque se
+  cambie de empresa dentro del debounce, el cálculo pendiente se escribe en la empresa editada. Las funciones `ab*`
+  (`abGetBorrador`/`abGuardarBorrador`/`abCargarBorradorSiHaceFalta`) ganaron un parámetro opcional de empresa
+  (retrocompatible). **Mapeo** (Pacífico = Año 1 mensual + Años 2-5 por % de crecimiento; Año 1 = año base Produbanco
+  con su año real vía `pfAnioReal`):
+
+  | Campo Pacífico (Guía Flujo de Caja) | Origen Produbanco |
+  |---|---|
+  | `fc2-saldoinicial` | Saldo inicial de caja del año base (`pf-in-2025-saldoInicialCaja`) |
+  | `fc2-ing-m1..m12` Ingresos por Ventas | Total ingresos operacionales del año base mes a mes (recaudaciones + otros ingresos operacionales; base caja) |
+  | `fc2-costo-m1..m12` Costos de Ventas | Proveedores nacional + exterior, mes a mes |
+  | `fc2-gasto-m1..m12` Gastos Adm. y Ventas | Gastos administrativos + ventas + personal + otros operativos + impuestos + participación trabajadores + otros egresos operacionales, mes a mes |
+  | `fc2-ing-crec` / `fc2-costo-crec` / `fc2-gasto-crec` | Tasa compuesta equivalente entre el año base y base+4 de cada serie anual (0 si el valor inicial o final no es positivo) |
+  | `fc2-aportes-monto` / `-mes` | Aporte de accionistas (total anual del año base) / mes de mayor movimiento |
+  | `fc2-creditoing-monto` / `-mes` | Préstamos bancarios recibidos (total anual) / mes de mayor movimiento |
+  | `fc2-capex-monto` / `-mes` | Obras de infraestructura + compra de activos fijos + compra de inversiones permanentes (total anual) / mes de mayor egreso |
+
+  **No mapeado (y por qué):** sexto año de Produbanco (base+5; Pacífico solo tiene 5 años — se avisa en la nota visible
+  bajo la casilla); tablas de préstamos 1-3 de Pacífico (las calcula con amortización francesa propia desde monto/tasa/plazo,
+  Produbanco solo trae capital/intereses mensuales ya calculados); venta de activos/inversiones, préstamos de accionistas,
+  dividendos, otros capital/intereses y cartas de crédito (Pacífico no tiene fila equivalente); recuperación de cartera de
+  apertura (ya está dentro de los ingresos); cliente y las 4 premisas de texto. Aproximaciones declaradas: Años 2-5 de
+  Pacífico siguen un crecimiento compuesto único (los años intermedios de Produbanco, con % propios por año, no se
+  replican exactamente; el Año 5 sí coincide con base+4), y aportes/crédito/capex se concentran en un solo mes porque
+  Pacífico admite un único monto y mes por concepto. Con esta base de caja, el flujo operacional del Año 1 de Pacífico
+  coincide con el flujo neto operacional del año base de Produbanco. Limitación: la sincronización ocurre mientras el
+  Flujo Produbanco está abierto (sus cifras se calculan desde la pantalla); si se edita en otro lado no hay recálculo.
+
+- **Corregido: Flujo de Caja Proyectado Produbanco — "pusimos la opcion de no imprimir año
+  base y si esta imprimiendo" (11va iteración).** Reporte en español del usuario (literal,
+  con captura de pantalla): "ahora quiero imprimir y pusimos la opcion de no imprimir año base
+  y si esta imprimiendo mira". Al imprimir con el checkbox "Incluir año base (AÑO) en la
+  impresión" **desmarcado**, la tabla "Estado de Resultados Proyectado — Comparativo" seguía
+  mostrando la columna del año base (ej. "2026 (Base)") en el documento impreso.
+  - **Causa raíz confirmada por reproducción (jsdom, con y sin la traducción de año base de la
+    8va iteración):** `pfContenidoCompletoHTML(emp, incluirBase)` (la función que arma el
+    contenido de "🖨 Imprimir todo") tomaba las 2 tablas-resumen de 6 años — "📊 Resumen Anual
+    Comparativo" (`#pfResumenAnualCont`) y "Estado de Resultados Proyectado — Comparativo"
+    (`#pfEstadoResultadosTodosCont`, y también la tarjeta de detalle `#pfERDetalleCont`, que
+    desde la 10ma iteración renderiza la misma tabla de 6 años) — vía `pfSnapshotHTML()`, es
+    decir copiando literalmente el `innerHTML` YA RENDERIZADO en pantalla. Ese render en
+    pantalla (`pfRecalcularTodo()` → `pfEstadoResultadosTodosHTML(erTodos)` /
+    `pfResumenAnualHTML(r)`) **siempre** itera las 6 posiciones de `PF_TODOS_ANIOS` (año base +
+    5 proyectados) sin excepción — ninguna de las 2 funciones aceptaba siquiera un parámetro
+    `incluirBase`, así que el checkbox de impresión jamás se les comunicaba: el snapshot que se
+    incrustaba en el documento impreso era el mismo sin importar si el checkbox estaba marcado o
+    no. El comentario previo en el código (que decía que estas 2 tablas "se mantienen intactos a
+    propósito, porque son tablas-resumen de los 6 años") describía el síntoma como si fuera una
+    decisión de diseño, pero en realidad nunca existió ninguna lógica de exclusión de columna
+    para estas 2 tablas — era simplemente el bug.
+  - **Fix:** `pfEstadoResultadosTodosHTML(erTodos, incluirBase)` y `pfResumenAnualHTML(r,
+    incluirBase)` ahora aceptan un 2º parámetro opcional (por defecto `true`, así que el uso en
+    pantalla —`pfRecalcularTodo()`, que nunca pasa este argumento— no cambia en nada); cuando se
+    pasa `incluirBase=false`, ambas funciones filtran `PF_TODOS_ANIOS` a solo `PF_PROJ_YEARS`
+    (excluyen la posición/año 2025=base) tanto en el encabezado de columnas como en cada fila.
+    `pfContenidoCompletoHTML()` ya no hace `pfSnapshotHTML()` de estas 2 tablas: en su lugar
+    vuelve a calcular `r = pfCalcular()` / `erTodos = pfCalcularEstadoResultadosTodos(r.anios)` y
+    llama directamente a `pfResumenAnualHTML(r, incluirBase)` / `pfEstadoResultadosTodosHTML(erTodos,
+    incluirBase)` (usada tanto para la tarjeta de detalle como para el comparativo), pasándoles el
+    valor real del checkbox. El resto del documento (tablas mensuales por año, Índices
+    Financieros) no se tocó: sigue siendo snapshot del DOM como antes, sin cambios de
+    comportamiento.
+  - **Título dinámico:** se agregó `pfRangoAniosHTML(incluirBase)`, que devuelve
+    `"<añoBase>-<añoFinal>"` cuando `incluirBase=true` o `"<primerAñoProyectado>-<añoFinal>"`
+    cuando es `false` (ej. con año base 2026: "2026-2031" vs "2027-2031") — usado en los títulos
+    `<h4>` de "Resumen Anual Comparativo" y "Estado de Resultados Proyectado (— Comparativo)"
+    dentro del documento impreso, mismo patrón que ya usaba la sección del detalle mensual del
+    año base (que se omite/incluye por completo según el checkbox).
+  - **Verificado con reproducción jsdom** (antes y después del fix, con año base = 2025
+    default y año base = 2026 escenario exacto del usuario): con `incluirBase=false` el fix
+    elimina por completo la columna "(Base)" de ambas tarjetas de Estado de Resultados en los 2
+    escenarios de año base (antes del fix la columna seguía presente en los 4 casos probados:
+    confirma que se reprodujo el bug exacto reportado); con `incluirBase=true` ambas tarjetas
+    siguen mostrando los 6 años correctamente en los 2 escenarios (sin regresión).
+
 - **Corregido: Flujo de Caja Proyectado Produbanco — "el estado de resultados solo me sale del
   2027 me debe salir de todos los años" (10ma iteración).** Reporte en español del usuario
   (literal, con el año base ya cambiado a 2026 en la conversación previa): "el estado de

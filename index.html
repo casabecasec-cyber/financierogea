@@ -121,6 +121,8 @@ tr:hover td{background:var(--panel2);}
 .aiBox pre{white-space:pre-wrap;font-family:inherit;font-size:13px;background:var(--bg);padding:10px;border-radius:6px;border:1px solid var(--border);}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px;}
 @keyframes spin{to{transform:rotate(360deg);}}
+.fc2-linked{background:#eef5fb !important;border:1px dashed #0057A3 !important;cursor:not-allowed;}
+.fc2-link-tag{font-size:11px;font-weight:600;color:#0057A3;margin-left:6px;}
 .helpNote{font-size:12px;color:var(--muted);background:var(--panel2);border:1px dashed var(--border);border-radius:6px;padding:8px 10px;margin-top:8px;}
 .checklistItem{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:var(--panel2);}
 .checklistItem input[type=checkbox]{margin-top:3px;width:18px;height:18px;}
@@ -7089,8 +7091,8 @@ let abBorradorCache = {}; // { empresaId: { areaKey: {fieldId: valor} } }
 let abAutosaveTimers = {}; // { 'empresaId|areaKey': timeoutId }
 let abBorradorCargado = {}; // { 'empresaId|areaKey': true } — ya se intentó cargar desde Firebase en esta sesión
 function abBorradorKey(){ return (empresaBancariaSeleccionada||'_sinEmpresa'); }
-function abGetBorrador(areaKey){
-  const emp = abBorradorKey();
+function abGetBorrador(areaKey, empOverride){
+  const emp = empOverride || abBorradorKey();
   if(!abBorradorCache[emp]) abBorradorCache[emp] = {};
   if(!abBorradorCache[emp][areaKey]) abBorradorCache[emp][areaKey] = {};
   return abBorradorCache[emp][areaKey];
@@ -7130,10 +7132,10 @@ function abProgramarAutoguardado(areaKey){
   clearTimeout(abAutosaveTimers[k]);
   abAutosaveTimers[k] = setTimeout(()=>abGuardarBorrador(areaKey), 1500);
 }
-async function abGuardarBorrador(areaKey){
-  const emp = empresaBancariaSeleccionada;
+async function abGuardarBorrador(areaKey, empOverride){
+  const emp = empOverride || empresaBancariaSeleccionada;
   if(!emp) return;
-  const b = abGetBorrador(areaKey);
+  const b = abGetBorrador(areaKey, emp);
   try{
     await db.ref(`banco_borradores_auto/${DATOS_UID}/${emp}/${areaKey}`).set(limpiarUndefined({...b, actualizado: Date.now()}));
     abMostrarIndicador(areaKey, true);
@@ -7144,13 +7146,13 @@ async function abGuardarBorrador(areaKey){
    memoria (el usuario ya tecleó algo en esta sesión, o ya se cargó antes),
    no lo vuelve a pisar con lo de Firebase (evita perder un tecleo más
    reciente que el último autoguardado por una carga concurrente). */
-async function abCargarBorradorSiHaceFalta(areaKey){
-  const emp = empresaBancariaSeleccionada;
+async function abCargarBorradorSiHaceFalta(areaKey, empOverride){
+  const emp = empOverride || empresaBancariaSeleccionada;
   if(!emp) return;
   const k = emp+'|'+areaKey;
   if(abBorradorCargado[k]) return;
   abBorradorCargado[k] = true;
-  const yaHayEnMemoria = Object.keys(abGetBorrador(areaKey)).length>0;
+  const yaHayEnMemoria = Object.keys(abGetBorrador(areaKey, emp)).length>0;
   if(yaHayEnMemoria) return;
   try{
     const snap = await db.ref(`banco_borradores_auto/${DATOS_UID}/${emp}/${areaKey}`).once('value');
@@ -8647,6 +8649,7 @@ async function pintarDocsBancoPacifico(){
   await abCargarBorradorSiHaceFalta('pacifico');
   bpPrefillEmpresaEnDocs();
   abRestaurar('pacifico');
+  bpAplicarVinculoProdubanco(); // 12va iteración: marca campos 🔗 y banner si el flujo Produbanco está vinculado
   if(document.getElementById('fc2-resumen-live')) bpFlujoCajaLive();
   if(document.getElementById('anx-cart-total')) bpAnexosLive();
   if(document.getElementById('ib-total-personal')) bpInfoBasicaLive();
@@ -9539,9 +9542,18 @@ function pfCambiarVistaAnios(vista, btnEl){
   const el = document.getElementById("pf-vista-"+vista);
   if(el) el.classList.add("active");
 }
-function pfEstadoResultadosTodosHTML(erTodos){
-  const fila = (label,key,bold) => `<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td>${PF_TODOS_ANIOS.map(y=>`<td class="num">${bpUSD(erTodos[y][key])}</td>`).join('')}</tr>`;
-  return `<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th>${PF_TODOS_ANIOS.map(y=>`<th class="num">${y===2025?pfAnioReal(y)+' (Base)':pfAnioReal(y)+' (Proy.)'}</th>`).join('')}</tr></thead><tbody>
+/* incluirBase (por defecto true, igual que pfContenidoCompletoHTML): si
+   es false, se omite la columna del año base (2025) de la tabla — ver
+   11va iteración. El uso en pantalla (pfRecalcularTodo) nunca pasa este
+   2º argumento, así que sigue mostrando los 6 años como siempre; solo la
+   impresión completa (pfContenidoCompletoHTML), al tener desmarcado
+   "Incluir año base", recalcula esta tabla con incluirBase=false antes
+   de incrustarla en el documento. */
+function pfEstadoResultadosTodosHTML(erTodos, incluirBase){
+  incluirBase = incluirBase !== false;
+  const anios = incluirBase ? PF_TODOS_ANIOS : PF_PROJ_YEARS;
+  const fila = (label,key,bold) => `<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td>${anios.map(y=>`<td class="num">${bpUSD(erTodos[y][key])}</td>`).join('')}</tr>`;
+  return `<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th>${anios.map(y=>`<th class="num">${y===2025?pfAnioReal(y)+' (Base)':pfAnioReal(y)+' (Proy.)'}</th>`).join('')}</tr></thead><tbody>
     ${fila('INGRESOS','ingresos',true)}
     ${fila('COSTO DE VENTAS','costoVentas')}
     ${fila('UTILIDAD BRUTA EN VENTA','utilidadBruta',true)}
@@ -9684,6 +9696,7 @@ function pfRecalcularTodo(){
   // ningún diálogo — el reporte detallado solo se abre bajo demanda con
   // el botón "✅ Verificar Consistencia del Flujo" (pfMostrarReporteValidacion).
   pfActualizarBadgeValidacion(pfValidarFlujo());
+  pfProgramarSyncPacifico(r); // 12va iteración: si la casilla "Enviar al flujo de Banco Pacífico" está activa, sincroniza (debounce)
   return r;
 }
 
@@ -10019,8 +10032,197 @@ function pfRestaurarEstado(){
   const estado = pfEstadoActualRef();
   Object.keys(estado).forEach(id=>{
     const el = document.getElementById(id);
-    if(el) el.value = estado[id];
+    if(!el) return;
+    if(el.type==='checkbox') el.checked = (estado[id]==='1' || estado[id]===true);
+    else el.value = estado[id];
   });
+  pfPacActualizarEstadoUI();
+}
+
+/* =========================================================================
+   ENVÍO DE DATOS DEL FLUJO PRODUBANCO AL FLUJO DE CAJA DE BANCO PACÍFICO
+   (12va iteración). Reporte: "los datos del flujo de caja que hice en
+   produbanco si yo pongo un check envíalos al flujo de banco pacífico".
+   - Casilla por empresa (id 'pf-enviar-pacifico'), guardada en el MISMO
+     estado pf (pfEstadoPorEmpresa → borrador banco_produbanco_flujo_borrador).
+   - Mientras está activa, cada recálculo (pfRecalcularTodo, con debounce)
+     copia las cifras al BORRADOR de Pacífico (areaKey 'pacifico' de la capa
+     abGetBorrador, ruta ya existente banco_borradores_auto) de la MISMA
+     empresa: sobrevive a cambio de pestaña/recarga y se aplica al abrir
+     "Documentos Banco Pacífico" antes de calcular el resumen en vivo.
+   - Los campos vinculados se marcan "🔗 vinculado a Produbanco" y quedan de
+     solo lectura en Pacífico mientras dure el vínculo; al desmarcar, se deja
+     de sincronizar y los últimos valores copiados quedan editables.
+   Las marcas del vínculo viven en el propio borrador de Pacífico como claves
+   planas (_pfLink '1'/'0', _pfLinkTs, _pfLinkNota): abRestaurar las ignora
+   (no son ids de elementos) y viajan con el mismo set() existente.
+   Mapeo (Pacífico anual = Año 1 mensual + Años 2-5 por % de crecimiento):
+   Año 1 = año base Produbanco (meses); Años 2-5 = base+1..base+4 vía tasa
+   compuesta equivalente; el 6to año de Produbanco (base+5) no cabe. */
+const PF_PAC_ID = 'pf-enviar-pacifico';
+const PF_PAC_MESES_IDS = [1,2,3,4,5,6,7,8,9,10,11,12];
+const PF_PAC_CAMPOS_VINCULADOS = ['fc2-saldoinicial']
+  .concat(['ing','costo','gasto'].reduce((a,p)=>a.concat(PF_PAC_MESES_IDS.map(m=>`fc2-${p}-m${m}`)), []))
+  .concat(['fc2-ing-crec','fc2-costo-crec','fc2-gasto-crec','fc2-aportes-mes','fc2-aportes-monto','fc2-creditoing-mes','fc2-creditoing-monto','fc2-capex-mes','fc2-capex-monto']);
+let pfPacSyncTimer = null;
+let pfPacSyncPend = null; // { emp, mapa } — último cálculo pendiente de escribir (el más reciente gana)
+function pfPacificoActivo(){ return pfEstadoActualRef()[PF_PAC_ID]==='1'; }
+function pfPacSumaArrs(){ const arrs=[].slice.call(arguments); return PF_MESES.map((_,i)=>arrs.reduce((s,a)=>s+((a&&a[i])||0),0)); }
+function pfPacCrecimiento(serie){
+  // tasa compuesta equivalente entre Año 1 y Año 5 de Pacífico (4 saltos); 0 si no se puede calcular
+  const a = serie[0], b = serie[4];
+  if(!(a>0) || !(b>0)) return 0;
+  return Math.round((Math.pow(b/a, 1/4)-1)*100*1000000)/1000000;
+}
+/* Convierte el resultado de pfCalcular() en {campos:{idPacifico:valor(string)}, meta}. Función pura. */
+function pfMapaPacifico(r){
+  const pos = [2025,2026,2027,2028,2029]; // posiciones internas → Año 1..5 de Pacífico
+  const ys = pos.map(p=>r.anios[p]);
+  const base = r.anios[2025];
+  const ingM = base.totalIngOp;
+  const cosM = pfPacSumaArrs(base.provNac, base.provExt);
+  const gasM = pfPacSumaArrs(base.gastosAdmin, base.gastosVentas, base.gastosPersonal, base.otrosGastosOperativos, base.impuestos, base.participacionTrab, base.otrosEgresosOp);
+  const serieIng = ys.map(y=>y.tot.totalIngOp);
+  const serieCos = ys.map(y=>y.tot.provNac+y.tot.provExt);
+  const serieGas = ys.map(y=>y.tot.gastosAdmin+y.tot.gastosVentas+y.tot.gastosPersonal+y.tot.otrosGastosOperativos+y.tot.impuestos+y.tot.participacionTrab+y.tot.otrosEgresosOp);
+  const campos = {};
+  const S = n => String(pfRound2(n));
+  campos['fc2-saldoinicial'] = S(base.saldoInicialM[0]);
+  PF_PAC_MESES_IDS.forEach((m,i)=>{
+    campos[`fc2-ing-m${m}`] = S(ingM[i]);
+    campos[`fc2-costo-m${m}`] = S(cosM[i]);
+    campos[`fc2-gasto-m${m}`] = S(gasM[i]);
+  });
+  campos['fc2-ing-crec'] = String(pfPacCrecimiento(serieIng));
+  campos['fc2-costo-crec'] = String(pfPacCrecimiento(serieCos));
+  campos['fc2-gasto-crec'] = String(pfPacCrecimiento(serieGas));
+  // No operacionales: Pacífico admite UN monto en UN mes; se envía el total anual del año base
+  // en el mes de mayor movimiento (si no hay movimiento, el mes se deja como estaba).
+  const unMonto = (arr, idMes, idMonto) => {
+    const tot = pfSumArr(arr);
+    campos[idMonto] = S(tot);
+    if(tot){ let mx=0; arr.forEach((v,i)=>{ if(Math.abs(v)>Math.abs(arr[mx])) mx=i; }); campos[idMes] = String(mx+1); }
+  };
+  unMonto(base.finAporteAccionistas, 'fc2-aportes-mes', 'fc2-aportes-monto');
+  unMonto(base.finPrestamoBancario, 'fc2-creditoing-mes', 'fc2-creditoing-monto');
+  unMonto(pfPacSumaArrs(base.egrInfraestructura, base.egrActivosFijos, base.egrInversionesPerm), 'fc2-capex-mes', 'fc2-capex-monto');
+  const b0 = pfAnioReal(2025);
+  const nota = `Año 1 de Pacífico = ${b0} (año base, mes a mes); Años 2-5 = ${b0+1}-${b0+4} por tasa de crecimiento compuesta equivalente. El año ${b0+5} del flujo Produbanco no cabe en los 5 años del formato Pacífico y no se envía.`;
+  return { campos, meta:{ anioBase:b0, anioUltimoEnviado:b0+4, anioNoEnviado:b0+5, nota } };
+}
+function pfPacTextoEstado(ts){
+  const hh = ts ? new Date(Number(ts)).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}) : new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+  return `🔗 Vinculado — última actualización ${hh}. ${pfMapaPacifico_notaActual()}`;
+}
+function pfMapaPacifico_notaActual(){
+  const b0 = pfAnioReal(2025);
+  return `Año 1 de Pacífico = ${b0}; Años 2-5 = ${b0+1}-${b0+4}; ${b0+5} no se envía (el formato Pacífico tiene 5 años).`;
+}
+function pfPacActualizarEstadoUI(ts){
+  const el = document.getElementById('pf-enviar-pacifico-estado');
+  if(!el) return;
+  el.textContent = pfPacificoActivo() ? pfPacTextoEstado(ts) : 'Desactivado: no se envía nada. Los últimos valores copiados (si los hay) quedan editables en Banco Pacífico.';
+}
+/* Escribe el mapa en el borrador de Pacífico de la empresa `emp` (carga antes el de Firebase si hace falta,
+   para no pisar lo que ya había tecleado en otros campos de esa pantalla) y lo persiste solo si algo cambió. */
+async function pfPacEscribirBorrador(emp, mapa){
+  await abCargarBorradorSiHaceFalta('pacifico', emp);
+  const b = abGetBorrador('pacifico', emp);
+  let cambio = false;
+  Object.keys(mapa.campos).forEach(id=>{ if(b[id]!==mapa.campos[id]){ b[id] = mapa.campos[id]; cambio = true; } });
+  if(b._pfLink!=='1'){ b._pfLink = '1'; cambio = true; }
+  if(b._pfLinkNota!==mapa.meta.nota){ b._pfLinkNota = mapa.meta.nota; cambio = true; }
+  if(cambio || !b._pfLinkTs){ b._pfLinkTs = String(Date.now()); await abGuardarBorrador('pacifico', emp); }
+  return b._pfLinkTs;
+}
+async function pfPacDesvincular(emp){
+  await abCargarBorradorSiHaceFalta('pacifico', emp);
+  const b = abGetBorrador('pacifico', emp);
+  if(b._pfLink==='1'){ b._pfLink = '0'; await abGuardarBorrador('pacifico', emp); }
+}
+/* Hook de pfRecalcularTodo: con la casilla activa, programa (debounce 400 ms) el envío del último cálculo. */
+function pfProgramarSyncPacifico(r){
+  try{
+    if(!empresaBancariaSeleccionada || !pfPacificoActivo()) return;
+    pfPacSyncPend = { emp: empresaBancariaSeleccionada, mapa: pfMapaPacifico(r) };
+    clearTimeout(pfPacSyncTimer);
+    pfPacSyncTimer = setTimeout(pfEjecutarSyncPacifico, 400);
+  }catch(e){ /* el envío es best-effort: nunca debe romper el recálculo del flujo */ }
+}
+async function pfEjecutarSyncPacifico(){
+  const p = pfPacSyncPend; pfPacSyncPend = null;
+  if(!p) return;
+  try{
+    const ts = await pfPacEscribirBorrador(p.emp, p.mapa);
+    if(p.emp===empresaBancariaSeleccionada) pfPacActualizarEstadoUI(ts);
+  }catch(e){ /* best-effort */ }
+}
+async function pfToggleEnviarPacifico(el){
+  const emp = empresaBancariaSeleccionada;
+  if(!emp){ el.checked = false; toast('Seleccione una empresa primero', 'warning'); return; }
+  pfEstadoActualRef()[PF_PAC_ID] = el.checked ? '1' : '0';
+  pfProgramarAutoguardado();
+  clearTimeout(pfPacSyncTimer); pfPacSyncPend = null;
+  if(el.checked){
+    const r = pfRecalcularTodo();
+    clearTimeout(pfPacSyncTimer); pfPacSyncPend = null; // el envío inmediato de abajo reemplaza al programado
+    try{
+      const ts = await pfPacEscribirBorrador(emp, pfMapaPacifico(r));
+      pfPacActualizarEstadoUI(ts);
+      toast('Datos enviados al flujo de Banco Pacífico', 'success');
+    }catch(e){ toast('No se pudieron enviar los datos a Banco Pacífico', 'error'); }
+  }else{
+    try{ await pfPacDesvincular(emp); }catch(e){}
+    pfPacActualizarEstadoUI();
+    toast('Vínculo con Banco Pacífico desactivado: los valores copiados quedan editables allí', 'info');
+  }
+}
+function pfEnviarPacificoHTML(){
+  return `
+    <div class="card" id="pf-enviar-pacifico-card" style="border:2px solid #00833E;background:#f0f8f3;margin-top:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;cursor:pointer;color:#00833E;">
+        <input type="checkbox" id="${PF_PAC_ID}" onchange="pfToggleEnviarPacifico(this)" style="width:18px;height:18px;">
+        ☑ Enviar estos datos al Flujo de Caja de Banco Pacífico
+      </label>
+      <p class="helpNote" style="margin:8px 0 0;" id="pf-enviar-pacifico-estado">Desactivado: no se envía nada.</p>
+      <p class="helpNote" style="margin:6px 0 0;">Al marcarla (por empresa), las cifras de este flujo se copian y se mantienen al día en <b>Documentos Banco Pacífico → Flujo de Caja Proyectado</b> de la misma empresa: saldo inicial de caja; ingresos (total ingresos operacionales = recaudaciones + otros), costos (proveedores nacionales + exterior) y gastos (administrativos, ventas, personal, otros operativos, impuestos, participación trabajadores y otros egresos) del año base mes a mes; % de crecimiento de los Años 2-5; aportes de accionistas, préstamo bancario recibido y compra de activos/inversiones (total del año base en su mes de mayor movimiento). Lo que Pacífico no tiene (venta de activos, préstamos de accionistas, dividendos, capital e intereses de préstamos — Pacífico los calcula con su propia tabla de amortización) y las tablas de préstamos, textos y premisas de Pacífico <b>no se tocan</b>. Pacífico solo tiene 5 años: el sexto año de este flujo no se envía. Mientras esté marcada, esos campos quedan de solo lectura en Pacífico (marcados 🔗); al desmarcarla dejan de sincronizarse y quedan editables.</p>
+    </div>`;
+}
+/* Lado Pacífico: marca/desmarca los campos vinculados y el banner según el borrador de la empresa actual.
+   Se llama desde pintarDocsBancoPacifico DESPUÉS de abRestaurar y ANTES del cálculo en vivo. */
+function bpAplicarVinculoProdubanco(){
+  const b = abGetBorrador('pacifico');
+  const on = b._pfLink==='1';
+  PF_PAC_CAMPOS_VINCULADOS.forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const grupo = el.closest('.form-group');
+    const label = grupo ? grupo.querySelector('label') : null;
+    if(on){
+      el.classList.add('fc2-linked');
+      el.title = '🔗 vinculado a Produbanco (se actualiza desde el Flujo de Caja Proyectado Produbanco)';
+      if(el.tagName==='SELECT'){ el.style.pointerEvents='none'; el.tabIndex=-1; el.setAttribute('aria-disabled','true'); }
+      else el.readOnly = true;
+      if(label && !label.querySelector('.fc2-link-tag')){ const t = document.createElement('span'); t.className='fc2-link-tag'; t.textContent='🔗 vinculado a Produbanco'; label.appendChild(t); }
+    }else{
+      el.classList.remove('fc2-linked'); el.removeAttribute('title');
+      if(el.tagName==='SELECT'){ el.style.pointerEvents=''; el.removeAttribute('tabindex'); el.removeAttribute('aria-disabled'); }
+      else el.readOnly = false;
+      if(label){ const t = label.querySelector('.fc2-link-tag'); if(t) t.remove(); }
+    }
+  });
+  const form = document.querySelector('#bpdoc-flujocaja .doc-form');
+  const prev = document.getElementById('fc2-vinculo-banner');
+  if(prev) prev.remove();
+  if(on && form){
+    const hh = b._pfLinkTs ? new Date(Number(b._pfLinkTs)).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}) : '--:--';
+    const div = document.createElement('div');
+    div.id = 'fc2-vinculo-banner';
+    div.className = 'helpNote';
+    div.style.cssText = 'border:1px solid #0057A3;background:#eef5fb;color:#0057A3;font-weight:600;';
+    div.textContent = `🔗 Datos tomados del Flujo Produbanco — 6 años, actualizado ${hh}. ${b._pfLinkNota||''} Para editar estos campos desmarque "Enviar estos datos al Flujo de Caja de Banco Pacífico" en el Flujo Produbanco.`;
+    form.insertBefore(div, form.firstChild);
+  }
 }
 
 /* =========================================================================
@@ -10174,7 +10376,11 @@ function pfTablaAnioHTML(year, modo){
 /* Tabla-resumen anual comparativo 2025-2030: totales anuales de cada
    rubro clave, uno al lado del otro, para ver de un vistazo cómo
    evoluciona el flujo compuesto a lo largo de los 5 años proyectados. */
-function pfResumenAnualHTML(r){
+/* incluirBase (por defecto true): mismo patrón que
+   pfEstadoResultadosTodosHTML — ver 11va iteración. */
+function pfResumenAnualHTML(r, incluirBase){
+  incluirBase = incluirBase !== false;
+  const anios = incluirBase ? PF_TODOS_ANIOS : PF_PROJ_YEARS;
   const filas = [
     ['ventas','Ventas Valoradas',true], ['totalIngOp','Total Ingresos Operacionales'],
     ['totalEgrOp','Total Egresos Operacionales'], ['flujoNetoOp','Flujo Neto Operacional',true],
@@ -10182,8 +10388,8 @@ function pfResumenAnualHTML(r){
     ['flujoNetoGenerado','Flujo Neto Generado',true], ['flujoAcumulado','Saldo Final de Caja (Dic.)',true],
   ];
   const anioLbl = y => y===2025?`${pfAnioReal(y)} (Base)`:`${pfAnioReal(y)} (Proyectado)`;
-  return `<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th>${PF_TODOS_ANIOS.map(y=>`<th class="num">${anioLbl(y)}</th>`).join('')}</tr></thead><tbody>
-    ${filas.map(([key,label,bold])=>`<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td>${PF_TODOS_ANIOS.map(y=>{
+  return `<div style="overflow-x:auto"><table><thead><tr><th>Concepto</th>${anios.map(y=>`<th class="num">${anioLbl(y)}</th>`).join('')}</tr></thead><tbody>
+    ${filas.map(([key,label,bold])=>`<tr${bold?' style="font-weight:700;background:#f7fafc"':''}><td>${label}</td>${anios.map(y=>{
       const val = key==='flujoAcumulado' ? r.anios[y].flujoAcumulado[11] : r.anios[y].tot[key];
       return `<td class="num" id="pf-resumen-${y}-${key}">${bpUSD(val)}</td>`;
     }).join('')}</tr>`).join('')}
@@ -10298,6 +10504,7 @@ function pfFlujoFormHTML(){
       <button class="btn-secondary" onclick="pfMostrarReporteValidacion()">✅ Verificar Consistencia del Flujo</button>
     </div>
     <div id="pfValidacionReporteHost"></div>
+    ${pfEnviarPacificoHTML()}
     ${pfSupuestosBaseHTML()}
 
     <div class="doc-tab-row" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px;">
@@ -10364,21 +10571,47 @@ function pfFlujoFormHTML(){
    detalle completo de los 5 años proyectados, estén o no expandidos
    en pantalla en ese momento. */
 function pfSnapshotHTML(id){ const el = document.getElementById(id); return el ? el.innerHTML : ''; }
+/* Rango de años a mostrar en los títulos de las tablas-comparativo
+   (Resumen Anual / Estado de Resultados) según incluirBase — ver 11va
+   iteración: "2025-2030" con el año base incluido, o "2026-2030" (desde
+   el primer año proyectado) cuando el usuario desmarca "Incluir año
+   base en la impresión". */
+function pfRangoAniosHTML(incluirBase){
+  const desde = incluirBase ? pfAnioReal(2025) : pfAnioReal(PF_PROJ_YEARS[0]);
+  return `${desde}-${pfAnioReal(2030)}`;
+}
 /* incluirBase (por defecto true): si es false, omite por completo la
    sección detallada del año base 2025 (tabla mensual) del documento
-   impreso — el Resumen Comparativo y el Estado de Resultados
-   Comparativo (que sí incluyen 2025 como columna informativa) se
-   mantienen intactos, porque son tablas-resumen de los 6 años, no el
-   detalle mensual del año base en sí. */
+   impreso, Y ADEMÁS (11va iteración — antes NO ocurría: ver bug
+   reportado por el usuario con captura de pantalla, "pusimos la opcion
+   de no imprimir año base y si esta imprimiendo") excluye la columna
+   del año base de las 2 tablas-resumen de 6 años (Resumen Anual
+   Comparativo y Estado de Resultados Proyectado, tanto la tarjeta de
+   detalle #pfERDetalleCont como la de #pfEstadoResultadosTodosCont,
+   que desde la 10ma iteración comparten el mismo renderizador de 6
+   años). Causa raíz del bug: estas 2 tablas se tomaban con
+   pfSnapshotHTML() directamente del DOM en pantalla, donde SIEMPRE se
+   renderizan con los 6 años (PF_TODOS_ANIOS) sin importar el checkbox
+   "Incluir año base en la impresión" — ese checkbox nunca se pasaba a
+   pfEstadoResultadosTodosHTML/pfResumenAnualHTML, que ni siquiera
+   aceptaban un parámetro incluirBase. Fix: en vez de hacer snapshot del
+   DOM para estas 2 tablas, se recalculan aquí mismo con pfCalcular() y
+   se vuelven a pintar llamando a las mismas funciones con
+   incluirBase=false, que ahora sí filtran la columna 2025 (ver más
+   arriba). El resto del documento (tablas mensuales por año, Índices
+   Financieros) no cambia: siguen siendo snapshot del DOM como antes. */
 function pfContenidoCompletoHTML(emp, incluirBase){
   incluirBase = incluirBase !== false;
+  const r = pfCalcular();
+  const erTodos = pfCalcularEstadoResultadosTodos(r.anios);
+  const rango = pfRangoAniosHTML(incluirBase);
   return `
     <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado ${pfAnioReal(2025)}-${pfAnioReal(2030)}</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado${incluirBase?'':' · (sin detalle del año base '+pfAnioReal(2025)+')'}</div></div>
-    <h4>📊 Resumen Anual Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfResumenAnualCont')}
+    <h4>📊 Resumen Anual Comparativo ${rango}</h4>${pfResumenAnualHTML(r, incluirBase)}
     ${incluirBase ? `<h4>Flujo de Caja ${pfAnioReal(2025)} (Base)</h4>${pfSnapshotHTML('pfTabla2025')}` : ''}
     ${PF_PROJ_YEARS.map(y=>`<h4>Flujo de Caja ${y} (Proyectado)</h4>${pfSnapshotHTML('pfTabla'+y)}`).join('\n    ')}
-    <h4>Estado de Resultados Proyectado (${pfAnioReal(2025)}-${pfAnioReal(2030)})</h4>${pfSnapshotHTML('pfERDetalleCont')}
-    <h4>Estado de Resultados Proyectado — Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfEstadoResultadosTodosCont')}
+    <h4>Estado de Resultados Proyectado (${rango})</h4>${pfEstadoResultadosTodosHTML(erTodos, incluirBase)}
+    <h4>Estado de Resultados Proyectado — Comparativo ${rango}</h4>${pfEstadoResultadosTodosHTML(erTodos, incluirBase)}
     <h4>📐 Índices Financieros Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfIndicesCont')}
     <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco. Cada año proyectado (${pfAnioReal(2026)}-${pfAnioReal(2030)}) tiene su propio juego de porcentajes de crecimiento/decrecimiento y de composición (ventas, proveedores, gastos), 100% editable de forma independiente; un cambio en el % de un año se propaga solo hacia adelante (años posteriores), nunca hacia atrás.</div>
   `;
@@ -10586,7 +10819,7 @@ async function terminarYGuardarPF(){
   const r = pfRecalcularTodo();
   const emp = empresasCache.find(e=>e.id===empresaBancariaSeleccionada);
   const datos = {};
-  document.querySelectorAll('#pfDocsRoot input').forEach(inp=>{ if(inp.id) datos[inp.id] = inp.value; });
+  document.querySelectorAll('#pfDocsRoot input').forEach(inp=>{ if(inp.id) datos[inp.id] = (inp.type==='checkbox') ? (inp.checked?'1':'0') : inp.value; });
   // porcentajesPorAnio: guarda explícitamente el juego de % PROPIO de
   // cada año proyectado (2026-2030) más el del año base 2025, para que
   // el historial deje registro claro de qué % se usó en cada año de la
