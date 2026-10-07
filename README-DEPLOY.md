@@ -244,6 +244,40 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: liquidaciones de viaje (sustento 05) aparte en ⚖️ Conciliación SRI vs Mayores (14va iteración).** Pedido en
+  español del usuario (literal): "por favor en las facturas con sustento 05 son liquidaciones de viaje y no estan a
+  nombre de la empresa no va a cuadrar con el sri, ponlas aparte como liquidaciones de viaje para que pueda cuadrar con
+  el detalle de compras del sri". Los documentos con **código de sustento 05** se separan de la comparación con los
+  comprobantes recibidos del SRI y se muestran/controlan como un bloque propio **🧳 Liquidaciones de viaje (sustento 05)**.
+  - **Interruptor** «Separar liquidaciones de viaje (sustento 05)» (activo por defecto; por empresa). Apagado, todo se
+    comporta exactamente como en la 13va iteración (probado: mismos KPI, líneas, excepciones y recomendaciones).
+  - **Cómo se reconocen** (prioridad): marca manual del documento (botón «🧳 Es viaje» / «↩ Quitar» en las excepciones y en
+    la tarjeta) > lista de proveedores/cédulas de empleados > texto del tipo de documento (p. ej. «viaje») > sustento 05
+    (el del **ATS** manda para los documentos que están en el ATS; los del registro de compras y del reporte contable se
+    cruzan por RUC + secuencial; si el documento no está en el ATS se usa la columna de sustento del propio reporte o
+    registro, que el lector ahora captura cuando existe). Las reglas están en la tarjeta (⚙️ Reglas de clasificación).
+  - **Dos vistas.** (i) Compras a nombre de la empresa (sin 05): SRI vs registro, SRI vs ATS, registro vs ATS y ATS vs
+    reporte contable por tipo de documento; los 05 no se reportan como «registrado sin comprobante en el SRI». (ii) Bloque
+    de liquidaciones de viaje: documentos, base 0%, base ≠ 0%, IVA y retenciones (ATS), con su propio grupo **3b** de 4
+    verificaciones: **puente** (compras ATS todos los sustentos − viaje 05 = compras comparables con el SRI; el total sigue
+    cuadrando con el talón, que incluye todo), ATS vs reporte contable, ATS vs registro de compras (documentos de un solo
+    lado) y coherencia de la clasificación (sustento distinto entre sistema y ATS, 05 que sí figuran en el SRI, marcas).
+    Las comparaciones de retenciones con el resumen del sistema y los formularios 103/104 siguen sobre el total de
+    compras. Recomendación nueva (con puente y texto prudente: respaldo con comprobantes de empleados, IVA solo como
+    crédito si la norma vigente lo permite; no es asesoría legal).
+  - **Pantalla/exportación.** Tarjeta en las pestañas Conciliación y Resumen (tabla por fuente, puente y listado de
+    documentos), sección en Imprimir/PDF, hoja **«Liquidaciones de viaje»** en el Excel y filas del puente en «Resumen».
+  - **Persistencia sin rutas nuevas** (misma regla de `conciliacion_sri` / `conciliacion_sri_config`; `reglas_firebase_completas.json`
+    no cambia): interruptor y reglas en la configuración por empresa; marcas manuales en la fuente `viaje` del periodo.
+  - **Hallazgo con los archivos reales de septiembre 2026:** en el ATS hay 47 de 167 líneas con sustento 05 (base 0% 261,40;
+    base ≠ 0% 182,08; IVA 27,31; 38 facturas, 9 notas de venta; 32 de PANAVIAL), todas en el registro de compras y en el
+    reporte contable y **ninguna** en los recibidos del SRI. De los 39 «registrados sin comprobante en el SRI» (333,65), 38
+    eran sustento 05 (333,48; IVA 27,31): la diferencia SRI vs registro baja de 391,89 a 58,41 (PECMANOIL 8,70 sin registrar
+    + 0,17 de una nota de débito con sustento 05 en el reporte y otro código en el ATS + 49,54 en 5 diferencias de base).
+    Reembolsos 13 vs 12 y código 332 113 vs 119 **no** dependen del 05.
+  - **Pruebas:** motor contra un cálculo independiente en Python de los mismos archivos (47 documentos clave por clave),
+    puente exacto, interruptor apagado = resultados previos, reglas/marcas con un registro sin columna de sustento,
+    pantalla (jsdom), persistencia con recarga, solo lectura, impresión y Excel. Los datos reales no están en la app.
 - **Nuevo: ⚖️ Conciliación SRI vs Mayores (13va iteración).** Pedido en español del usuario (literal): "dentro de la app
   quiero que crees una area de conciliacion SRI mayores, aqui te voy a enviar los formularios 103 y 104 del sri y los
   mayores del sistema contable. No siempre los mayores tienen el mismo formato. Con esto por favor crea un mecanismo
