@@ -244,6 +244,76 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: ⚖️ Conciliación SRI vs Mayores (13va iteración).** Pedido en español del usuario (literal): "dentro de la app
+  quiero que crees una area de conciliacion SRI mayores, aqui te voy a enviar los formularios 103 y 104 del sri y los
+  mayores del sistema contable. No siempre los mayores tienen el mismo formato. Con esto por favor crea un mecanismo
+  para revisar que los mayores cuadren con los formularios y genera un resumen detallado de lo que cuadra y no cuadra
+  y las recomendaciones". Área nueva en el menú (**⚖️ Conciliación SRI vs Mayores**, clave de permiso `conciliacion_sri`,
+  aparece sola en Administración de Usuarios), por **empresa y periodo (mes)**, con 4 sub-pestañas.
+  - **Arquitectura.** Todo el módulo vive en `index.html` (funciones con prefijo `csri*`, sin dependencias nuevas:
+    reutiliza pdf.js y SheetJS que ya estaban cargados). Capas: (1) lectores de fuentes → (2) importador de mayores
+    agnóstico al formato → (3) mapeo de cuentas a conceptos → (4) motor determinista de verificaciones (sin IA, sin
+    estimaciones) → (5) recomendaciones por reglas → (6) resumen, impresión y Excel. El estado en memoria sobrevive a
+    cambios de pestaña y re-renders; se autoguarda en Firebase con debounce de 1,5 s y se carga al abrir.
+  - **Pestaña 📥 Fuentes** (cada una muestra una tarjeta «✓ cargado» con un resumen; admite arrastrar y soltar):
+    ATS (XML) · talón resumen del ATS (PDF, con ingreso manual si no se puede leer) · reportes contables IMPUESTOS
+    (.xls/.xlsx: Detalle de Ventas/Compras y Resumen de retenciones) · importaciones (.xlsx; detecta los marcadores
+    «(CAS.504)/(CAS.524)») · comprobantes recibidos del SRI + registro de compras contable (pueden venir en dos hojas
+    del mismo Excel: se detecta cuál es cuál y se puede cambiar de hoja) · consolidado IESS (PDF, con ingreso manual) ·
+    **formularios 103/104** (cuadrícula de casilleros editable, o carga de PDF/XML/Excel donde se leen los pares
+    casillero/valor; al lado de cada casillero se muestra el valor **esperado** derivado del ATS/IESS/importaciones) ·
+    **mayores contables**.
+  - **Mayores en cualquier formato.** Se detecta automáticamente: fila de encabezado (por sinónimos, también de dos
+    niveles), columnas (fecha, asiento, detalle, debe/haber, monto con signo, columna Tipo D/H, saldo, saldo
+    inicial/final, deudor/acreedor), la cuenta (título por bloques «Cuenta: …», una columna de cuenta, o una cuenta por
+    hoja con el nombre de la hoja), formato numérico (1.234,56 / 1,234.56, negativos entre paréntesis o con signo al
+    final), fechas en texto o serie de Excel, mayores que traen solo saldo (se derivan los movimientos), convención
+    de saldo deudor/acreedor y el caso «balance de comprobación» (una fila por cuenta). Excel, CSV/TXT y PDF con texto.
+    Antes de importar hay un **asistente**: resumen del formato detectado, vista previa de la hoja y un selector por
+    campo para corregir la columna, fila del encabezado, formato de números y qué signo es débito; el resultado se
+    recalcula al instante. Los ajustes se pueden guardar como **perfil de formato por empresa** (se aplica solo
+    cuando el encabezado de un archivo futuro coincide con la firma del perfil).
+  - **Pestaña 🔗 Mapeo de cuentas.** Cada cuenta del mayor se asigna a un concepto (ventas gravadas/0%, IVA en
+    ventas, IVA en compras, importaciones, retenciones de IVA por %, retención en la fuente por código del ATS,
+    IESS, sueldos, reembolsos…). Hay sugerencias automáticas por nombre de cuenta (revisables) y se guarda por empresa
+    para los siguientes periodos. Incluye ajustes (tolerancias, tarifa de IVA) y el **catálogo de casilleros editable**.
+  - **Pestaña ⚖️ Conciliación — catálogo de 38 verificaciones** (estado ✅ cuadra / ⚠️ diferencia menor / ❌ no cuadra /
+    ⏳ sin datos; tolerancia predeterminada $0,05 por línea y $1,00 agregada; cada una con detalle de líneas y
+    excepciones desplegables): **1. ATS vs talón** (compras por tipo, ventas, retenciones de renta y de IVA,
+    retenciones recibidas, anulados, cabecera, periodo/RUC, recálculo de IVA y retenciones, fechas, duplicados) ·
+    **2. ATS vs reportes del sistema** (compras, ventas, retenciones por código, IVA) · **3. Documentos** (SRI vs
+    registro contable vs ATS, por RUC + secuencial; clasifica como informativos los propios, físicos, anulados y notas
+    de venta) · **4. Importaciones** (vs libro de compras/DAU y vs IVA) · **5. Formulario 104** (ventas, compras,
+    importaciones, retenciones, crédito tributario/factor de proporcionalidad) · **6. Formulario 103** (bases, valores,
+    totales, coherencia, nómina 302/352 contra IESS, códigos sin casillero) · **7. Mayores** (integridad,
+    duplicados, asientos descuadrados, naturaleza de saldo, movimientos fuera del periodo, mayor vs esperado, mayor vs
+    formulario).
+  - **Pestaña 📝 Resumen y Recomendaciones.** KPIs, lo que no cuadra (con las principales excepciones), lo que cuadra,
+    lo pendiente de datos y recomendaciones con severidad (alta/media/baja) y monto. **Imprimir / PDF** (usa
+    `bpAbrirVentanaImpresion` con la nueva opción `banco:'neutro'`: sin logo ni colores de banco; el resto de módulos
+    no cambia) y **Exportar Excel** real (.xlsx) con las hojas Resumen, Verificaciones, Detalle de líneas, Excepciones,
+    Recomendaciones, ATS por código, Retenciones por código y Mayores normalizados.
+  - **Rutas nuevas en Firebase (⚠️ agregar a las reglas de Realtime Database; ya están en
+    `reglas_firebase_completas.json`):** `conciliacion_sri/{DATOS_UID}/{empresaId}/{AAAA-MM}/{ats|talon|rep|imp|sri|libro|iess|form|mayores|meta}`
+    (cada fuente se guarda como **un solo texto JSON**, para evitar problemas con claves y arreglos) y
+    `conciliacion_sri_config/{DATOS_UID}/{empresaId}` (mapeo de cuentas, perfiles de formato, catálogo editable,
+    tolerancias). Misma regla que `banco_borradores_auto` pero con el permiso `areas/conciliacion_sri` (lectura si no
+    es `sin_acceso`; escritura solo con `completo`). Los usuarios de solo lectura ven pero no cargan ni guardan.
+  - **Privacidad / límites.** Del IESS se guardan solo totales (sin nombres ni cédulas). De los mayores se guardan
+    como máximo ~8.000 movimientos por periodo (prioridad a las cuentas ya mapeadas); el resto de cuentas queda con
+    sus totales del archivo y se avisa con la etiqueta «solo totales». El archivo original nunca se sube.
+  - **⚠️ Casilleros — verificar.** La numeración de casilleros del catálogo (104: 401/411/421, 500–563, 609, 721–731,
+    799…; 103: 302/352 … 343/393, 3440/3940, 349/399, 499) se armó de memoria y de los marcadores del propio
+    archivo de importaciones (504/524); **no se tuvo a la vista un formulario 103/104 real**, así que cada fila marcada
+    «verificar» (confianza media) debe compararse con el formulario vigente del SRI. El catálogo es editable desde la
+    pestaña Mapeo de cuentas y la nota aparece en el propio módulo. Tampoco se probó con un mayor real del sistema
+    contable de la empresa: los 11 formatos sintéticos de las pruebas cubren los casos descritos arriba, y el
+    asistente permite corregir cualquier formato que no se detecte bien.
+  - **Pruebas (jsdom + el script real de `index.html` + SheetJS):** lectores contra los archivos reales de un cliente
+    (ATS vs talón, retenciones vs Resumen, compras vs Detalle de Compras, importaciones, REVISION_SRI, IESS);
+    importador de mayores con 11 formatos sintéticos + balance de comprobación; recarga desde Firebase simulado
+    (mismas cifras y KPIs), aislamiento por empresa y modo solo lectura. Los datos reales del cliente solo se usaron
+    en las pruebas; **no están dentro de la aplicación**.
 - **Nuevo: enviar el Flujo de Caja Produbanco al Flujo de Caja de Banco Pacífico con una casilla (12va iteración).**
   Pedido en español del usuario (literal): "los datos del flujo de caja que hice en produbanco si yo pongo un
   check envialos al flujo de banco pacifico". En **📈 Flujo de Caja Proyectado Produbanco** (debajo de la
