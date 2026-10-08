@@ -244,6 +244,39 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Rediseño: ⚖️ Conciliación SRI vs Mayores organizada por secciones (17ma iteración).** Pedido en español del usuario (literal):
+  "no me siento contento con la información, siento que esta desordenada. Creo que debemos ir por compras y vemos la diferencia en
+  compra, ventas y ver la diferencia en venta, retenciones y ver la diferencia en retenciones, tambien las excepciones deben ser mas
+  claras, porque no se detalla bien de que se trata la excepción, y si se suman o restan al final. La recomendaciones hay que hacer
+  igual por cada parte, compras, ventas, retenciones, etc. Que se pueda ver la información detallada de la diferencia para buscar el
+  porqué con las respectivas recomendaciones como esta ahora". Solo cambia la presentación: las verificaciones, los parsers y todos
+  sus números son los mismos (probado: KPI, checks y recomendaciones idénticos a la 16ta).
+  - **Panorama + navegador.** Arriba, una fila por parte (Compras, Ventas, Retenciones de renta, Retenciones de IVA, Importaciones, Nómina,
+    Liquidaciones de viaje, Formularios, Mayores, Integridad) con Fuente A, Fuente B, Diferencia, Por resolver, estado y %; debajo, tarjetas
+    de sección con estado y monto (las que no tienen datos muestran ⏳ y lo que hay que cargar). Cada verificación existente cuelga de
+    exactamente una sección.
+  - **Página de sección con estructura fija:** (a) encabezado con las dos cifras comparadas y su origen; (b) **puente de la diferencia**:
+    Diferencia total (A − B) → una fila por partida con ¿Qué es?, ¿Suma o resta? (frase con dirección y signo), qué hacer, nº de documentos,
+    base, IVA, efecto (±) y «queda por explicar», seguido de «explicada», «por resolver» y «sin explicar» y una línea de cierre
+    («Totalmente conciliado» cuando no queda nada); cada partida se expande a sus documentos (proveedor, fecha, bases, IVA, total, efecto y
+    causa probable); (c) recomendaciones de la sección con enlace «Ver en el puente»; (d) «Ver detalle de la comparación»: las verificaciones
+    originales (por tipo de comprobante, código, base…), el Cuadre de bases y los puentes A/B/C (dentro de Compras). Los documentos ya
+    explicados en el puente no se repiten en las verificaciones del detalle.
+  - **Convención única de signos:** Diferencia = Fuente A − Fuente B; una partida + aumenta la diferencia (A queda por encima de B) y una
+    partida − la reduce (A queda por debajo de B). Compras usa A = SRI recibidos y B = ATS de la empresa (sin viaje).
+  - **Etiquetas:** «documentos propios» → «Compras emitidas por la propia empresa» (liquidaciones de compra y reembolsos cuya clave de acceso
+    lleva el RUC de la empresa; el SRI solo lista como recibidos los emitidos por terceros); «documentos físicos» → «Documentos físicos o preimpresos
+    (no electrónicos)» (autorización de 10 dígitos). Las diferencias de conteo (cód. 332: 113 vs 119; tipo 41: 13 vs 12) salen como notas
+    «no suman ni restan importe». Sin códigos técnicos en pantalla.
+  - **Resumen y Recomendaciones:** Panorama + recomendaciones agrupadas por sección (Compras, Ventas, Retenciones de renta, Retenciones de IVA,
+    Importaciones, Nómina, Viaje, Formularios, Mayores, Integridad), ordenadas por prioridad y monto, más lo pendiente de datos.
+  - **Impresión y Excel** siguen la misma estructura: Panorama → un bloque por sección (cifras, puente con signos, notas, recomendaciones);
+    hojas Excel Panorama, Compras, Ventas, Retenciones, Importaciones, Nómina e IESS, Viaje (puente), Formularios, Mayores, Integridad y
+    Recomendaciones (por sección), además de las hojas de detalle anteriores.
+  - **Datos reales (FURCHETSA, viaje separado, cabecera sin conciliar):** Compras ATS↔SRI: A 92.200,25 − B 94.112,84 = −1.912,59 = explicadas −1.922,42
+    (propias −762,83; físicas −1.196,03; anulado con NC +36,46; redondeos −0,02) + por resolver +9,83 (PECMANOIL +10,00 con IVA, nota de débito −0,17)
+    + sin explicar 0,00. Las cinco con «dos bases» (49,54) salen como resueltas e informativas. Verificado con un cálculo independiente en Python.
+
 - **Cambio: la cabecera del ATS ya no se concilia (16ta iteración).** Pedido en español del usuario (literal): "considera algo
   adicional, la cabecera en el ats es diferente que el talon y el xml porque ahora se pone facturas electronicas y ya no es
   necesario cuadrar el encabezado". La verificación «Coherencia interna del XML: totalVentas y ventas por establecimiento» y su

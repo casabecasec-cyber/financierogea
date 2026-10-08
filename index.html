@@ -280,6 +280,25 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
 .csri-col-t{font-weight:600;} .csri-lnk{font-size:11px;} .csri-mini{width:100%;border-collapse:collapse;font-size:11px;margin:3px 0;} .csri-mini th,.csri-mini td{padding:2px 5px;border-bottom:1px solid rgba(128,128,128,.2);text-align:left;}
 .csri-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;} .csri-badge-ok{background:rgba(60,170,100,.18);} .csri-badge-warn{background:rgba(232,179,57,.22);} .csri-badge-bad{background:rgba(239,90,90,.18);} .csri-badge-sd{background:rgba(128,128,128,.18);}
 @media print{.csri-cuadre{font-size:9px;}}
+/* 17ma: secciones */
+.csri-chip{display:inline-block;padding:2px 9px;border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap;border:1px solid var(--border);}
+.csri-chip-ok{background:rgba(34,197,139,.15);} .csri-chip-warn{background:rgba(232,179,57,.18);} .csri-chip-bad{background:rgba(239,90,90,.16);} .csri-chip-sd{background:rgba(128,128,128,.14);color:var(--muted);}
+.csri-sg{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;} .csri-sg-pos{color:var(--accent2);} .csri-sg-neg{color:var(--danger);} .csri-sg-cero{color:var(--muted);}
+.csri-nav{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin:8px 0 12px;}
+.csri-nav-i{display:flex;flex-direction:column;gap:5px;align-items:flex-start;text-align:left;background:var(--panel);color:var(--text);border:1px solid var(--border);border-left:4px solid var(--border);border-radius:8px;padding:9px 10px;cursor:pointer;font:inherit;}
+.csri-nav-i.sel{outline:2px solid var(--accent);background:var(--panel2);} .csri-nav-ok{border-left-color:var(--accent2);} .csri-nav-warn{border-left-color:var(--warn);} .csri-nav-bad{border-left-color:var(--danger);} .csri-nav-sd{opacity:.8;}
+.csri-nav-t{font-weight:700;font-size:13px;} .csri-nav-s{font-size:12px;color:var(--muted);}
+.csri-pano-r{cursor:pointer;} .csri-pano-r:hover td{background:var(--panel2);}
+.csri-sec .csri-conv{font-size:12px;color:var(--muted);background:var(--panel2);border-radius:6px;padding:7px 9px;margin:6px 0;}
+.csri-bq{border-top:1px solid var(--border);padding:12px 0 6px;margin-top:10px;} .csri-bq-h{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;}
+.csri-figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:10px;} .csri-fig{background:var(--panel2);border-radius:8px;padding:8px 10px;} .csri-fig-l{font-size:11px;color:var(--muted);} .csri-fig-v{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;} .csri-fig-d{border:1px solid var(--accent);}
+.csri-puente td{vertical-align:top;} .csri-pt-q,.csri-pt-e,.csri-pt-a{font-size:12px;margin-top:3px;} .csri-pt-e{color:var(--text);} .csri-pt-a{color:var(--muted);}
+.csri-tipo{font-size:11px;font-weight:600;border-radius:10px;padding:1px 7px;} .csri-tipo-e{background:rgba(34,197,139,.15);} .csri-tipo-p{background:rgba(239,90,90,.18);} .csri-tipo-i{background:rgba(128,128,128,.18);}
+.csri-cierre{margin:8px 0;padding:8px 10px;border-radius:8px;font-weight:600;font-size:13px;} .csri-cierre-ok{background:rgba(34,197,139,.14);} .csri-cierre-warn{background:rgba(232,179,57,.16);} .csri-cierre-bad{background:rgba(239,90,90,.14);}
+.csri-notas{margin:4px 0 8px 18px;font-size:12px;} .csri-otra{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px;}
+.csri-sd-box{background:var(--panel2);border:1px dashed var(--border);border-radius:8px;padding:12px;margin:8px 0;} .csri-det{margin-top:14px;border-top:1px solid var(--border);padding-top:10px;}
+.csri-rec-g{margin-top:10px;} .csri-docs td,.csri-docs th{font-size:11px;}
+@media (max-width:640px){.csri-nav{grid-template-columns:repeat(2,1fr);} .csri-fig-v{font-size:16px;}}
 </style>
 </head>
 <body>
@@ -18501,6 +18520,7 @@ function csriCalcular(S, C){
   const res = { checks:L, E, R, RR, Remp, RRemp, viaje:VB, puente:PU, periodo:S.periodo, fecha:Date.now(), tolL, tolA };
   res.recs = csriRecomendaciones(S, C, res);
   res.kpi = csriKPI(res);
+  try{ res.secciones = csriSecciones(S, C, res); res.recsPorSec = csriRecsPorSeccion(res); }catch(e){ res.secciones = []; res.recsPorSec = {}; res.seccionesError = String(e&&e.message||e); }
   return res;
 }
 function csriKPI(res){
@@ -19492,22 +19512,7 @@ function csriKpiHTML(res){
   const cel = (n,l,cl)=>`<div class="statCard csri-kpi ${cl||''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   return `<div class="statRow csri-kpis">${cel(k.pct==null?'—':k.pct+'%','de lo evaluado cuadra','csri-k-main')}${cel(k.ok,'✅ Cuadran','csri-k-ok')}${cel(k.warn,'⚠️ Dif. menor','csri-k-warn')}${cel(k.bad,'❌ No cuadran','csri-k-bad')}${cel(k.sd,'⏳ Sin datos','')}${cel(csriFmtUSD(k.difAbs),'diferencia absoluta','')}</div>`;
 }
-function csriHtmlConciliacion(){
-  const S = csriS();
-  const hayAlgo = S.ats || S.talon || S.rep || S.imp || S.sri || S.libro || S.iess || S.mayores.cuentas.length || csriHayDeclarado(S,'103') || csriHayDeclarado(S,'104');
-  if(!hayAlgo) return `<div class="card emptyState">Cargue al menos una fuente en <b>📥 Fuentes</b> para ver las verificaciones.</div>`;
-  const res = csriCalc();
-  const chips = [['todos','Todas'],['bad','❌ No cuadran'],['warn','⚠️ Dif. menor'],['ok','✅ Cuadran'],['sd','⏳ Sin datos']]
-    .map(c=>`<button class="doc-tab ${csriFiltroEst===c[0]?'active':''}" style="padding:5px 12px;font-size:12px" onclick="csriFiltrarEst('${c[0]}')">${c[1]}</button>`).join('');
-  let h = csriKpiHTML(res) + csriHtmlViaje(res, 'conc') + `<div class="doc-tabs" style="margin-bottom:12px">${chips}<button class="btn small" onclick="csriRecalcular()">🔄 Recalcular</button></div>`;
-  for(const [g, titulo] of CSRI_GRUPOS){
-    const cs = res.checks.filter(c=>c.grupo===g && (csriFiltroEst==='todos' || c.estado===csriFiltroEst));
-    if(!cs.length) continue;
-    h += `<div class="csri-grupo">${csriEsc(titulo)}</div>` + cs.map(csriHtmlCheck).join('');
-  }
-  return h;
-}
-function csriHtmlCheck(c){
+function csriHtmlCheck(c, omit){
   const abierto = !!csriAbiertos[c.id];
   const ico = CSRI_EST_ICO[c.estado];
   const difTxt = c.estado==='sd' ? 'sin datos' : (c.excepModo ? (c.excep.filter(e=>!e.info).length+' excepción(es) · '+csriFmtUSD(c.dif)) : csriFmtUSD(c.dif));
@@ -19521,13 +19526,18 @@ function csriHtmlCheck(c){
         c.lineas.map(l=>`<tr class="${l.est==='bad'?'csri-r-bad':l.est==='warn'?'csri-r-warn':''}"><td>${l.est==='info'?'ℹ️':CSRI_EST_ICO[l.est]||''}</td><td>${csriEsc(l.etq)}${l.nota?`<div class="csri-muted">${csriEsc(l.nota)}</div>`:''}</td><td class="num">${csriNumTxt(l,l.a)}</td><td class="num">${csriNumTxt(l,l.b)}</td><td class="num">${l.dif==null?'—':csriNumTxt(l,l.dif)}</td></tr>`).join('')}</tbody></table></div>`;
     }
     if(c.excep && c.excep.length){
-      const ex = c.excep.slice(0,150);
+      const omitidas = omit ? c.excep.filter(e=>e.k && omit[e.k]).length : 0;
+      const lista = omit ? c.excep.filter(e=>!(e.k && omit[e.k])) : c.excep;
+      if(omitidas) cuerpo += `<div class="helpNote">${omitidas} documento${omitidas===1?'':'s'} de esta verificación ya está${omitidas===1?'':'n'} explicado${omitidas===1?'':'s'} en el puente de la sección (no se repite${omitidas===1?'':'n'} aquí).</div>`;
+    if(lista.length){
+      const ex = lista.slice(0,150);
       const conK = csriPuedeEditar() && csriViajeActivo() && ex.some(e=>e.k);
       const btn = e=> !conK || !e.k ? '' : (e.acc==='quitar'
         ? `<button class="btn small" title="Dejar de tratar como liquidación de viaje" onclick="csriViajeDesmarcar('${e.k}')">↩ Quitar de viaje</button>`
         : `<button class="btn small" title="Marcar como liquidación de viaje (sustento 05): se aparta de la conciliación con el SRI" onclick="csriViajeMarcar('${e.k}')">🧳 Es viaje</button>`);
-      cuerpo += `<div class="csri-sub">Excepciones (${c.excep.length})</div><div class="csri-tabla-scroll" style="max-height:380px"><table><thead><tr><th>Tipo</th><th>Referencia</th><th>Detalle</th><th>Causa probable</th><th class="num">Monto</th><th class="num">IVA</th>${conK?'<th></th>':''}</tr></thead><tbody>${
+      cuerpo += `<div class="csri-sub">Excepciones (${lista.length})</div><div class="csri-tabla-scroll" style="max-height:380px"><table><thead><tr><th>Tipo</th><th>Referencia</th><th>Detalle</th><th>Causa probable</th><th class="num">Monto</th><th class="num">IVA</th>${conK?'<th></th>':''}</tr></thead><tbody>${
         ex.map(e=>`<tr class="${e.info?'csri-r-info':''}"><td>${csriEsc(e.tipo)}${e.info?' <span class="pill muted">info</span>':''}</td><td>${csriEsc(e.ref)}</td><td>${csriEsc(e.detalle||'')}</td><td>${csriEsc(e.causa||'')}</td><td class="num">${e.monto==null?'':csriFmt(e.monto)}</td><td class="num">${e.iva==null?'':csriFmt(e.iva)}</td>${conK?`<td>${btn(e)}</td>`:''}</tr>${e.det&&e.det.length?`<tr class="csri-q-doc"><td colspan="${conK?7:6}">${csriCuadreDetHTML(e.det)}</td></tr>`:''}`).join('')}</tbody></table></div>${c.excep.length>150?`<div class="csri-muted">Mostrando 150 de ${c.excep.length}; el detalle completo está en el Excel exportado.</div>`:''}`;
+    }
     }
   }
   return `<div class="csri-chk csri-e-${c.estado}"><div class="csri-chk-h" onclick="csriToggle('${c.id}')"><span class="csri-ico">${ico}</span><div class="csri-chk-t"><b>${csriEsc(c.nombre)}</b><div class="csri-muted">${csriEsc(c.srcA||'')}${c.srcB?' ↔ '+csriEsc(c.srcB):''}</div></div><div class="csri-chk-d">${csriEsc(difTxt)}</div><span class="csri-caret">${abierto?'▾':'▸'}</span></div>${abierto?`<div class="csri-chk-b">${cuerpo}</div>`:''}</div>`;
@@ -19546,61 +19556,7 @@ function csriFuentesLista(){
 function csriTopExcep(c, n){
   return (c.excep||[]).filter(e=>!e.info).slice().sort((a,b)=>Math.abs(b.monto||0)-Math.abs(a.monto||0)).slice(0,n);
 }
-function csriHtmlResumen(){
-  const S = csriS();
-  const hayAlgo = S.ats || S.talon || S.rep || S.imp || S.sri || S.libro || S.iess || S.mayores.cuentas.length || csriHayDeclarado(S,'103') || csriHayDeclarado(S,'104');
-  if(!hayAlgo) return `<div class="card emptyState">Cargue las fuentes para generar el resumen y las recomendaciones.</div>`;
-  const res = csriCalc(), e = csriEmpresaObj();
-  const ok = res.checks.filter(c=>c.estado==='ok'), mal = res.checks.filter(c=>c.estado==='bad'||c.estado==='warn'), sd = res.checks.filter(c=>c.estado==='sd');
-  const fuentes = csriFuentesLista().map(f=>`<span class="pill ${f[1]?'ok':'muted'}">${f[1]?'✓':'·'} ${csriEsc(f[0])}</span>`).join(' ');
-  return `
-    <div class="card"><div class="csri-src-h"><b>📝 Resumen de conciliación — ${csriEsc(e?e.nombre:'')} · ${csriEsc(csriPeriodo)}</b>
-      <span><button class="btn small" onclick="csriImprimir()">🖨️ Imprimir / PDF</button> <button class="btn small green" onclick="csriExportarXlsx()">📥 Exportar Excel</button></span></div>
-      <div class="csri-ayuda">Cálculo determinista sobre los datos cargados (sin estimaciones). Tolerancias: ${csriFmtUSD(res.tolL)} por línea y ${csriFmtUSD(res.tolA)} agregado.</div>
-      ${csriKpiHTML(res)}<div>${fuentes}</div></div>
-    ${csriHtmlMatriz(res)}
-    ${csriHtmlViaje(res, 'res')}
-    ${csriHtmlCuadre(res)}
-    <div class="card"><b>❌ / ⚠️ Lo que no cuadra (${mal.length})</b>${mal.length?`<div class="csri-tabla-scroll"><table><thead><tr><th></th><th>Verificación</th><th class="num">Diferencia</th><th>Principales excepciones</th></tr></thead><tbody>${mal.map(c=>`<tr><td>${CSRI_EST_ICO[c.estado]}</td><td>${csriEsc(c.nombre)}</td><td class="num">${csriFmt(c.dif)}</td><td>${csriEsc(csriTopExcep(c,3).map(x=>x.ref+(x.monto!=null?' ('+csriFmt(x.monto)+')':'')).join(' · ')||c.lineas.filter(l=>l.est==='bad'||l.est==='warn').slice(0,3).map(l=>l.etq+': '+csriNumTxt(l,l.dif)).join(' · '))}</td></tr>`).join('')}</tbody></table></div>`:'<div class="csri-muted">Ninguna.</div>'}</div>
-    <div class="card"><b>✅ Lo que cuadra (${ok.length})</b><div class="csri-lista">${ok.map(c=>`<div>✅ ${csriEsc(c.nombre)}</div>`).join('')||'<div class="csri-muted">Ninguna verificación evaluada cuadra todavía.</div>'}</div></div>
-    <div class="card"><b>⏳ Pendiente de datos (${sd.length})</b><div class="csri-lista">${sd.map(c=>`<div>⏳ ${csriEsc(c.nombre)} <span class="csri-muted">— falta: ${csriEsc((c.falta||[]).join('; ')||'datos para comparar')}</span></div>`).join('')||'<div class="csri-muted">Todas las verificaciones tienen datos.</div>'}</div></div>
-    <div class="card"><b>💡 Recomendaciones (${res.recs.length})</b>${res.recs.length?res.recs.map(r=>`<div class="csri-rec csri-sev-${r.sev}"><div class="csri-rec-h"><span class="pill ${CSRI_SEV[r.sev][1]}">${CSRI_SEV[r.sev][0]}</span> <b>${csriEsc(r.titulo)}</b>${r.monto?` <span class="csri-monto">${csriFmtUSD(r.monto)}</span>`:''}</div><div>${csriEsc(r.texto)}</div></div>`).join(''):'<div class="csri-muted">Sin recomendaciones.</div>'}</div>
-    <div class="helpNote">${csriEsc(CSRI_CAT_NOTA)} Este análisis es una ayuda de revisión y no sustituye el criterio del contador ni la validación en los portales del SRI.</div>`;
-}
-
 /* ------------------------------- IMPRESIÓN ------------------------------- */
-function csriHtmlImpresion(res){
-  const e = csriEmpresaObj(), S = csriS(), k = res.kpi;
-  const th = (...c)=>'<tr>'+c.map(x=>`<th${/^#num:/.test(x)?' class="num"':''}>${csriEsc(x.replace(/^#num:/,''))}</th>`).join('')+'</tr>';
-  let h = `<div class="bp-campo"><b>Empresa:</b> ${csriEsc(e?e.nombre:'')} &nbsp; <b>RUC:</b> ${csriEsc(e&&e.ruc||'')} &nbsp; <b>Periodo:</b> ${csriEsc(csriPeriodo)} &nbsp; <b>Emitido:</b> ${new Date().toLocaleString('es-EC')}</div>
-  <div class="bp-seccion">Resumen ejecutivo</div>
-  <table><tbody><tr><th>Verificaciones</th><th>✅ Cuadran</th><th>⚠️ Dif. menor</th><th>❌ No cuadran</th><th>⏳ Sin datos</th><th>% de lo evaluado que cuadra</th><th>Diferencia absoluta</th></tr>
-  <tr><td>${k.n}</td><td>${k.ok}</td><td>${k.warn}</td><td>${k.bad}</td><td>${k.sd}</td><td>${k.pct==null?'—':k.pct+'%'}</td><td class="num">${csriFmtUSD(k.difAbs)}</td></tr></tbody></table>
-  <div class="bp-campo"><b>Fuentes utilizadas:</b> ${csriFuentesLista().map(f=>(f[1]?'☑ ':'☐ ')+csriEsc(f[0])).join(' &nbsp; ')}</div>
-  <div class="bp-campo"><b>Tolerancias:</b> ${csriFmtUSD(res.tolL)} por línea; ${csriFmtUSD(res.tolA)} agregado.</div>`;
-  h += csriHtmlMatrizImpresion(res);
-  h += csriHtmlViajeImpresion(res);
-  h += csriHtmlCuadreImpresion(res);
-  for(const [g, titulo] of CSRI_GRUPOS){
-    const cs = res.checks.filter(c=>c.grupo===g); if(!cs.length) continue;
-    h += `<div class="bp-seccion">${csriEsc(titulo)}</div><table><thead>${th('','Verificación','Fuente A ↔ Fuente B','#num:Diferencia')}</thead><tbody>${
-      cs.map(c=>`<tr><td>${CSRI_EST_ICO[c.estado]}</td><td>${csriEsc(c.nombre)}${c.estado==='sd'&&c.falta&&c.falta.length?`<br><i>Falta: ${csriEsc(c.falta.join('; '))}</i>`:''}</td><td>${csriEsc((c.srcA||'')+(c.srcB?' ↔ '+c.srcB:''))}</td><td class="num">${c.estado==='sd'?'—':csriFmt(c.dif)}</td></tr>`).join('')}</tbody></table>`;
-  }
-  const malos = res.checks.filter(c=>(c.estado==='bad'||c.estado==='warn'));
-  if(malos.length){
-    h += `<div class="bp-seccion">Detalle de lo que no cuadra</div>`;
-    for(const c of malos){
-      const lm = c.lineas.filter(l=>l.est==='bad'||l.est==='warn').slice(0,8);
-      const ex = csriTopExcep(c, 8);
-      h += `<div class="bp-campo"><b>${CSRI_EST_ICO[c.estado]} ${csriEsc(c.nombre)}</b> — diferencia ${csriFmtUSD(c.dif)}</div>`;
-      if(lm.length) h += `<table><thead>${th('Concepto','#num:'+(c.srcA||'A'),'#num:'+(c.srcB||'B'),'#num:Diferencia')}</thead><tbody>${lm.map(l=>`<tr><td>${csriEsc(l.etq)}</td><td class="num">${csriNumTxt(l,l.a)}</td><td class="num">${csriNumTxt(l,l.b)}</td><td class="num">${csriNumTxt(l,l.dif)}</td></tr>`).join('')}</tbody></table>`;
-      if(ex.length) h += `<table><thead>${th('Excepción','Referencia','Detalle','Causa probable','#num:Monto')}</thead><tbody>${ex.map(x=>`<tr><td>${csriEsc(x.tipo)}</td><td>${csriEsc(x.ref)}</td><td>${csriEsc(x.detalle||'')}</td><td>${csriEsc(x.causa||'')}</td><td class="num">${x.monto==null?'':csriFmt(x.monto)}</td></tr>`).join('')}</tbody></table>${c.excep.filter(z=>!z.info).length>8?`<div class="bp-campo"><i>… y ${c.excep.filter(z=>!z.info).length-8} excepciones más (ver Excel).</i></div>`:''}`;
-    }
-  }
-  h += `<div class="bp-seccion">Recomendaciones</div>${res.recs.length?`<table><thead>${th('Prioridad','Recomendación','#num:Monto')}</thead><tbody>${res.recs.map(r=>`<tr><td>${CSRI_SEV[r.sev][0]}</td><td><b>${csriEsc(r.titulo)}</b><br>${csriEsc(r.texto)}</td><td class="num">${r.monto?csriFmtUSD(r.monto):''}</td></tr>`).join('')}</tbody></table>`:'<div class="bp-campo">Sin recomendaciones.</div>'}
-  <div class="bp-campo"><i>${csriEsc(CSRI_CAT_NOTA)} Análisis de apoyo a la revisión; no sustituye el criterio profesional ni la validación en los portales del SRI.</i></div>`;
-  return h;
-}
 function csriImprimir(){
   const res = csriCalc(), e = csriEmpresaObj();
   const titulo = 'Conciliación SRI vs Mayores — '+(e?e.nombre:'')+' — '+csriPeriodo;
@@ -19631,6 +19587,9 @@ function csriLibroExport(){
   }
   r1.push([], [CSRI_CAT_NOTA]);
   add('Resumen', r1, [44,22,14,14,12]);
+  add('Panorama', csriPanoramaAOA(res), [40,34,16,34,16,18,16,18,10]);
+  (res.secciones||[]).forEach(sc=>add(CSRI_SEC_HOJA[sc.id]||sc.t, csriSecAOA(res, sc), [52,28,18,48,48,40,10,14,14,14,16,40]));
+  add('Recomendaciones', csriRecsAOA(res), [6,34,12,50,110,14,14]);
   const gn = {}; CSRI_GRUPOS.forEach(g=>gn[g[0]]=g[1]);
   add('Verificaciones', [['Grupo','Código','Verificación','Fuente A','Fuente B','Estado','Diferencia','Excepciones','Nota / datos faltantes']].concat(
     res.checks.map(c=>[gn[c.grupo]||c.grupo, c.id, c.nombre, c.srcA, c.srcB, CSRI_EST[c.estado], c.estado==='sd'?'':c.dif, (c.excep||[]).filter(x=>!x.info).length, [c.nota, (c.falta||[]).length?'Falta: '+c.falta.join('; '):''].filter(Boolean).join(' · ')])), [22,20,52,28,28,18,14,12,60]);
@@ -19642,8 +19601,6 @@ function csriLibroExport(){
   add('Excepciones', exc, [40,30,36,70,14,12,10,70]);
   add('Composición de bases', csriComposicionAOA(res), [34,30,34,50,22,40,14,14,14,14,14,14,14]);
   add('Cuadre de bases', csriMatrizAOA(res).concat([[]], csriCuadreAOA(res)), [64,16,16,18,18,18,16,16,14,14,14]);
-  add('Recomendaciones', [['N.º','Prioridad','Verificación relacionada','Recomendación','Detalle','Monto']].concat(
-    res.recs.map((r,i)=>[i+1, CSRI_SEV[r.sev][0], r.chk, r.titulo, r.texto, r.monto==null?'':r.monto])), [6,12,22,50,110,14]);
   add('Liquidaciones de viaje', csriViajeAOA(res), [44,22,36,20,12,14,14,14,14,16,34,8,10,10,8]);
   // ATS por código
   const a = [];
@@ -20108,6 +20065,590 @@ function csriMatrizAOA(res){
     a.push(['ATS — comprobantes cód. 41', R.nAts, R.ats.base, R.ats.iva, ''], ['Reportes contables', R.nRep, R.rep.base, R.rep.iva, R.difRep.base], ['Registro de compras', R.nLib, R.lib.base, R.lib.iva, R.difLib.base], ['ATS — detalle de reembolsos (informativo)', R.det.n, R.det.base, R.det.iva, '']); }
   if(M.imp){ const I = M.imp; a.push([], ['Importaciones','Libro de importaciones','Registro (DAU)','Formulario 104','Libro − DAU','Libro − F104']);
     a.push(['Base', I.lib.base, I.dau?I.dau.base:'', I.f104?I.f104.base:'', I.difBaseDau==null?'':I.difBaseDau, I.difBaseF104==null?'':I.difBaseF104], ['IVA', I.lib.iva, I.dau?I.dau.iva:'', I.f104?I.f104.iva:'', I.difIvaDau==null?'':I.difIvaDau, I.difIvaF104==null?'':I.difIvaF104]); }
+  return a;
+}
+
+
+/* =========================================================================
+   SECCIONES (17ma iteración): los resultados se organizan por tema (Compras, Ventas, Retenciones…)
+   Cada sección tiene bloques de comparación con un PUENTE de la diferencia: Diferencia (A − B) = partidas con signo + sin explicar.
+   Convención única: Diferencia = Fuente A − Fuente B. Una partida con signo (+) aumenta la diferencia (A queda por encima de B);
+   una partida con signo (−) la reduce (A queda por debajo de B). No cambia ningún cálculo de las verificaciones: solo las presenta.
+   ========================================================================= */
+const CSRI_SECS = [
+  { id:'compras', ic:'🛒', t:'Compras', d:'ATS ↔ comprobantes recibidos del SRI ↔ registro contable ↔ reporte contable ↔ talón' },
+  { id:'ventas',  ic:'💰', t:'Ventas', d:'Detalle de ventas del ATS ↔ reporte contable ↔ talón' },
+  { id:'ret',     ic:'🧾', t:'Retenciones', d:'Renta e IVA retenidos (ATS ↔ talón ↔ sistema contable) y retenciones recibidas' },
+  { id:'imp',     ic:'📦', t:'Importaciones', d:'Libro de importaciones ↔ registro contable (DAU) ↔ formulario 104' },
+  { id:'nomina',  ic:'👥', t:'Nómina / IESS', d:'Formulario 103 (relación de dependencia) ↔ consolidado del IESS' },
+  { id:'viaje',   ic:'🧳', t:'Liquidaciones de viaje', d:'Documentos con sustento 05, apartados de la comparación con el SRI' },
+  { id:'form',    ic:'📑', t:'Formularios 103 / 104', d:'Casilleros declarados ↔ valores esperados y mayores' },
+  { id:'mayores', ic:'📒', t:'Mayores', d:'Consistencia de los mayores y cuadre con valores esperados' },
+  { id:'integ',   ic:'🔎', t:'Integridad del ATS y del talón', d:'Periodo, fechas, duplicados, cálculos y anulados del ATS' }
+];
+const CSRI_CHK_SEC = {
+  'ats-talon-compras':'compras','rep-compras':'compras','doc-sri-libro':'compras','doc-sri-ats':'compras','doc-libro-ats':'compras',
+  'pte-sri-ident':'compras','pte-sri-resid':'compras','pte-sri-talon':'compras','pte-ctb-ident':'compras','pte-ctb-resid':'compras',
+  'ats-talon-ventas':'ventas','rep-ventas':'ventas',
+  'ats-talon-renta':'ret','ats-talon-iva':'ret','ats-talon-recib':'ret','rep-renta':'ret','rep-iva':'ret','pte-ret':'ret',
+  'imp-libro':'imp','imp-iva':'imp','f104-import':'imp',
+  'f103-nomina':'nomina',
+  'via-puente':'viaje','via-ats-rep':'viaje','via-ats-libro':'viaje','via-clasif':'viaje',
+  'f104-ventas':'form','f104-compras':'form','f104-ret':'form','f104-ct':'form','f103-bases':'form','f103-valores':'form','f103-totales':'form','f103-coherencia':'form','f103-codigos':'form','may-form':'form',
+  'may-integridad':'mayores','may-duplicados':'mayores','may-asientos':'mayores','may-naturaleza':'mayores','may-periodo':'mayores','may-esperado':'mayores',
+  'ats-periodo':'integ','ats-cabecera':'integ','ats-fechas':'integ','ats-duplicados':'integ','ats-calculos':'integ','ats-talon-anul':'integ'
+};
+const CSRI_REC_GRUPOS = [['compras','🛒 Compras'],['ventas','💰 Ventas'],['ret-renta','🧾 Retenciones de renta'],['ret-iva','🧾 Retenciones de IVA y recibidas'],['imp','📦 Importaciones'],['nomina','👥 Nómina / IESS'],['viaje','🧳 Liquidaciones de viaje'],['form','📑 Formularios 103 / 104'],['mayores','📒 Mayores'],['integ','🔎 Integridad del ATS y del talón']];
+/* bloque donde se ancla cada verificación (para los enlaces de las recomendaciones) */
+const CSRI_CHK_BLOQUE = { 'doc-sri-libro':'c_sri','doc-sri-ats':'c_sri','pte-sri-ident':'c_sri','pte-sri-resid':'c_sri','pte-sri-talon':'c_tal','ats-talon-compras':'c_tal','rep-compras':'c_rep','pte-ctb-ident':'c_lib','pte-ctb-resid':'c_lib','doc-libro-ats':'c_lib',
+  'rep-renta':'r_rs','ats-talon-renta':'r_rt','rep-iva':'r_is','ats-talon-iva':'r_it','ats-talon-recib':'r_rec','rep-ventas':'v_rep','ats-talon-ventas':'v_tal','imp-libro':'i_lib' };
+
+function csriSecDeCheck(id){ return CSRI_CHK_SEC[id] || 'integ'; }
+function csriGrupoRec(chk){
+  const s = csriSecDeCheck(chk);
+  if(s==='ret') return /iva|recib/.test(chk) ? 'ret-iva' : 'ret-renta';
+  return s;
+}
+
+/* ---------- textos claros por tipo de partida ---------- */
+const CSRI_PT_SRI = {
+  a_propio:{ titulo:'Compras emitidas por la propia empresa', tipo:'Liquidación de compra o reembolso propio', exp:true,
+    que:'Liquidaciones de compra y reembolsos que la propia empresa emitió. Constan en su ATS de compras, pero el SRI solo lista como «recibidos» los comprobantes que le emitieron terceros.',
+    motivo:'consta en el ATS pero el SRI no lo lista como recibido (lo emitió la propia empresa)', accion:'Ninguna: es normal. Compruebe que cada liquidación de compra tenga su retención.',
+    tip:'Documentos emitidos por la propia empresa (liquidaciones de compra y reembolsos). Se detectan porque el RUC de la clave de acceso es el de la empresa.' },
+  a_fisico:{ titulo:'Documentos físicos o preimpresos (no electrónicos)', tipo:'Documento no electrónico', exp:true,
+    que:'Notas de venta y facturas preimpresas con autorización de 10 dígitos. Se declaran en el ATS, pero al no ser comprobantes electrónicos el SRI no los lista como recibidos.',
+    motivo:'consta en el ATS pero no es un comprobante electrónico y el SRI no lo lista', accion:'Ninguna si conserva el documento físico como respaldo.',
+    tip:'Documentos cuya autorización no es electrónica (10 dígitos): notas de venta y facturas preimpresas. No aparecen en comprobantes recibidos.' },
+  a_noelec:{ titulo:'Documentos de tipos que el SRI no lista como recibidos', tipo:'Otro tipo de documento', exp:true,
+    que:'Documentos del ATS de tipos que no se reciben como comprobante electrónico (importaciones, documentos del exterior, otros).',
+    motivo:'consta en el ATS pero es de un tipo que el SRI no lista como recibido', accion:'Ninguna, salvo que el tipo de comprobante esté mal asignado.', tip:'Importaciones, documentos del exterior y otros tipos no electrónicos.' },
+  b_anul:{ titulo:'Anulados con nota de crédito que el SRI aún lista', tipo:'Anulado con nota de crédito', exp:true,
+    que:'El proveedor emitió el comprobante y luego una nota de crédito que lo anula. El SRI conserva el comprobante autorizado, pero usted correctamente no lo declara en el ATS.',
+    motivo:'está en el SRI, fue anulado con una nota de crédito y por eso no consta en el ATS', accion:'Confirme que la nota de crédito esté registrada en el ATS y en los libros.', tip:'Comprobantes marcados «ANULADA CON NC» por el contador.' },
+  b_viaje:{ titulo:'Comprobantes del SRI que son liquidaciones de viaje', tipo:'Liquidación de viaje', exp:true,
+    que:'Comprobantes del SRI que corresponden a documentos con sustento 05 apartados en la sección de liquidaciones de viaje.', motivo:'está en el SRI y se controla en la sección de liquidaciones de viaje', accion:'Revíselos en Liquidaciones de viaje.' },
+  composicion:{ titulo:'Mismo total, distinto reparto entre tipos de base', tipo:'Diferencia de composición', exp:true,
+    que:'El comprobante coincide en total, pero cada fuente reparte distinto la base (por ejemplo, 0 % contra gravada).', motivo:'cambia solo el reparto entre tipos de base', accion:'Informativo: revise la clasificación si es recurrente.' },
+  redondeo:{ titulo:'Redondeos de centavos entre fuentes', tipo:'Redondeo', exp:true,
+    que:'Diferencias de centavos por redondeo de cada comprobante, menores a la tolerancia por documento.', motivo:'diferencia de centavos por redondeo', accion:'Ninguna.' },
+  a_pend:{ titulo:'Documento del ATS sin comprobante en el SRI', tipo:'Documento reportado sin comprobante SRI', exp:false,
+    que:'Está reportado en su ATS (electrónico) pero el SRI no lo tiene como comprobante recibido. Puede tener el RUC o secuencial mal digitado, ser de otro periodo o no existir.',
+    motivo:'consta en el ATS pero el SRI no tiene el comprobante', accion:'Verifique RUC y secuencial; si el comprobante no existe, reverse el registro o solicite el documento al proveedor.' },
+  b_pend:{ titulo:'Comprobante del SRI no reportado en el ATS', tipo:'Comprobante recibido sin registrar', exp:false,
+    que:'El SRI muestra un comprobante emitido a su RUC que no consta en su ATS ni en sus libros: probablemente una compra sin registrar.',
+    motivo:'está en el SRI pero no consta en el ATS ni en sus libros', accion:'Si es un gasto de la empresa, regístrelo y repórtelo; si no lo es, pida su anulación al proveedor.' },
+  valor:{ titulo:'Comprobante con valores distintos entre fuentes', tipo:'Valores distintos', exp:false,
+    que:'El comprobante está en ambas fuentes pero con base o IVA distintos.', motivo:'los valores del comprobante difieren entre las fuentes', accion:'Compare el comprobante original con el registro y corrija el valor equivocado.' }
+};
+const CSRI_PT_LIB = {
+  l_anul:{ titulo:'Comprobantes anulados en contabilidad', tipo:'Anulado', exp:true, que:'Registrados con valor cero en contabilidad; el ATS no los incluye como compras.', motivo:'figura anulado en contabilidad (valor cero)', accion:'Ninguna.' },
+  composicion:CSRI_PT_SRI.composicion, redondeo:CSRI_PT_SRI.redondeo,
+  l_pend:{ titulo:'Registrado en contabilidad y no reportado en el ATS', tipo:'Registro sin ATS', exp:false, que:'Hay una compra en el registro contable que no aparece en el ATS.', motivo:'consta en el registro contable pero no en el ATS', accion:'Inclúyala en el ATS (anexo sustitutivo) o revise si el registro es erróneo.' },
+  a_pend:{ titulo:'Reportado en el ATS y no registrado en contabilidad', tipo:'ATS sin registro', exp:false, que:'Hay una compra en el ATS que no figura en el registro contable.', motivo:'consta en el ATS pero no en el registro contable', accion:'Regístrela en contabilidad o corrija el ATS.' },
+  valor:CSRI_PT_SRI.valor
+};
+const CSRI_PT_REP = {
+  composicion:CSRI_PT_SRI.composicion, redondeo:CSRI_PT_SRI.redondeo,
+  a_pend:{ titulo:'En el ATS y no en el reporte contable', tipo:'ATS sin reporte', exp:false, que:'Hay una compra en el ATS que el reporte de impuestos del sistema contable no trae.', motivo:'consta en el ATS pero no en el reporte contable', accion:'Revise si el documento fue registrado con otro RUC/secuencial en el sistema.' },
+  r_pend:{ titulo:'En el reporte contable y no en el ATS', tipo:'Reporte sin ATS', exp:false, que:'Hay un documento en el reporte contable que no está en el ATS.', motivo:'consta en el reporte contable pero no en el ATS', accion:'Inclúyalo en el ATS o corrija el reporte.' },
+  valor:CSRI_PT_SRI.valor
+};
+
+function csriSg(x){ x = Number(x)||0; if(Math.abs(x) < 0.005) return '0,00'; return (x>0?'+':'−')+csriFmt(Math.abs(x)); }
+function csriEfectoTxt(monto, nA, nB, motivo){
+  if(Math.abs(monto) < 0.005) return 'No suma ni resta importe'+(motivo?': '+motivo:'')+'.';
+  const m = csriFmtUSD(Math.abs(monto)), de = n=>/^el /.test(n) ? 'del '+n.slice(3) : 'de '+n;
+  return monto > 0 ? `Suma ${m}: ${motivo}; por eso ${nA} queda ${m} por encima ${de(nB)}.` : `Resta ${m}: ${motivo}; por eso ${nA} queda ${m} por debajo ${de(nB)}.`;
+}
+function csriSecDocs(docs){
+  return (docs||[]).map(d=>({ ref:d.ref, nom:d.nom||'', fe:d.fe||'', nota:d.nota||'', v:d.v, sg:d.sg||1, k:d.k||'', det:d.det||null, causa:d.causa||'' }));
+}
+/* una partida del puente */
+function csriPartida(p, nA, nB){
+  const monto = csriR2(p.monto != null ? p.monto : (p.v ? p.v.total : 0));
+  return { id:p.id, tipo:p.tipo||'', titulo:p.titulo, que:p.que||'', accion:p.accion||'', tip:p.tip||p.que||'', exp:p.exp!==false, info:!!p.info, n:p.n!=null ? p.n : (p.docs||[]).length,
+    base: p.v ? csriR2(p.v.base) : (p.base||0), iva: p.v ? csriR2(p.v.iva) : (p.iva||0), monto, efecto:csriEfectoTxt(p.info ? 0 : monto, nA, nB, p.motivo||''), docs:csriSecDocs(p.docs), cuerpo:p.cuerpo||'' };
+}
+/* arma el bloque a partir de partidas ya construidas */
+function csriBloque(o, ctx){
+  const partidas = (o.partidas||[]).filter(p=>p.n>0 || Math.abs(p.monto)>0.004 || p.info);
+  const reales = partidas.filter(p=>!p.info);
+  const expl = reales.filter(p=>p.exp), pend = reales.filter(p=>!p.exp);
+  const dif = o.dif != null ? o.dif : csriR2((o.A.val||0) - (o.B.val||0));
+  const sExp = csriR2(expl.reduce((s,p)=>s+p.monto,0)), sPend = csriR2(pend.reduce((s,p)=>s+p.monto,0));
+  const sinExp = csriR2(dif - sExp - sPend);
+  let acum = 0; const orden = expl.concat(pend);
+  orden.forEach(p=>{ acum = csriR2(acum + p.monto); p.queda = csriR2(dif - acum); });
+  partidas.filter(p=>p.info).forEach(p=>{ p.queda = null; });
+  const tolL = ctx.tolL, tolA = ctx.tolA;
+  let estado;
+  if(Math.abs(sinExp) > tolL + 1e-9) estado = Math.abs(sinExp) <= tolA + 1e-9 ? 'warn' : 'bad';
+  else { const r = Math.abs(sPend); estado = r <= tolL + 1e-9 ? 'ok' : (r <= tolA + 1e-9 ? 'warn' : 'bad'); }
+  let cierre;
+  const nPend = pend.reduce((s,p)=>s+p.n,0);
+  if(Math.abs(sinExp) > tolL + 1e-9) cierre = `Quedan ${csriFmtUSD(Math.abs(sinExp))} sin explicar: revise las verificaciones del detalle de esta sección.`;
+  else if(Math.abs(sPend) > tolL + 1e-9) cierre = `Toda la diferencia está identificada. Quedan ${nPend} documento${nPend===1?'':'s'} por resolver (${csriSg(sPend)} neto en la diferencia).`;
+  else if(Math.abs(dif) <= tolL + 1e-9 && !expl.length) cierre = 'Totalmente conciliado: las fuentes coinciden.';
+  else cierre = 'Totalmente conciliado: la diferencia está explicada por partidas justificadas.';
+  return Object.assign({ notas:[], extras:[], otras:[], comparaciones:null, tolL, tolA }, o, { dif, partidas:orden.concat(partidas.filter(p=>p.info)), explicada:sExp, porResolver:sPend, sinExplicar:sinExp, estado, cierre, nPend });
+}
+/* bloque desde las líneas de una verificación (A = Fuente A de la verificación, B = Fuente B) */
+function csriBloqueLineas(res, o){
+  const ch = res.checks.find(c=>c.id===o.check);
+  if(!ch) return null;
+  const ctx = { tolL:res.tolL, tolA:res.tolA };
+  if(ch.estado==='sd'){ return { id:o.id, titulo:o.titulo, sd:true, falta:ch.falta||[], check:o.check, estado:'sd', A:{etq:o.etqA}, B:{etq:o.etqB} }; }
+  const L = ch.lineas || [];
+  const sel = L.filter(l=>!l.soft && !l.info && l.a!=null && l.b!=null && (!o.sel || o.sel(l)));
+  const A = csriR2(sel.reduce((s,l)=>s+l.a,0)), B = csriR2(sel.reduce((s,l)=>s+l.b,0));
+  const partidas = [];
+  sel.forEach((l,i)=>{
+    const d = csriR2(l.a - l.b); if(Math.abs(d) < 0.005) return;
+    const pequena = Math.abs(d) <= res.tolL + 1e-9;
+    partidas.push(csriPartida({ id:'l'+i, tipo: pequena ? 'Redondeo' : 'Diferencia de importe', titulo:(o.conceptoTxt ? o.conceptoTxt(l) : l.etq), exp:pequena, monto:d, n:1,
+      que: pequena ? 'Diferencia de centavos dentro de la tolerancia por línea.' : `El importe de «${l.etq}» difiere entre ${o.nA} y ${o.nB}.`,
+      motivo: pequena ? 'diferencia de centavos por redondeo' : `${o.nA} informa ${csriFmt(l.a)} y ${o.nB} ${csriFmt(l.b)}`,
+      accion: pequena ? 'Ninguna.' : 'Revise el origen del importe en ambas fuentes y corrija la que esté equivocada.' }, o.nA, o.nB));
+  });
+  const notas = L.filter(l=>l.soft && !l.info && l.a!=null && l.b!=null && Math.abs(l.a - l.b) > 0.004 && (!o.selNota || o.selNota(l))).map(l=>csriNotaConteo(l, o.nA, o.nB, Math.abs(csriR2(A-B))<=res.tolL));
+  const extras = (o.extras||[]).map(e=>{ const ls = L.filter(l=>l.a!=null && l.b!=null && e.sel(l)); return { etq:e.etq, a:csriR2(ls.reduce((s,l)=>s+l.a,0)), b:csriR2(ls.reduce((s,l)=>s+l.b,0)) }; });
+  const b = csriBloque({ id:o.id, titulo:o.titulo, check:o.check, A:{etq:o.etqA, val:A}, B:{etq:o.etqB, val:B}, nA:o.nA, nB:o.nB, partidas, notas, extras, lineas:L.filter(l=>!o.sel || o.sel(l) || l.soft) }, ctx);
+  b.notas = notas; b.extras = extras;
+  return b;
+}
+function csriNotaConteo(l, nA, nB, importesIguales){
+  const d = l.a - l.b, base = String(l.etq).replace(/ — (registros|documentos)$/,'');
+  let txt = `${nA} cuenta ${csriFmt(l.a).replace(/,00$/,'')} y ${nB} ${csriFmt(l.b).replace(/,00$/,'')} (${d>0?'+':'−'}${Math.abs(Math.round(d))}). `;
+  txt += importesIguales ? 'Los importes coinciden: no suma ni resta dinero, solo cambia el número de registros. ' : 'Es solo un conteo de registros; el efecto en dinero está en las partidas. ';
+  if(/reembolso/i.test(l.etq)) txt += 'Un comprobante de reembolso puede estar reclasificado o contado dos veces en contabilidad: compruebe cuál falta en el sistema.';
+  else if(/^Cód\./.test(l.etq)) txt += 'Suele deberse a líneas de reembolso o documentos sin retención que el sistema contable cuenta distinto.';
+  else if(/DAU|liquidaciones/i.test(l.etq)) txt += (l.nota||'');
+  else txt += 'Compruebe si algún documento fue contado dos veces o reclasificado.';
+  return { etq:base, a:l.a, b:l.b, dif:csriR2(d), txt:txt.trim() };
+}
+
+/* ---------- construcción de las secciones ---------- */
+function csriSecciones(S, C, res){
+  const by = {}; res.checks.forEach(c=>by[c.id]=c);
+  const ctx = { tolL:res.tolL, tolA:res.tolA };
+  const PU = res.puente || {};
+  const out = [];
+  const falta = ids=>Array.from(new Set([].concat(...ids.map(i=>by[i]?by[i].falta||[]:[])))).filter(Boolean);
+  const fromItems = (items, T, nA, nB)=>items.map(it=>{
+    const t = T[it.id] || { titulo:it.etq, tipo:it.etq, exp:it.exp, que:'', motivo:'', accion:'' };
+    return csriPartida({ id:it.id, tipo:t.tipo, titulo:t.titulo, que:t.que, accion:t.accion, motivo:t.motivo, exp:t.exp, tip:t.tip, v:it.v, docs:it.docs, n:it.docs.length }, nA, nB);
+  });
+  /* ===== COMPRAS ===== */
+  const comp = { id:'compras', bloques:[] };
+  if(PU.A && PU.A.disponible){
+    const A = PU.A, nA = 'el SRI', nB = 'el ATS';
+    const partidas = fromItems(A.items.filter(i=>i.docs.length && i.id!=='b_viaje'), CSRI_PT_SRI, nA, nB);
+    const dc = by['doc-sri-ats'] ? by['doc-sri-ats'].excep : [];
+    const dos = dc.filter(e=>/^Dos bases/.test(e.tipo));
+    if(dos.length){
+      const tot = csriR2(dos.reduce((s,e)=>s+Math.abs(e.monto||0),0));
+      partidas.push(csriPartida({ id:'dos_bases', tipo:'Documento con cargo sin IVA (dos bases)', titulo:`Resueltas: comprobantes con dos bases (${csriFmtUSD(tot)} de cargo sin IVA)`, info:true, exp:true, n:dos.length, monto:0,
+        que:`Comprobantes con una base con IVA y un cargo sin IVA (servicio o propina). El SRI muestra en «valor sin impuestos» solo la base con IVA y el cargo aparece únicamente en el importe total; el ATS y el registro lo llevan en la base 0 %. Al comparar la base completa (total − IVA) coinciden exactamente.`,
+        motivo:`el cargo sin IVA de ${csriFmtUSD(tot)} ya está incluido en ambas fuentes; solo cambia cómo cada una lo presenta`, accion:'Ninguna. Confirme en el ATS que el cargo esté en base 0 % y sin retención de IVA.',
+        docs:dos.map(e=>{ const dd = (e.det||[]).find(x=>/SRI/.test(x.lado)) || (e.det||[])[0] || {}; return { ref:e.ref, nom:'', fe:'', nota:'Cargo sin IVA '+csriFmt(Math.abs(e.monto||0)), v:dd.v, sg:1, k:e.k, det:e.det, causa:e.causa }; }) }, nA, nB));
+    }
+    const tm = dc.filter(e=>/^Tarifas mezcladas/.test(e.tipo));
+    if(tm.length) partidas.push(csriPartida({ id:'tarifas', tipo:'Tarifa de IVA distinta o mezclada', titulo:`Informativo: comprobantes con tarifa de IVA distinta de la configurada (${tm.length})`, info:true, exp:true, n:tm.length, monto:0,
+      que:'El IVA dividido por la base gravada no da la tarifa configurada: el comprobante mezcla tarifas (por ejemplo 15 % y 5 %) o aplica una tarifa diferenciada. La base y el IVA coinciden entre fuentes.', motivo:'la tarifa efectiva es distinta pero ambas fuentes informan lo mismo',
+      accion:'Revise si la tarifa aplicada es correcta (Ajustes › Otras tarifas de IVA conocidas).', docs:tm.map(e=>({ ref:e.ref, nom:'', fe:'', nota:e.detalle, v:((e.det||[])[0]||{}).v, sg:1, k:e.k, det:e.det, causa:e.causa })) }, nA, nB));
+    const b = csriBloque({ id:'c_sri', titulo:'ATS ↔ comprobantes recibidos del SRI', check:'doc-sri-ats', A:{ etq:'SRI recibidos (total)', val:A.vSRI.total, nota:'Base compuesta + IVA' }, B:{ etq:'ATS compras de la empresa (sin viaje)', val:A.vEmp.total, nota:'Todos los sustentos menos 05' }, nA, nB,
+      partidas, dif:csriR2(A.vSRI.total - A.vEmp.total) }, ctx);
+    b.sinExplicar = csriR2(b.dif - b.explicada - b.porResolver);
+    b.vSRI = A.vSRI; b.vEmp = A.vEmp; b.vTot = A.vTot; b.vVia = A.vVia;
+    comp.bloques.push(b);
+  } else comp.bloques.push({ id:'c_sri', titulo:'ATS ↔ comprobantes recibidos del SRI', sd:true, estado:'sd', falta:(PU.A&&PU.A.falta)||['ATS (XML)','Comprobantes recibidos del SRI'], A:{etq:'SRI recibidos'}, B:{etq:'ATS'} });
+  if(PU.B && PU.B.disponible){
+    const B = PU.B;
+    const i1 = B.items1.filter(i=>i.id!=='l_dau' && i.docs.length);
+    const dau = B.items1.find(i=>i.id==='l_dau');
+    const p1 = fromItems(i1, CSRI_PT_LIB, 'el ATS', 'el registro contable');
+    if(dau && dau.docs.length) p1.push(csriPartida({ id:'dau', tipo:'Importaciones (DAU)', titulo:`Informativo: ${dau.docs.length} filas de importaciones (DAU) del registro`, info:true, exp:true, n:dau.docs.length, monto:0,
+      que:'El registro contable incluye las liquidaciones de importación (DAU). No son comprobantes del ATS de compras y se controlan en la sección Importaciones; se excluyen de esta comparación.', motivo:'se excluyen del registro para comparar solo comprobantes', accion:'Revíselas en Importaciones.', docs:dau.docs.map(d=>({ref:d.ref,nom:d.nom,fe:d.fe,nota:d.nota,v:d.v,sg:1,k:d.k})) }, 'el ATS', 'el registro contable'));
+    const b1 = csriBloque({ id:'c_lib', titulo:'Registro contable ↔ ATS', check:'doc-libro-ats', A:{ etq:'ATS (todos los sustentos)', val:B.vAts.total }, B:{ etq:'Registro de compras (sin DAU)', val:B.vLib.total }, nA:'el ATS', nB:'el registro contable', partidas:p1, dif:csriR2(B.vAts.total - B.vLib.total) }, ctx);
+    comp.bloques.push(b1);
+    if(B.hayRep){
+      const p2 = fromItems(B.items2.filter(i=>i.docs.length), CSRI_PT_REP, 'el reporte contable', 'el ATS');
+      const b2 = csriBloque({ id:'c_rep', titulo:'ATS ↔ reporte «Detalle de Compras» del sistema contable', check:'rep-compras', A:{ etq:'Reporte contable', val:B.vRep.total }, B:{ etq:'ATS (todos los sustentos)', val:B.vAts.total }, nA:'el reporte contable', nB:'el ATS', partidas:p2, dif:csriR2(B.vRep.total - B.vAts.total) }, ctx);
+      const rc = by['rep-compras'];
+      if(rc) b2.notas = rc.lineas.filter(l=>l.soft && !l.info && l.a!=null && l.b!=null && Math.abs(l.a-l.b)>0.004).map(l=>csriNotaConteo(l, 'El ATS', 'el reporte contable', Math.abs(b2.dif) <= res.tolL));
+      comp.bloques.push(b2);
+    } else {
+      const bl = csriBloqueLineas(res, { id:'c_rep', titulo:'ATS ↔ reporte contable por tipo de documento', check:'rep-compras', etqA:'ATS (comparables)', etqB:'Reporte contable', nA:'el ATS', nB:'el reporte contable', sel:l=>/^TOTAL — /.test(l.etq) });
+      if(bl) comp.bloques.push(bl);
+    }
+  } else {
+    comp.bloques.push({ id:'c_lib', titulo:'Registro contable ↔ ATS ↔ reporte contable', sd:true, estado:'sd', falta:(PU.B&&PU.B.falta)||[], A:{etq:'ATS'}, B:{etq:'Registro'} });
+  }
+  const bt = csriBloqueLineas(res, { id:'c_tal', titulo:'ATS ↔ talón del SRI (todos los sustentos)', check:'ats-talon-compras', etqA:'ATS (todos los sustentos)', etqB:'Talón del SRI', nA:'el ATS', nB:'el talón', sel:l=>/^TOTAL — /.test(l.etq),
+    conceptoTxt:l=>l.etq.replace(/^TOTAL — /,'') });
+  if(bt) comp.bloques.push(bt);
+  comp.checks = Object.keys(CSRI_CHK_SEC).filter(k=>CSRI_CHK_SEC[k]==='compras');
+  out.push(comp);
+  /* ===== VENTAS ===== */
+  const ven = { id:'ventas', bloques:[] };
+  [ ['v_rep','ATS ↔ reporte contable de ventas','rep-ventas','ATS (detalle de ventas)','Reporte contable','el ATS','el reporte contable', l=>/^(Base|IVA$)/.test(l.etq)],
+    ['v_tal','ATS ↔ talón del SRI (ventas)','ats-talon-ventas','ATS (detalle de ventas)','Talón del SRI','el ATS','el talón', l=>/^(BI|Valor IVA)/.test(l.etq)] ].forEach(a=>{
+    const b = csriBloqueLineas(res, { id:a[0], titulo:a[1], check:a[2], etqA:a[3], etqB:a[4], nA:a[5], nB:a[6], sel:a[7] });
+    if(b) ven.bloques.push(b);
+  });
+  ven.checks = Object.keys(CSRI_CHK_SEC).filter(k=>CSRI_CHK_SEC[k]==='ventas');
+  ven.nota = 'Las ventas se comparan siempre con el detalle de ventas del ATS (nunca con la cabecera totalVentas). Los casilleros de ventas del formulario 104 están en la sección Formularios.';
+  out.push(ven);
+  /* ===== RETENCIONES ===== */
+  const ret = { id:'ret', bloques:[] };
+  const rb = (id, tit, chk, eA, eB, nA, nB, sel, extras, nota)=>{ const b = csriBloqueLineas(res, { id, titulo:tit, check:chk, etqA:eA, etqB:eB, nA, nB, sel, extras, selNota:l=>true, conceptoTxt:l=>l.etq }); if(b){ b.sub = nota; ret.bloques.push(b); } };
+  const baseRenta = [{ etq:'Base de retención (información)', sel:l=>/base imponible$/.test(l.etq) && !/^TOTAL/.test(l.etq) }];
+  rb('r_rs','Renta: ATS ↔ resumen de retenciones del sistema contable','rep-renta','ATS (valor retenido)','Sistema contable','el ATS','el sistema contable', l=>/valor retenido$/.test(l.etq) && !/^TOTAL/.test(l.etq), baseRenta, 'renta');
+  rb('r_rt','Renta: ATS ↔ talón del SRI','ats-talon-renta','ATS (valor retenido)','Talón del SRI','el ATS','el talón', l=>/valor retenido$/.test(l.etq) && !/^TOTAL/.test(l.etq), baseRenta, 'renta');
+  rb('r_is','IVA retenido: ATS ↔ sistema contable','rep-iva','ATS (IVA retenido)','Sistema contable','el ATS','el sistema contable', l=>!/^TOTAL/.test(l.etq), null, 'iva');
+  rb('r_it','IVA retenido: ATS ↔ talón del SRI','ats-talon-iva','ATS (IVA retenido)','Talón del SRI','el ATS','el talón', l=>!/^TOTAL/.test(l.etq), null, 'iva');
+  rb('r_rec','Retenciones que le efectuaron los clientes: ATS ↔ talón','ats-talon-recib','ATS (ventas)','Talón del SRI','el ATS','el talón', l=>true, null, 'rec');
+  ret.checks = Object.keys(CSRI_CHK_SEC).filter(k=>CSRI_CHK_SEC[k]==='ret');
+  out.push(ret);
+  /* ===== IMPORTACIONES ===== */
+  const imp = { id:'imp', bloques:[] };
+  { const b = csriBloqueLineas(res, { id:'i_lib', titulo:'Libro de importaciones ↔ registro contable (filas DAU)', check:'imp-libro', etqA:'Libro de importaciones (IVA)', etqB:'Registro contable DAU (IVA)', nA:'el libro de importaciones', nB:'el registro contable', sel:l=>/^IVA/.test(l.etq), selNota:l=>true,
+      extras:[{ etq:'Base: subtotal importado contra base implícita (IVA ÷ tarifa) — referencial', sel:l=>/^Base implícita/.test(l.etq) }] });
+    if(b) imp.bloques.push(b); }
+  imp.checks = Object.keys(CSRI_CHK_SEC).filter(k=>CSRI_CHK_SEC[k]==='imp');
+  imp.nota = 'La base de las filas DAU del registro puede ser mayor que el subtotal del libro (incluye fletes, seguros y agente de aduana); por eso solo el IVA se exige igual.';
+  out.push(imp);
+  /* ===== NÓMINA ===== */
+  const nom = { id:'nomina', bloques:[] };
+  if(by['f103-nomina']){
+    const c = by['f103-nomina'];
+    if(c.estado==='sd') nom.bloques.push({ id:'n_iess', titulo:'Formulario 103 ↔ consolidado del IESS', sd:true, estado:'sd', falta:c.falta||[], A:{etq:'Formulario 103'}, B:{etq:'IESS'} });
+    else {
+      const comps = c.lineas.filter(l=>l.a!=null && l.b!=null).map(l=>({ etq:l.etq, a:l.a, b:l.b, dif:csriR2(l.a-l.b), estado:l.est||'ok' }));
+      nom.bloques.push({ id:'n_iess', titulo:'Formulario 103 ↔ consolidado del IESS', check:'f103-nomina', comparaciones:comps, dif:csriR2(comps.reduce((s,x)=>s+Math.abs(x.dif),0)), estado:c.estado, A:{etq:'Formulario 103 / sueldos'}, B:{etq:'Consolidado IESS'}, partidas:[], notas:[], extras:[], otras:[],
+        cierre: comps.every(x=>Math.abs(x.dif)<=res.tolL) ? 'Totalmente conciliado: las comparaciones de nómina coinciden.' : 'Hay comparaciones de nómina con diferencia: revise los sueldos y aportes del consolidado.' });
+    }
+  }
+  nom.checks = Object.keys(CSRI_CHK_SEC).filter(k=>CSRI_CHK_SEC[k]==='nomina');
+  out.push(nom);
+  /* ===== LIQUIDACIONES DE VIAJE ===== */
+  const via = { id:'viaje', bloques:[] };
+  { const b = csriBloqueLineas(res, { id:'vi_lib', titulo:'Liquidaciones de viaje: ATS ↔ registro contable', check:'via-ats-libro', etqA:'ATS (sustento 05)', etqB:'Registro contable (mismos documentos)', nA:'el ATS', nB:'el registro contable', sel:l=>/base|IVA/i.test(l.etq), selNota:l=>true });
+    if(b){
+      const cl = by['via-clasif'];
+      if(cl && cl.excep.length) b.otras.push({ titulo:'Documentos con sustento 05 en el sistema y otro código en el ATS', n:cl.excep.length, tipo:'Clasificación distinta', que:'El documento figura como liquidación de viaje (05) en el sistema contable pero el ATS le asigna otro sustento: por eso aparece en la comparación con el SRI. No cambia el importe de este bloque.', accion:'Corrija el código de sustento en el ATS o en el sistema contable.',
+        docs:cl.excep.map(e=>({ ref:e.ref, nom:'', fe:'', nota:e.detalle||'', v:null, sg:1, monto:e.monto, k:e.k||'', causa:e.causa||'' })) });
+      via.bloques.push(b);
+    } }
+  via.checks = Object.keys(CSRI_CHK_SEC).filter(k=>CSRI_CHK_SEC[k]==='viaje');
+  out.push(via);
+  /* ===== FORMULARIOS, MAYORES, INTEGRIDAD: tablas de verificaciones ===== */
+  ['form','mayores','integ'].forEach(id=>{
+    const s = { id, bloques:[], checks:Object.keys(CSRI_CHK_SEC).filter(k=>CSRI_CHK_SEC[k]===id) };
+    const extra = res.checks.filter(c=>csriSecDeCheck(c.id)===id && s.checks.indexOf(c.id)<0).map(c=>c.id);
+    s.checks = s.checks.concat(extra);
+    if(id==='integ'){
+      const otras = [];
+      ['ats-calculos','ats-fechas','ats-duplicados','ats-cabecera'].forEach(cid=>{
+        const c = by[cid]; if(!c || !c.excep.length) return;
+        const tipos = {}; c.excep.forEach(e=>{ (tipos[e.tipo] = tipos[e.tipo] || []).push(e); });
+        Object.keys(tipos).forEach(t=>otras.push({ titulo:t, n:tipos[t].length, tipo:c.nombre, que:c.desc, accion:(tipos[t][0].causa||tipos[t][0].nota||'Revise estos comprobantes.'), docs:tipos[t].map(e=>({ ref:e.ref, nom:'', fe:'', nota:e.detalle||'', v:null, sg:1, monto:e.monto, k:e.k||'', causa:e.causa||'' })) }));
+      });
+      s.otras = otras;
+    }
+    out.push(s);
+  });
+  /* ===== metadatos comunes ===== */
+  out.forEach(s=>{
+    const m = CSRI_SECS.find(x=>x.id===s.id); s.ic = m.ic; s.t = m.t; s.d = m.d;
+    const cs = s.checks.map(i=>by[i]).filter(Boolean);
+    s.checksN = cs.length;
+    let est = 'sd'; cs.forEach(c=>{ if(c.estado!=='sd') est = csriPeor(est==='sd'?'ok':est, c.estado); });
+    s.estado = est; s.nOk = cs.filter(c=>c.estado==='ok').length; s.nWarn = cs.filter(c=>c.estado==='warn').length; s.nBad = cs.filter(c=>c.estado==='bad').length; s.nSd = cs.filter(c=>c.estado==='sd').length;
+    const ev = s.nOk + s.nWarn + s.nBad; s.pct = ev ? Math.round(s.nOk/ev*1000)/10 : null;
+    s.falta = falta(s.checks);
+    const p = s.bloques.find(b=>!b.sd && b.A && b.A.val!=null) || null;
+    s.principal = p;
+    s.difAbs = csriR2(cs.filter(c=>c.estado==='warn'||c.estado==='bad').reduce((t,c)=>t+Math.abs(c.dif||0),0));
+  });
+  return out;
+}
+/* filas del panorama: una por sección (Retenciones: renta e IVA aparte) */
+function csriPanorama(res){
+  const rows = [];
+  (res.secciones||[]).forEach(s=>{
+    if(s.id==='ret'){
+      const get = id=>s.bloques.find(b=>b.id===id);
+      [['r_rs','Retenciones de renta (valor retenido)'],['r_is','Retenciones de IVA']].forEach(a=>{
+        const b = get(a[0]);
+        if(b && !b.sd) rows.push({ sec:s.id, etq:a[1], ic:s.ic, estado:b.estado, A:b.A, B:b.B, dif:b.dif, pend:csriR2(b.porResolver + b.sinExplicar), pct:s.pct, nSd:0 });
+      });
+      if(!rows.some(r=>r.sec==='ret')) rows.push({ sec:s.id, etq:s.t, ic:s.ic, estado:s.estado, A:null, B:null, dif:null, pend:null, pct:s.pct });
+      return;
+    }
+    const b = s.principal;
+    rows.push({ sec:s.id, etq:s.t, ic:s.ic, estado:s.estado, A:b?b.A:null, B:b?b.B:null, dif:b?b.dif:null, pend:b?csriR2(b.porResolver + b.sinExplicar):null, pct:s.pct, nota: b?'':(s.estado==='sd'?'Sin datos':''), nSd:s.nSd });
+  });
+  return rows;
+}
+/* recomendaciones: asigna sección y bloque, y las ordena por severidad y monto */
+function csriRecsPorSeccion(res){
+  const ord = { alta:0, media:1, baja:2 };
+  const g = {};
+  CSRI_REC_GRUPOS.forEach(x=>g[x[0]] = []);
+  (res.recs||[]).forEach(r=>{ const k = csriGrupoRec(r.chk); r.grp = k; r.sec = csriSecDeCheck(r.chk); r.bloque = CSRI_CHK_BLOQUE[r.chk] || ''; (g[k] = g[k] || []).push(r); });
+  Object.keys(g).forEach(k=>g[k].sort((a,b)=>(ord[a.sev]-ord[b.sev]) || ((b.monto||0)-(a.monto||0))));
+  return g;
+}
+
+
+/* =========================================================================
+   SECCIONES — pantalla, impresión y Excel (17ma iteración)
+   Panorama → navegador de secciones → página de la sección (encabezado, puente, excepciones, recomendaciones, detalle)
+   ========================================================================= */
+let csriSecSel = null;     // sección elegida (null = la primera con problemas)
+const CSRI_SEC_CONV = 'Convención: Diferencia = Fuente A − Fuente B. Una partida con signo + aumenta la diferencia (A queda por encima de B); una partida con signo − la reduce (A queda por debajo de B). La suma de las partidas más lo que quede sin explicar es igual a la diferencia.';
+const CSRI_CHIP = { ok:['✅','Cuadra'], warn:['⚠️','Diferencia menor'], bad:['❌','No cuadra'], sd:['⏳','Sin datos'] };
+
+function csriChip(est, txt){ const c = CSRI_CHIP[est] || CSRI_CHIP.sd; return `<span class="csri-chip csri-chip-${est}">${c[0]} ${csriEsc(txt||c[1])}</span>`; }
+function csriSgHTML(x, o){
+  x = Number(x)||0; o = o || {};
+  const cls = Math.abs(x) < 0.005 ? 'cero' : (x > 0 ? 'pos' : 'neg');
+  return `<span class="csri-sg csri-sg-${cls}">${o.pref||''}${csriSg(x)}</span>`;
+}
+function csriSecElegida(res){
+  const ss = res.secciones || [];
+  if(csriSecSel && ss.some(s=>s.id===csriSecSel)) return csriSecSel;
+  const mal = ss.find(s=>s.estado==='bad') || ss.find(s=>s.estado==='warn') || ss.find(s=>s.estado==='ok') || ss[0];
+  return mal ? mal.id : 'compras';
+}
+function csriIrSec(id, ancla){
+  csriSecSel = id; csriTab = 'conciliacion'; csriPintar();
+  if(ancla && typeof document!=='undefined'){ setTimeout(()=>{ const el = document.getElementById('csri-b-'+ancla); if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'start'}); }, 30); }
+}
+function csriAbrirPartida(clave){ csriAbiertos[clave] = !csriAbiertos[clave]; csriPintar(); }
+
+/* ---------- Panorama ---------- */
+function csriHtmlPanorama(res){
+  const rows = csriPanorama(res);
+  const fig = f=> f && f.val!=null ? `<div>${csriFmtUSD(f.val)}</div><div class="csri-muted">${csriEsc(f.etq)}</div>` : '<span class="csri-muted">—</span>';
+  return `<div class="card csri-pano"><div class="csri-src-h"><b>🧭 Panorama: la diferencia en cada parte</b></div>
+    <div class="csri-ayuda">${csriEsc(CSRI_SEC_CONV)} Tolerancia: ${csriFmtUSD(res.tolL)} por línea y ${csriFmtUSD(res.tolA)} agregado. Toque una fila para ver su puente.</div>
+    <div class="csri-tabla-scroll" style="max-height:none"><table class="csri-cuadre csri-pano-t"><thead><tr><th>Sección</th><th class="num">Fuente A</th><th class="num">Fuente B</th><th class="num">Diferencia (A − B)</th><th class="num">Por resolver</th><th>Estado</th><th class="num">% cuadra</th></tr></thead><tbody>${
+      rows.map(r=>`<tr class="csri-pano-r" onclick="csriIrSec('${r.sec}')"><td><b>${r.ic} ${csriEsc(r.etq)}</b></td><td class="num">${fig(r.A)}</td><td class="num">${fig(r.B)}</td><td class="num">${r.dif==null?'—':csriSgHTML(r.dif)}</td><td class="num">${r.pend==null?'—':(Math.abs(r.pend)<0.005?'0,00':csriSgHTML(r.pend))}</td><td>${csriChip(r.estado, (r.nSd>0 && r.estado!=='sd') ? CSRI_CHIP[r.estado][1]+' · '+r.nSd+' sin datos' : null)}</td><td class="num">${r.pct==null?'—':r.pct+'%'}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+/* ---------- Navegador ---------- */
+function csriHtmlNavSecciones(res, sel){
+  return `<div class="csri-nav">${(res.secciones||[]).map(s=>{
+    const b = s.principal, pend = b ? csriR2(b.porResolver + b.sinExplicar) : null;
+    const sub = s.estado==='sd' ? '⏳ Cargue: '+(s.falta.slice(0,2).join('; ')||'datos')
+      : (b && Math.abs(pend)>0.004 ? `Por resolver ${csriSgHTML(pend)}` : (s.estado==='ok' ? 'Cuadra' : `${s.nBad+s.nWarn} verificación(es) con diferencia`));
+    const sub2 = (s.nSd>0 && s.estado!=='sd') ? sub+' · ⏳ '+s.nSd+' sin datos' : sub;
+    return `<button class="csri-nav-i csri-nav-${s.estado} ${s.id===sel?'sel':''}" onclick="csriIrSec('${s.id}')"><span class="csri-nav-t">${s.ic} ${csriEsc(s.t)}</span>${csriChip(s.estado)}<span class="csri-nav-s">${s.estado==='sd'?csriEsc(sub):sub2}</span></button>`;
+  }).join('')}</div>`;
+}
+/* ---------- documentos de una partida ---------- */
+function csriHtmlDocsPartida(p, lim){
+  const docs = p.docs || [];
+  if(!docs.length) return '';
+  const fila = d=>{
+    const v = d.v;
+    const ef = p.info ? 0 : (v ? csriR2((d.sg||1) * v.total) : (d.monto!=null ? d.monto : 0));
+    const b0 = v ? csriR2(v.b0 + v.bNo + v.bE + v.ot) : null;
+    return `<tr><td>${csriEsc(d.ref)}<div class="csri-muted">${csriEsc([d.nom, d.fe].filter(Boolean).join(' · '))}</div>${d.det?csriCuadreDetHTML(d.det):''}</td><td class="num">${b0==null?'—':csriFmt(b0)}</td><td class="num">${v?csriFmt(v.bG):'—'}</td><td class="num">${v?csriFmt(v.iva):'—'}</td><td class="num">${v?csriFmt(v.total):'—'}</td><td class="num">${csriSgHTML(ef)}</td><td>${csriEsc([d.nota, d.causa].filter(Boolean).join(' — '))}</td></tr>`;
+  };
+  return `<div class="csri-tabla-scroll" style="max-height:360px"><table class="csri-mini csri-docs"><thead><tr><th>Documento</th><th class="num">Base 0 % / otros</th><th class="num">Base gravada</th><th class="num">IVA</th><th class="num">Total</th><th class="num">Efecto en la diferencia</th><th>Nota / causa probable</th></tr></thead><tbody>${docs.slice(0, lim||60).map(fila).join('')}</tbody></table></div>${docs.length>(lim||60)?`<div class="csri-muted">… y ${docs.length-(lim||60)} más (listado completo en el Excel).</div>`:''}`;
+}
+/* ---------- un bloque de comparación ---------- */
+function csriHtmlBloque(b, sec){
+  const id = 'csri-b-'+b.id;
+  if(b.sd) return `<div class="csri-bq" id="${id}"><div class="csri-bq-h"><b>${csriEsc(b.titulo)}</b>${csriChip('sd')}</div><div class="csri-muted">⏳ Para ver esta comparación cargue: ${csriEsc((b.falta||[]).join('; ')||'las fuentes de esta sección')}.</div></div>`;
+  const fig = (f, lado)=>`<div class="csri-fig"><div class="csri-fig-l">${lado} · ${csriEsc(f.etq||'')}</div><div class="csri-fig-v">${f.val==null?'—':csriFmtUSD(f.val)}</div>${f.nota?`<div class="csri-muted">${csriEsc(f.nota)}</div>`:''}</div>`;
+  let h = `<div class="csri-bq" id="${id}"><div class="csri-bq-h"><b>${csriEsc(b.titulo)}</b>${csriChip(b.estado)}</div>`;
+  if(b.comparaciones){
+    h += `<div class="csri-tabla-scroll" style="max-height:none"><table class="csri-cuadre"><thead><tr><th>Comparación</th><th class="num">Fuente A</th><th class="num">Fuente B</th><th class="num">Diferencia (A − B)</th></tr></thead><tbody>${b.comparaciones.map(x=>`<tr><td>${csriEsc(x.etq)}</td><td class="num">${csriFmt(x.a)}</td><td class="num">${csriFmt(x.b)}</td><td class="num">${csriSgHTML(x.dif)}</td></tr>`).join('')}</tbody></table></div><div class="csri-cierre csri-cierre-${b.estado}">${csriEsc(b.cierre)}</div></div>`;
+    return h;
+  }
+  h += `<div class="csri-figs">${fig(b.A,'A')}${fig(b.B,'B')}<div class="csri-fig csri-fig-d"><div class="csri-fig-l">Diferencia (A − B)</div><div class="csri-fig-v">${csriSgHTML(b.dif)}</div><div class="csri-muted">Tolerancia ${csriFmtUSD(b.tolL)} por línea · ${csriFmtUSD(b.tolA)} agregado</div></div></div>`;
+  if(b.extras && b.extras.length) h += b.extras.map(e=>`<div class="csri-muted">${csriEsc(e.etq)}: A ${csriFmtUSD(e.a)} · B ${csriFmtUSD(e.b)} · diferencia ${csriSg(csriR2(e.a-e.b))}</div>`).join('');
+  const ps = b.partidas || [];
+  if(ps.length){
+    const real = ps.filter(p=>!p.info), info = ps.filter(p=>p.info);
+    const filaP = p=>{
+      const clave = 'pt:'+b.id+':'+p.id, abierto = !!csriAbiertos[clave];
+      const tog = p.docs && p.docs.length ? ` <a href="javascript:void(0)" class="csri-lnk" onclick="csriAbrirPartida('${clave}')">${abierto?'▾ ocultar':'▸ ver'} ${p.docs.length} documento${p.docs.length===1?'':'s'}</a>` : '';
+      const cuerpo = `<div class="csri-pt-t" title="${csriEsc(p.tip||'')}"><b>${csriEsc(p.titulo)}</b> <span class="csri-tipo ${p.info?'csri-tipo-i':(p.exp?'csri-tipo-e':'csri-tipo-p')}">${p.info?'Informativo':(p.exp?'Explicada':'Por resolver')}</span> <span class="csri-muted">· ${csriEsc(p.tipo)}</span>${tog}</div>
+        <div class="csri-pt-q"><b>¿Qué es?</b> ${csriEsc(p.que)}</div><div class="csri-pt-e"><b>¿Suma o resta?</b> ${csriEsc(p.efecto)}</div><div class="csri-pt-a"><b>Qué hacer:</b> ${csriEsc(p.accion)}</div>`;
+      return `<tr class="${p.exp||p.info?'':'csri-q-pend'}"><td>${cuerpo}</td><td class="num">${p.n}</td><td class="num">${csriFmt(p.base)}</td><td class="num">${csriFmt(p.iva)}</td><td class="num">${p.info?'<span class="csri-muted">0,00</span>':csriSgHTML(p.monto)}</td><td class="num">${p.queda==null?'—':csriFmt(p.queda)}</td></tr>${abierto?`<tr class="csri-q-doc"><td colspan="6">${csriHtmlDocsPartida(p)}</td></tr>`:''}`;
+    };
+    h += `<div class="csri-tabla-scroll" style="max-height:none"><table class="csri-cuadre csri-puente"><thead><tr><th>Puente de la diferencia</th><th class="num">Docs.</th><th class="num">Base</th><th class="num">IVA</th><th class="num">Efecto (±)</th><th class="num">Queda por explicar</th></tr></thead><tbody>
+      <tr class="csri-q-tot"><td>Diferencia total (A − B)</td><td></td><td></td><td></td><td class="num">${csriSgHTML(b.dif)}</td><td class="num">${csriFmt(b.dif)}</td></tr>${real.map(filaP).join('')}
+      <tr class="csri-q-sub"><td>Explicada por partidas justificadas</td><td></td><td></td><td></td><td class="num">${csriSgHTML(b.explicada)}</td><td></td></tr>
+      <tr class="csri-q-sub"><td>Excepciones identificadas por resolver (${b.nPend} documento${b.nPend===1?'':'s'})</td><td></td><td></td><td></td><td class="num">${csriSgHTML(b.porResolver)}</td><td></td></tr>
+      <tr class="csri-q-res"><td>Sin explicar</td><td></td><td></td><td></td><td class="num">${csriSgHTML(b.sinExplicar)}</td><td class="num">${csriFmt(b.sinExplicar)}</td></tr>${info.map(filaP).join('')}</tbody></table></div>`;
+  }
+  h += `<div class="csri-cierre csri-cierre-${b.estado}">${csriEsc(b.cierre)}</div>`;
+  if(b.notas && b.notas.length) h += `<div class="csri-sub">Diferencias de conteo (no suman ni restan importe)</div><ul class="csri-notas">${b.notas.map(n=>`<li><b>${csriEsc(n.etq)}</b>: ${csriEsc(n.txt)}</li>`).join('')}</ul>`;
+  if(b.otras && b.otras.length) h += `<div class="csri-sub">Otras excepciones (no alteran el importe de esta comparación)</div>`+b.otras.map((o,i)=>{ const clave = 'pt:'+b.id+':o'+i, ab = !!csriAbiertos[clave];
+    return `<div class="csri-otra"><b>${csriEsc(o.titulo)}</b> <span class="csri-muted">· ${o.n} documento${o.n===1?'':'s'} · ${csriEsc(o.tipo)}</span> <a href="javascript:void(0)" class="csri-lnk" onclick="csriAbrirPartida('${clave}')">${ab?'▾ ocultar':'▸ ver'}</a><div class="csri-pt-q"><b>¿Qué es?</b> ${csriEsc(o.que)}</div><div class="csri-pt-a"><b>Qué hacer:</b> ${csriEsc(o.accion)}</div>${ab?csriHtmlDocsPartida({docs:o.docs, info:true}):''}</div>`; }).join('');
+  return h + '</div>';
+}
+/* ---------- recomendaciones de la sección ---------- */
+function csriHtmlRecItem(r, conLink){
+  const lnk = conLink && r.bloque ? ` <a href="javascript:void(0)" class="csri-lnk" onclick="csriIrSec('${r.sec}','${r.bloque}')">Ver en el puente ▸</a>` : '';
+  return `<div class="csri-rec csri-sev-${r.sev}"><div class="csri-rec-h"><span class="pill ${CSRI_SEV[r.sev][1]}">${CSRI_SEV[r.sev][0]}</span> <b>${csriEsc(r.titulo)}</b>${r.monto?` <span class="csri-monto">${csriFmtUSD(r.monto)}</span>`:''}</div><div>${csriEsc(r.texto)}${lnk}</div></div>`;
+}
+function csriRecsDeSeccion(res, secId){
+  const g = res.recsPorSec || {};
+  return (res.recs||[]).filter(r=>r.sec===secId).sort((a,b)=>({alta:0,media:1,baja:2}[a.sev]-{alta:0,media:1,baja:2}[b.sev]) || ((b.monto||0)-(a.monto||0)));
+}
+/* ---------- página de una sección ---------- */
+function csriHtmlSeccionPagina(res, id){
+  const s = (res.secciones||[]).find(x=>x.id===id); if(!s) return '';
+  let h = `<div class="card csri-sec"><div class="csri-src-h"><b>${s.ic} ${csriEsc(s.t)}</b><span>${csriChip(s.estado)} <span class="csri-muted">${s.nOk} ✅ · ${s.nWarn} ⚠️ · ${s.nBad} ❌ · ${s.nSd} ⏳</span></span></div>
+    <div class="csri-ayuda">${csriEsc(s.d)}.</div><div class="csri-conv">${csriEsc(CSRI_SEC_CONV)}</div>${s.nota?`<div class="helpNote">${csriEsc(s.nota)}</div>`:''}`;
+  if(s.id==='compras' && res.viaje && res.viaje.hay){
+    h += `<div class="helpNote">🧳 Las liquidaciones de viaje (sustento 05) ${res.viaje.on?'están apartadas de esta comparación':'NO están apartadas (separación desactivada)'}: ${res.viaje.docs.length} documentos, base ${csriFmtUSD(res.viaje.puente?res.viaje.puente.via.base:0)}. <a href="javascript:void(0)" class="csri-lnk" onclick="csriIrSec('viaje')">Ver Liquidaciones de viaje ▸</a></div>`;
+  }
+  if(s.estado==='sd' && !s.bloques.some(b=>!b.sd)){
+    h += `<div class="csri-sd-box">⏳ Esta sección aún no tiene datos para comparar. Cargue: <b>${csriEsc(s.falta.join('; ')||'las fuentes correspondientes')}</b>.</div>`;
+  }
+  if(s.id==='viaje') h += csriHtmlViaje(res, 'conc');
+  h += s.bloques.map(b=>csriHtmlBloque(b, s)).join('');
+  if(s.otras && s.otras.length) h += `<div class="csri-sub">Excepciones de integridad (informativas)</div>`+s.otras.map((o,i)=>{ const clave = 'pt:'+s.id+':o'+i, ab = !!csriAbiertos[clave];
+    return `<div class="csri-otra"><b>${csriEsc(o.titulo)}</b> <span class="csri-muted">· ${o.n} documento${o.n===1?'':'s'} · ${csriEsc(o.tipo)}</span> <a href="javascript:void(0)" class="csri-lnk" onclick="csriAbrirPartida('${clave}')">${ab?'▾ ocultar':'▸ ver'}</a><div class="csri-pt-a"><b>Qué hacer:</b> ${csriEsc(o.accion)}</div>${ab?csriHtmlDocsPartida({docs:o.docs, info:true}):''}</div>`; }).join('');
+  /* verificaciones de la sección sin bloque: resumen por estado */
+  const cs = s.checks.map(i=>res.checks.find(c=>c.id===i)).filter(Boolean);
+  if(['form','mayores','integ'].indexOf(s.id)>=0){
+    h += `<div class="csri-sub">Verificaciones de la sección</div><div class="csri-lista">${cs.map(c=>`<div>${CSRI_EST_ICO[c.estado]} <b>${csriEsc(c.nombre)}</b>${c.estado==='sd'?` <span class="csri-muted">— falta: ${csriEsc((c.falta||[]).join('; ')||'datos')}</span>`:(Math.abs(c.dif)>0.004?` <span class="csri-muted">— diferencia ${csriFmtUSD(c.dif)}</span>`:'')}${c.nota&&c.estado!=='sd'?`<div class="csri-muted">${csriEsc(c.nota)}</div>`:''}</div>`).join('')}</div>`;
+  }
+  const recs = csriRecsDeSeccion(res, s.id);
+  h += `<div class="csri-sub">Recomendaciones de esta sección (${recs.length})</div>`+(recs.length ? recs.map(r=>csriHtmlRecItem(r, true)).join('') : '<div class="csri-muted">Sin recomendaciones para esta sección.</div>');
+  /* detalle técnico */
+  const ab = !!csriAbiertos['det:'+s.id];
+  const omit = {}; if(s.id==='compras'){ (s.bloques.find(b=>b.id==='c_sri')||{partidas:[]}).partidas.forEach(p=>(p.docs||[]).forEach(d=>{ if(d.k) omit[d.k] = 1; })); }
+  h += `<div class="csri-det"><button class="btn small" onclick="csriToggle('det:${s.id}')">${ab?'▾ Ocultar':'▸ Ver'} detalle de la comparación (${cs.length} verificaciones${s.id==='compras'?', cuadre de bases y puentes':''})</button>`;
+  if(ab){
+    if(s.id==='compras') h += csriHtmlMatriz(res) + csriHtmlCuadre(res);
+    h += `<div class="csri-ayuda">Cada verificación conserva su detalle por tipo de comprobante, código, tipo de base, etc. Los documentos ya explicados en el puente no se repiten.</div>` + cs.map(c=>csriHtmlCheck(c, s.id==='compras' ? omit : null)).join('');
+  }
+  return h + '</div></div>';
+}
+function csriHtmlConciliacion(){
+  const S = csriS();
+  const hayAlgo = S.ats || S.talon || S.rep || S.imp || S.sri || S.libro || S.iess || S.mayores.cuentas.length || csriHayDeclarado(S,'103') || csriHayDeclarado(S,'104');
+  if(!hayAlgo) return `<div class="card emptyState">Cargue al menos una fuente en <b>📥 Fuentes</b> para ver las verificaciones.</div>`;
+  const res = csriCalc(), sel = csriSecElegida(res);
+  return csriKpiHTML(res) + csriHtmlPanorama(res) + `<div class="csri-acc" style="margin:8px 0"><button class="btn small" onclick="csriRecalcular()">🔄 Recalcular</button></div>` + csriHtmlNavSecciones(res, sel) + csriHtmlSeccionPagina(res, sel);
+}
+/* ---------- Resumen y recomendaciones ---------- */
+function csriHtmlResumen(){
+  const S = csriS();
+  const hayAlgo = S.ats || S.talon || S.rep || S.imp || S.sri || S.libro || S.iess || S.mayores.cuentas.length || csriHayDeclarado(S,'103') || csriHayDeclarado(S,'104');
+  if(!hayAlgo) return `<div class="card emptyState">Cargue las fuentes para generar el resumen y las recomendaciones.</div>`;
+  const res = csriCalc(), e = csriEmpresaObj();
+  const fuentes = csriFuentesLista().map(f=>`<span class="pill ${f[1]?'ok':'muted'}">${f[1]?'✓':'·'} ${csriEsc(f[0])}</span>`).join(' ');
+  const g = res.recsPorSec || {};
+  const grupos = CSRI_REC_GRUPOS.filter(x=>(g[x[0]]||[]).length);
+  const pendientes = (res.secciones||[]).filter(s=>s.nSd>0);
+  return `
+    <div class="card"><div class="csri-src-h"><b>📝 Resumen de conciliación — ${csriEsc(e?e.nombre:'')} · ${csriEsc(csriPeriodo)}</b>
+      <span><button class="btn small" onclick="csriImprimir()">🖨️ Imprimir / PDF</button> <button class="btn small green" onclick="csriExportarXlsx()">📥 Exportar Excel</button></span></div>
+      <div class="csri-ayuda">Cálculo determinista sobre los datos cargados (sin estimaciones). Tolerancias: ${csriFmtUSD(res.tolL)} por línea y ${csriFmtUSD(res.tolA)} agregado.</div>
+      ${csriKpiHTML(res)}<div>${fuentes}</div></div>
+    ${csriHtmlPanorama(res)}
+    <div class="card"><b>💡 Recomendaciones por sección (${res.recs.length})</b><div class="csri-ayuda">Ordenadas por prioridad y monto dentro de cada sección. «Ver en el puente» lleva a las excepciones que la originan.</div>${
+      grupos.length ? grupos.map(x=>`<div class="csri-rec-g"><div class="csri-grupo">${x[1]} <span class="csri-muted">(${g[x[0]].length})</span></div>${g[x[0]].map(r=>csriHtmlRecItem(r, true)).join('')}</div>`).join('') : '<div class="csri-muted">Sin recomendaciones.</div>'}</div>
+    ${pendientes.length?`<div class="card"><b>⏳ Pendiente de datos</b><div class="csri-lista">${pendientes.map(s=>`<div>${s.ic} <b>${csriEsc(s.t)}</b> <span class="csri-muted">— ${s.nSd} verificación(es) sin datos; cargue: ${csriEsc(s.falta.join('; ')||'datos para comparar')}</span></div>`).join('')}</div></div>`:''}
+    <div class="helpNote">${csriEsc(CSRI_CAT_NOTA)} Este análisis es una ayuda de revisión y no sustituye el criterio del contador ni la validación en los portales del SRI.</div>`;
+}
+/* ---------- impresión ---------- */
+function csriPuenteImp(b){
+  if(b.sd) return `<div class="bp-campo"><b>${csriEsc(b.titulo)}</b> — ⏳ sin datos: ${csriEsc((b.falta||[]).join('; '))}</div>`;
+  let h = `<div class="bp-campo"><b>${csriEsc(b.titulo)}</b> — ${CSRI_EST_ICO[b.estado]} ${csriEsc(CSRI_EST[b.estado])}</div>`;
+  if(b.comparaciones) return h + `<table><thead><tr><th>Comparación</th><th class="num">Fuente A</th><th class="num">Fuente B</th><th class="num">Dif. (A − B)</th></tr></thead><tbody>${b.comparaciones.map(x=>`<tr><td>${csriEsc(x.etq)}</td><td class="num">${csriFmt(x.a)}</td><td class="num">${csriFmt(x.b)}</td><td class="num">${csriSg(x.dif)}</td></tr>`).join('')}</tbody></table><div class="bp-campo"><i>${csriEsc(b.cierre)}</i></div>`;
+  h += `<div class="bp-campo">A: ${csriEsc(b.A.etq)} <b>${csriFmtUSD(b.A.val)}</b> &nbsp; B: ${csriEsc(b.B.etq)} <b>${csriFmtUSD(b.B.val)}</b> &nbsp; Diferencia (A − B): <b>${csriSg(b.dif)}</b></div>`;
+  if(b.partidas.length) h += `<table><thead><tr><th>Partida</th><th class="num">Docs.</th><th class="num">Base</th><th class="num">IVA</th><th class="num">Efecto (±)</th><th class="num">Queda por explicar</th></tr></thead><tbody>
+    <tr><td><b>Diferencia total (A − B)</b></td><td></td><td></td><td></td><td class="num"><b>${csriSg(b.dif)}</b></td><td class="num">${csriFmt(b.dif)}</td></tr>${
+    b.partidas.filter(p=>!p.info).map(p=>`<tr><td><b>${csriEsc(p.titulo)}</b> [${p.exp?'explicada':'POR RESOLVER'}]<br>${csriEsc(p.efecto)}<br><i>${csriEsc(p.accion)}</i></td><td class="num">${p.n}</td><td class="num">${csriFmt(p.base)}</td><td class="num">${csriFmt(p.iva)}</td><td class="num">${csriSg(p.monto)}</td><td class="num">${p.queda==null?'':csriFmt(p.queda)}</td></tr>${!p.exp?(p.docs||[]).slice(0,12).map(d=>`<tr><td>&nbsp;&nbsp;↳ ${csriEsc(d.ref+' '+(d.nom||'').slice(0,30)+(d.fe?' · '+d.fe:''))}</td><td class="num">1</td><td class="num">${d.v?csriFmt(d.v.base):''}</td><td class="num">${d.v?csriFmt(d.v.iva):''}</td><td class="num">${d.v?csriSg((d.sg||1)*d.v.total):''}</td><td></td></tr>`).join(''):''}`).join('')}
+    <tr><td><b>Explicada por partidas justificadas</b></td><td></td><td></td><td></td><td class="num">${csriSg(b.explicada)}</td><td></td></tr>
+    <tr><td><b>Excepciones por resolver (${b.nPend})</b></td><td></td><td></td><td></td><td class="num">${csriSg(b.porResolver)}</td><td></td></tr>
+    <tr><td><b>Sin explicar</b></td><td></td><td></td><td></td><td class="num">${csriSg(b.sinExplicar)}</td><td class="num">${csriFmt(b.sinExplicar)}</td></tr>${
+    b.partidas.filter(p=>p.info).map(p=>`<tr><td><b>${csriEsc(p.titulo)}</b> [informativo]<br>${csriEsc(p.efecto)}</td><td class="num">${p.n}</td><td></td><td></td><td class="num">0,00</td><td></td></tr>`).join('')}</tbody></table>`;
+  h += `<div class="bp-campo"><i>${csriEsc(b.cierre)}</i></div>`;
+  if(b.notas && b.notas.length) h += `<div class="bp-campo"><b>Diferencias de conteo (sin efecto en importes):</b> ${b.notas.map(n=>csriEsc(n.etq+': '+n.txt)).join(' · ')}</div>`;
+  return h;
+}
+function csriHtmlImpresion(res){
+  const e = csriEmpresaObj(), k = res.kpi;
+  const th = (...c)=>'<tr>'+c.map(x=>`<th${/^#num:/.test(x)?' class="num"':''}>${csriEsc(x.replace(/^#num:/,''))}</th>`).join('')+'</tr>';
+  let h = `<div class="bp-campo"><b>Empresa:</b> ${csriEsc(e?e.nombre:'')} &nbsp; <b>RUC:</b> ${csriEsc(e&&e.ruc||'')} &nbsp; <b>Periodo:</b> ${csriEsc(csriPeriodo)} &nbsp; <b>Emitido:</b> ${new Date().toLocaleString('es-EC')}</div>
+  <div class="bp-seccion">Resumen ejecutivo</div>
+  <table><tbody><tr><th>Verificaciones</th><th>✅ Cuadran</th><th>⚠️ Dif. menor</th><th>❌ No cuadran</th><th>⏳ Sin datos</th><th>% de lo evaluado que cuadra</th><th>Diferencia absoluta</th></tr>
+  <tr><td>${k.n}</td><td>${k.ok}</td><td>${k.warn}</td><td>${k.bad}</td><td>${k.sd}</td><td>${k.pct==null?'—':k.pct+'%'}</td><td class="num">${csriFmtUSD(k.difAbs)}</td></tr></tbody></table>
+  <div class="bp-campo"><b>Fuentes utilizadas:</b> ${csriFuentesLista().map(f=>(f[1]?'☑ ':'☐ ')+csriEsc(f[0])).join(' &nbsp; ')}</div>
+  <div class="bp-campo"><b>Tolerancias:</b> ${csriFmtUSD(res.tolL)} por línea; ${csriFmtUSD(res.tolA)} agregado.</div>
+  <div class="bp-seccion">Panorama: la diferencia en cada parte</div><div class="bp-campo"><i>${csriEsc(CSRI_SEC_CONV)}</i></div>
+  <table><thead>${th('Sección','#num:Fuente A','#num:Fuente B','#num:Diferencia (A − B)','#num:Por resolver','Estado','#num:% cuadra')}</thead><tbody>${csriPanorama(res).map(r=>`<tr><td>${r.ic} ${csriEsc(r.etq)}</td><td class="num">${r.A&&r.A.val!=null?csriFmtUSD(r.A.val):'—'}</td><td class="num">${r.B&&r.B.val!=null?csriFmtUSD(r.B.val):'—'}</td><td class="num">${r.dif==null?'—':csriSg(r.dif)}</td><td class="num">${r.pend==null?'—':csriSg(r.pend)}</td><td>${CSRI_EST_ICO[r.estado]} ${csriEsc(CSRI_EST[r.estado])}</td><td class="num">${r.pct==null?'—':r.pct+'%'}</td></tr>`).join('')}</tbody></table>`;
+  for(const s of res.secciones||[]){
+    h += `<div class="bp-seccion">${s.ic} ${csriEsc(s.t)} — ${CSRI_EST_ICO[s.estado]} ${csriEsc(CSRI_EST[s.estado])}</div><div class="bp-campo"><i>${csriEsc(s.d)}.</i></div>`;
+    if(s.estado==='sd' && !s.bloques.some(b=>!b.sd)) h += `<div class="bp-campo">⏳ Sin datos. Cargue: ${csriEsc(s.falta.join('; '))}.</div>`;
+    h += s.bloques.map(csriPuenteImp).join('');
+    if(s.otras && s.otras.length) h += `<div class="bp-campo"><b>Otras excepciones:</b> ${s.otras.map(o=>csriEsc(o.titulo+' ('+o.n+')')).join('; ')}</div>`;
+    if(s.id==='compras') h += csriHtmlMatrizImpresion(res);
+    if(s.id==='viaje') h += csriHtmlViajeImpresion(res);
+    if(['form','mayores','integ'].indexOf(s.id)>=0){ const cs = s.checks.map(i=>res.checks.find(c=>c.id===i)).filter(Boolean);
+      h += `<table><thead>${th('','Verificación','#num:Diferencia')}</thead><tbody>${cs.map(c=>`<tr><td>${CSRI_EST_ICO[c.estado]}</td><td>${csriEsc(c.nombre)}${c.estado==='sd'&&c.falta&&c.falta.length?`<br><i>Falta: ${csriEsc(c.falta.join('; '))}</i>`:''}</td><td class="num">${c.estado==='sd'?'—':csriFmt(c.dif)}</td></tr>`).join('')}</tbody></table>`; }
+    const rs = csriRecsDeSeccion(res, s.id);
+    if(rs.length) h += `<div class="bp-campo"><b>Recomendaciones de ${csriEsc(s.t)}:</b></div><table><thead>${th('Prioridad','Recomendación','#num:Monto')}</thead><tbody>${rs.map(r=>`<tr><td>${CSRI_SEV[r.sev][0]}</td><td><b>${csriEsc(r.titulo)}</b><br>${csriEsc(r.texto)}</td><td class="num">${r.monto?csriFmtUSD(r.monto):''}</td></tr>`).join('')}</tbody></table>`;
+  }
+  h += `<div class="bp-seccion">Anexo: puentes detallados de compras y retenciones</div>` + csriHtmlCuadreImpresion(res);
+  h += `<div class="bp-campo"><i>${csriEsc(CSRI_CAT_NOTA)} Análisis de apoyo a la revisión; no sustituye el criterio profesional ni la validación en los portales del SRI.</i></div>`;
+  return h;
+}
+/* ---------- Excel por sección ---------- */
+const CSRI_SEC_HOJA = { compras:'Compras', ventas:'Ventas', ret:'Retenciones', imp:'Importaciones', nomina:'Nómina e IESS', viaje:'Viaje (puente)', form:'Formularios', mayores:'Mayores', integ:'Integridad' };
+function csriPanoramaAOA(res){
+  const a = [['PANORAMA: LA DIFERENCIA EN CADA PARTE'], [CSRI_SEC_CONV], [], ['Sección','Fuente A','Total A','Fuente B','Total B','Diferencia (A − B)','Por resolver','Estado','% cuadra']];
+  csriPanorama(res).forEach(r=>a.push([r.etq, r.A?r.A.etq:'', r.A&&r.A.val!=null?r.A.val:'', r.B?r.B.etq:'', r.B&&r.B.val!=null?r.B.val:'', r.dif==null?'':r.dif, r.pend==null?'':r.pend, CSRI_EST[r.estado], r.pct==null?'':r.pct/100]));
+  return a;
+}
+function csriSecAOA(res, s){
+  const a = [[s.ic+' '+s.t.toUpperCase()], [s.d], ['Estado', CSRI_EST[s.estado]], [CSRI_SEC_CONV], []];
+  s.bloques.forEach(b=>{
+    a.push([b.titulo.toUpperCase(), CSRI_EST[b.estado]||'']);
+    if(b.sd){ a.push(['Sin datos. Cargue:', (b.falta||[]).join('; ')], []); return; }
+    if(b.comparaciones){ a.push(['Comparación','Fuente A','Fuente B','Diferencia (A − B)']); b.comparaciones.forEach(x=>a.push([x.etq,x.a,x.b,x.dif])); a.push([b.cierre], []); return; }
+    a.push(['Fuente A: '+b.A.etq, b.A.val], ['Fuente B: '+b.B.etq, b.B.val], ['Diferencia (A − B)', b.dif], []);
+    if(b.partidas.length){
+      a.push(['Partida','Tipo','Estado de la partida','¿Qué es?','¿Suma o resta?','Qué hacer','Documentos','Base','IVA','Efecto (±)','Queda por explicar']);
+      a.push(['Diferencia total (A − B)','','','','','','','','',b.dif,b.dif]);
+      b.partidas.filter(p=>!p.info).forEach(p=>a.push([p.titulo, p.tipo, p.exp?'Explicada':'Por resolver', p.que, p.efecto, p.accion, p.n, p.base, p.iva, p.monto, p.queda==null?'':p.queda]));
+      a.push(['Explicada por partidas justificadas','','','','','','','','',b.explicada], ['Excepciones por resolver','','','','','',b.nPend,'','',b.porResolver], ['Sin explicar','','','','','','','','',b.sinExplicar,b.sinExplicar]);
+      b.partidas.filter(p=>p.info).forEach(p=>a.push([p.titulo, p.tipo, 'Informativo', p.que, p.efecto, p.accion, p.n, '', '', 0, '']));
+    }
+    a.push([b.cierre]);
+    (b.notas||[]).forEach(n=>a.push(['Conteo: '+n.etq, n.a, n.b, n.dif, n.txt]));
+    (b.extras||[]).forEach(e=>a.push([e.etq, e.a, e.b, csriR2(e.a-e.b)]));
+    a.push([]);
+  });
+  const docs = [];
+  s.bloques.forEach(b=>{ (b.partidas||[]).forEach(p=>(p.docs||[]).forEach(d=>docs.push([b.titulo, p.titulo, p.info?'Informativo':(p.exp?'Explicada':'Por resolver'), d.ref, d.nom||'', d.fe||'', d.v?csriR2(d.v.b0+d.v.bNo+d.v.bE+d.v.ot):'', d.v?d.v.bG:'', d.v?d.v.iva:'', d.v?d.v.total:'', p.info?0:(d.v?csriR2((d.sg||1)*d.v.total):(d.monto==null?'':d.monto)), [d.nota,d.causa].filter(Boolean).join(' — ')])));
+    (b.otras||[]).forEach(o=>o.docs.forEach(d=>docs.push([b.titulo, o.titulo, 'Informativo', d.ref, '', '', '', '', '', '', d.monto==null?'':d.monto, [d.nota,d.causa].filter(Boolean).join(' — ')]))); });
+  (s.otras||[]).forEach(o=>o.docs.forEach(d=>docs.push(['Integridad', o.titulo, 'Informativo', d.ref, '', '', '', '', '', '', d.monto==null?'':d.monto, [d.nota,d.causa].filter(Boolean).join(' — ')])));
+  if(docs.length){ a.push(['DOCUMENTOS POR PARTIDA'], ['Comparación','Partida','Estado','Documento','Proveedor','Fecha','Base 0 % / otros','Base gravada','IVA','Total','Efecto (±)','Nota / causa probable']); docs.forEach(r=>a.push(r)); a.push([]); }
+  if(['form','mayores','integ'].indexOf(s.id)>=0){ a.push(['VERIFICACIONES DE LA SECCIÓN'], ['Estado','Verificación','Diferencia','Nota / datos faltantes']);
+    s.checks.map(i=>res.checks.find(c=>c.id===i)).filter(Boolean).forEach(c=>a.push([CSRI_EST[c.estado], c.nombre, c.estado==='sd'?'':c.dif, [c.nota,(c.falta||[]).length?'Falta: '+c.falta.join('; '):''].filter(Boolean).join(' · ')])); a.push([]); }
+  const rs = csriRecsDeSeccion(res, s.id);
+  a.push(['RECOMENDACIONES DE LA SECCIÓN'], ['Prioridad','Recomendación','Detalle','Monto']);
+  rs.forEach(r=>a.push([CSRI_SEV[r.sev][0], r.titulo, r.texto, r.monto==null?'':r.monto]));
+  return a;
+}
+function csriRecsAOA(res){
+  const g = res.recsPorSec || {}, a = [['N.º','Sección','Prioridad','Recomendación','Detalle','Monto','Bloque relacionado']];
+  let n = 0;
+  CSRI_REC_GRUPOS.forEach(x=>(g[x[0]]||[]).forEach(r=>a.push([++n, x[1], CSRI_SEV[r.sev][0], r.titulo, r.texto, r.monto==null?'':r.monto, r.bloque||''])));
   return a;
 }
 
