@@ -273,6 +273,13 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:now
 .csri-rec-h{margin-bottom:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
 .csri-monto{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;}
 @media(max-width:800px){.csri-top-row{grid-template-columns:1fr;}.csri-grid{grid-template-columns:1fr;}}
+/* 15va: cuadre de bases / puente */
+.csri-cuadre{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0;} .csri-cuadre th,.csri-cuadre td{padding:4px 6px;border-bottom:1px solid var(--border,rgba(128,128,128,.25));vertical-align:top;}
+.csri-cuadre th{text-align:left;font-weight:600;color:var(--muted);white-space:nowrap;} .csri-cuadre .num,.csri-mini .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.csri-q-tot td{font-weight:700;background:rgba(80,140,230,.10);} .csri-q-sub td{font-weight:600;} .csri-q-res td{font-weight:700;border-top:2px solid var(--border,rgba(128,128,128,.5));} .csri-q-memo td{color:var(--muted);} .csri-q-pend td{background:rgba(239,90,90,.08);} .csri-q-doc td{background:rgba(128,128,128,.06);font-size:11px;}
+.csri-col-t{font-weight:600;} .csri-lnk{font-size:11px;} .csri-mini{width:100%;border-collapse:collapse;font-size:11px;margin:3px 0;} .csri-mini th,.csri-mini td{padding:2px 5px;border-bottom:1px solid rgba(128,128,128,.2);text-align:left;}
+.csri-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;} .csri-badge-ok{background:rgba(60,170,100,.18);} .csri-badge-warn{background:rgba(232,179,57,.22);} .csri-badge-bad{background:rgba(239,90,90,.18);} .csri-badge-sd{background:rgba(128,128,128,.18);}
+@media print{.csri-cuadre{font-size:9px;}}
 </style>
 </head>
 <body>
@@ -16388,7 +16395,9 @@ const CSRI_SPEC_LIBRO = { min:4, campos:{
   bG:['cmp c iva','base iva','base gravada','base con iva','base 15','base 12','base imponible iva'],
   iva:['i v a','iva','valor iva','monto iva'],
   b0:['cmp s iva','base 0','base sin iva','base tarifa 0','base no gravada'],
-  total:['total','total compra','valor total']
+  total:['total','total compra','valor total'],
+  dscto:['dscto','descuento','descuentos'], cargo:['cargo','cargos','otros cargos'],
+  ice:['i c e','ice','monto ice'], otros:['otros','otros valores']
 }};
 function csriParseLibroCompras(grillas, over){
   for(const g of grillas){
@@ -16409,13 +16418,14 @@ function csriParseLibroCompras(grillas, over){
       const celdasBase = [csriCelda(r,cols.bruto), csriCelda(r,cols.neto), csriCelda(r,cols.total)];
       const anulado = celdasBase.some(c=>typeof c==='string' && /anulad/i.test(c.replace(/\s+/g,''))) || /anulad/i.test(csriTxt(csriCelda(r,cols.nombre)).replace(/\s+/g,''));
       const bG = csriNum(csriCelda(r,cols.bG),modo)||0, iva = csriNum(csriCelda(r,cols.iva),modo)||0, b0 = csriNum(csriCelda(r,cols.b0),modo)||0;
+      const ice = csriNum(csriCelda(r,cols.ice),modo)||0, otros = csriNum(csriCelda(r,cols.otros),modo)||0;
       const neto = csriNum(celdaBase,modo);
       const total = csriNum(csriCelda(r,cols.total),modo);
       const base = anulado ? 0 : (typeof neto==='number' ? neto : csriR2(bG+b0));
       tipoActual = tipoTxt || tipoActual;
       rows.push({ tipoTxt, interno: csriTxt(csriCelda(r,cols.interno)), ruc, nom: csriTxt(csriCelda(r,cols.nombre)), sec, docRaw,
         fe: csriFecha(csriCelda(r,cols.fprov)) || csriFecha(csriCelda(r,cols.fecha)), fr: csriFecha(csriCelda(r,cols.fecha)),
-        cs: csriTxt(csriCelda(r,cols.cs)), base, bG: anulado?0:bG, b0: anulado?0:b0, iva: anulado?0:iva, total: anulado?0:(typeof total==='number'?total:csriR2(base+iva)),
+        cs: csriTxt(csriCelda(r,cols.cs)), base, ot: anulado?0:csriR2(ice+otros), bG: anulado?0:bG, b0: anulado?0:b0, iva: anulado?0:iva, total: anulado?0:(typeof total==='number'?total:csriR2(base+csriR2(ice+otros)+iva)),
         anulado, esDAU: /dau|importaci|aduana/i.test(tipoTxt), esReemb: /^comprobant|reembolso/i.test(tipoTxt), clase: csriClaseLibro(tipoTxt) });
     }
     if(!rows.length) continue;
@@ -17142,31 +17152,100 @@ function csriConceptoMayor(S, C, k){
   return { meta, cuentas, db:csriR2(db), hb:csriR2(hb), neto:csriR2(neto), lado:csriR2(lado), contra: csriR2(meta.nat==='C'?db:hb), val: csriR2(meta.modo==='lado'?lado:neto), sf:csriR2(sf), notas };
 }
 
-/* ---------- Emparejamiento de documentos (RUC + secuencial) ---------- */
-function csriDocsATS(ats){
+/* ---------- Emparejamiento de documentos (RUC + secuencial) ----------
+   15va iteración: cada documento lleva su COMPOSICIÓN de bases (vector v): base ≠0% (bG), base 0% (b0), no objeto (bNo),
+   exenta (bE), otros valores sin IVA (ot: ICE, cargos, servicio/propina), y la base compuesta = suma de todas.
+   Se compara siempre la base compuesta (= total − IVA), no una sola columna: el SRI informa en VALOR_SIN_IMPUESTOS solo la
+   base de los ítems, y los valores sin IVA que forman parte del total del comprobante (p. ej. servicio 10 %) solo
+   aparecen en IMPORTE_TOTAL; el ATS y el registro contable los incluyen en la base 0 %. */
+const CSRI_TARIFAS = [5,8,12,13,14,15];     // tarifas de IVA conocidas (se agrega la configurada)
+let CSRI_TARIFAS_CFG = null;   // tarifas diferenciadas configuradas por la empresa (Ajustes); null = valores predeterminados
+function csriTarifasParse(txt){ if(txt==null || String(txt).trim()==='') return null; const a = String(txt).split(/[;, ]+/).map(x=>parseFloat(String(x).replace('%','').replace(',','.'))).filter(x=>isFinite(x) && x>0 && x<100); return a.length ? a : null; }
+function csriTarifasConocidas(tarifa){ const t = (CSRI_TARIFAS_CFG || CSRI_TARIFAS).slice(); if(tarifa>0 && t.indexOf(+tarifa)<0) t.push(+tarifa); return t.sort((a,b)=>a-b); }
+function csriVec(o){
+  o = o || {};
+  const v = { bG:csriR2(o.bG||0), b0:csriR2(o.b0||0), bNo:csriR2(o.bNo||0), bE:csriR2(o.bE||0), ot:csriR2(o.ot||0), iva:csriR2(o.iva||0) };
+  v.base = csriR2(v.bG+v.b0+v.bNo+v.bE+v.ot); v.total = csriR2(v.base+v.iva);
+  return v;
+}
+/* ATS: tarifa efectiva = IVA / base ≠ 0 %. Si no es la configurada se informa (nota), nunca es error por sí sola. */
+function csriTarifaNota(bG, iva, tarifa){
+  if(!(bG>0.005) || !(iva>0.005)) return '';
+  const tars = csriTarifasConocidas(tarifa), ef = iva/bG*100;
+  const t = tars.find(x=>Math.abs(iva - bG*x/100) <= 0.03);
+  if(t!=null) return Math.abs(t - tarifa) > 0.001 ? 'Tarifa '+t+'% (distinta de la configurada '+tarifa+'%)' : '';
+  if(ef >= tars[0]-0.6 && ef <= tars[tars.length-1]+0.6) return 'Tarifas mezcladas: tarifa efectiva '+ef.toFixed(2)+'% (IVA ÷ base ≠ 0 %)';
+  return 'Tarifa efectiva '+ef.toFixed(2)+'% fuera de las tarifas conocidas';
+}
+/* SRI: el archivo solo trae VALOR_SIN_IMPUESTOS, IVA e IMPORTE_TOTAL. Se deriva (implícito) la composición:
+   base ≠0% = IVA ÷ tarifa (o toda la base si IVA/base coincide con una tarifa conocida); el resto de IMPORTE_TOTAL − IVA va a 0 %/otros. */
+function csriSriSplit(vsi, iva, total, tarifa){
+  vsi = Number(vsi)||0; iva = Number(iva)||0;
+  const tot = (typeof total==='number' && isFinite(total)) ? total : csriR2(vsi+iva);
+  const restReal = csriR2(tot - vsi - iva);       // el centavo de redondeo se conserva en la base (el total del SRI cuadra exacto)
+  let rest = restReal;
+  if(Math.abs(rest) <= 0.011) rest = 0;           // redondeo del comprobante: no se marca como «dos bases»
+  let bG = 0, nota = '';
+  if(iva > 0.005 && vsi > 0){
+    const tars = csriTarifasConocidas(tarifa), t = tars.find(x=>Math.abs(iva - vsi*x/100) <= 0.03);
+    if(t!=null){ bG = vsi; if(Math.abs(t - tarifa) > 0.001) nota = 'Tarifa '+t+'% (distinta de la configurada '+tarifa+'%)'; }
+    else { bG = Math.min(vsi, csriR2(iva/(tarifa/100))); nota = 'Base mixta implícita: IVA ÷ '+tarifa+'% = '+csriFmt(bG)+' gravada; el resto de VALOR_SIN_IMPUESTOS va a 0 % (tarifa efectiva '+(iva/vsi*100).toFixed(2)+'%)'; }
+  }
+  const v = csriVec({ bG, b0:(vsi - bG) + restReal, iva });
+  return { v, rest, vsi, nota, total:tot };
+}
+function csriDocsATS(ats, tarifa){
   // un mismo comprobante puede venir partido en varias filas (p. ej. por código de sustento): se agrupa por RUC + tipo + serie
   const m = {}, out = [];
+  tarifa = tarifa || 15;
   (ats.compras||[]).forEach((d,i)=>{
     const k = [csriRucBase(d.ruc), d.tc, d.est, d.pto, csriSec(d.sec)].join('|');
     const cl = csriClave(d.aut||'');
     const propio = !!(cl && ats.ruc && cl.ruc === csriRuc(ats.ruc));   // emitido por la propia empresa (liquidación de compra, reembolso)
-    const base = d.b0+d.bG+d.bNo+d.bE;
     let o = m[k];
     if(!o){
       o = m[k] = { src:'ATS', i, ruc:csriRucBase(d.ruc), rucFull:csriRuc(d.ruc), sec:csriSec(d.sec), serie:d.est+'-'+d.pto+'-'+d.sec, tc:d.tc, base:0, iva:0, total:0, fe:d.fe, fr:d.fr,
-        elec:(d.aut||'').length===49, propio, nom:'', cs:[] };
+        elec:(d.aut||'').length===49, propio, nom:'', cs:[], _c:{ bG:0, b0:0, bNo:0, bE:0, ot:0, iva:0 } };
       out.push(o);
     }
-    o.base = csriR2(o.base + base); o.iva = csriR2(o.iva + d.iva); o.total = csriR2(o.total + base + d.iva + d.ice);
+    o._c.bG += d.bG; o._c.b0 += d.b0; o._c.bNo += d.bNo; o._c.bE += (d.bE||0); o._c.ot += (d.ice||0); o._c.iva += d.iva;
     if(o.cs.indexOf(d.cs)<0) o.cs.push(d.cs);
   });
+  for(const o of out){
+    o.v = csriVec(o._c); o.base = o.v.base; o.iva = o.v.iva; o.total = o.v.total; o.nota = csriTarifaNota(o.v.bG, o.v.iva, tarifa); o.rest = 0;
+    delete o._c;
+  }
   return out;
 }
-function csriDocsSRI(sri){
-  return (sri.rows||[]).map((d,i)=>({ src:'SRI', i, ruc:csriRucBase(d.ruc), rucFull:csriRuc(d.ruc), sec:d.sec, serie:d.serie, tc:d.tipo, base:d.base, iva:d.iva, total:d.total, fe:d.fe, nom:d.nom, marca:d.marca, mod:d.mod, elec:true }));
+function csriDocsSRI(sri, tarifa){
+  tarifa = tarifa || 15;
+  return (sri.rows||[]).map((d,i)=>{
+    const sp = csriSriSplit(d.base, d.iva, d.total, tarifa);
+    return { src:'SRI', i, ruc:csriRucBase(d.ruc), rucFull:csriRuc(d.ruc), sec:d.sec, serie:d.serie, tc:d.tipo, base:sp.v.base, iva:sp.v.iva, total:sp.v.total, v:sp.v, rawBase:sp.vsi, rest:sp.rest, nota:sp.nota,
+      fe:d.fe, nom:d.nom, marca:d.marca, mod:d.mod, elec:true };
+  });
 }
-function csriDocsLibro(lib){
-  return (lib.rows||[]).filter(d=>!d.esDAU).map((d,i)=>({ src:'LIB', i, ruc:csriRucBase(d.ruc), rucFull:csriRuc(d.ruc), sec:d.sec, serie:d.docRaw, tc:d.clase, base:d.base, iva:d.iva, total:d.total, fe:d.fe, nom:d.nom, anulado:d.anulado, interno:d.interno, cs:d.cs||'', tipoTxt:d.tipoTxt||'' }));
+function csriDocsLibro(lib, tarifa){
+  return (lib.rows||[]).filter(d=>!d.esDAU).map((d,i)=>csriDocLibro(d, i));
+}
+/* vector de composición de una fila del registro de compras (CMP.C/IVA = base ≠0 %, CMP.S/IVA = base 0 %, ICE + OTROS = otros) */
+function csriLibroVec(d){
+  const ot = d.ot||0;
+  let bG = d.bG||0, b0 = d.b0||0;
+  const neto = d.base;                                  // CMP.NET. (o CMP.BTA.) = base neta
+  if(typeof neto==='number' && Math.abs(bG+b0-neto) > 0.005) b0 = csriR2(neto - bG);   // la base neta manda (descuentos/cargos)
+  return csriVec({ bG, b0, ot, iva:d.iva||0 });
+}
+function csriDocLibro(d, i){
+  const v = d.anulado ? csriVec({}) : csriLibroVec(d);
+  return { src:'LIB', i, ruc:csriRucBase(d.ruc), rucFull:csriRuc(d.ruc), sec:d.sec, serie:d.docRaw, tc:d.clase, base:v.base, iva:v.iva, total:d.anulado?0:v.total, v, rest:0, nota:'', fe:d.fe, nom:d.nom, anulado:d.anulado, interno:d.interno, cs:d.cs||'', tipoTxt:d.tipoTxt||'' };
+}
+/* documentos del reporte contable «Detalle de Compras»: Base no gravada (0 %) + Base imponible gravada */
+function csriDocsRep(rep){
+  return (rep.compras||[]).map((d,i)=>{
+    const v = csriVec({ bG:d.bG, b0:d.b0, iva:d.iva });
+    return { src:'REP', i, ruc:csriRucBase(d.ruc), rucFull:csriRuc(d.ruc), sec:csriSec(d.sec), serie:[d.est,d.pto,d.sec].filter(Boolean).join('-')||d.sec, tc:d.tc, base:v.base, iva:v.iva, total:v.total, v, rest:0, nota:'', fe:d.fe, nom:d.nom, cs:d.cs||'' };
+  });
 }
 /* Empareja A con B. Devuelve {pares, soloA, soloB, difs} */
 function csriEmparejar(A, B, tolDoc){
@@ -17346,6 +17425,324 @@ function csriViajeBloque(S, C, vc){
 }
 
 
+/* =========================================================================
+   CUADRE DE COMPRAS Y BASES (15va iteración) — puentes deterministas
+   Puente A: compras ATS (todos los sustentos) − liquidaciones de viaje = compras de la empresa ± partidas = comprobantes recibidos del SRI
+   Puente B: registro de compras contable ± partidas = ATS ± partidas = reporte «Detalle de Compras» del sistema
+   Puente C: retenciones de renta e IVA (ATS vs talón vs resumen del sistema)
+   Cada línea del puente es un vector por tipo de base (≠0 %, 0 %, no objeto, exenta, otros sin IVA, base total, IVA, total) y enlaza a sus
+   documentos. «Explicada» = partida esperada/justificada; «Pendiente» = excepción real que debe resolverse. Residual = suma de pendientes.
+   Todo es puro y sin DOM.
+   ========================================================================= */
+const CSRI_BV_COLS = ['bG','b0','bNo','bE','ot','base','iva','total'];
+const CSRI_BV_ETQ = { bG:'Base ≠ 0 %', b0:'Base 0 %', bNo:'No objeto de IVA', bE:'Exenta', ot:'Otros sin IVA (ICE/cargos)', base:'Base total', iva:'IVA', total:'Total' };
+function csriBV(){ return { n:0, bG:0, b0:0, bNo:0, bE:0, ot:0, base:0, iva:0, total:0 }; }
+function csriBVAdd(acc, v, sg, nDoc){
+  sg = sg || 1;
+  for(const c of CSRI_BV_COLS) acc[c] += sg*((v && v[c])||0);
+  acc.n += (nDoc==null ? 1 : nDoc);
+  return acc;
+}
+function csriBVRed(acc){ for(const c of CSRI_BV_COLS) acc[c] = csriR2(acc[c]); return acc; }
+function csriBVDe(docs){ const a = csriBV(); (docs||[]).forEach(d=>csriBVAdd(a, d.v)); return csriBVRed(a); }
+function csriBVSum(list, sg){ const a = csriBV(); (list||[]).forEach(x=>{ csriBVAdd(a, x, sg||1, x.n||0); }); return csriBVRed(a); }
+function csriBVNeg(v){ const a = csriBV(); csriBVAdd(a, v, -1, v.n||0); return csriBVRed(a); }
+function csriBVDif(x, y){ const a = csriBV(); csriBVAdd(a, x, 1, x.n||0); csriBVAdd(a, y, -1, 0); a.n = (x.n||0); return csriBVRed(a); }
+function csriBVCero(v, tol){ return CSRI_BV_COLS.every(c=>Math.abs(v[c]||0) <= (tol==null?0.005:tol)); }
+
+/* Empareja X (origen) con Y (destino) por RUC + secuencial y reparte TODAS las diferencias en partidas con nombre.
+   o = { tol, lineas:[[id, etq, explicada(bool), signo(-1|1)]], clsX(a)->id, clsY(b)->id, nombreX, nombreY }
+   Contribución de cada partida al paso de X a Y: sólo-en-X = −valor; sólo-en-Y = +valor; emparejados = Y − X.
+   Identidad: total(Y) − total(X) − Σ partidas = 0 (exacta, cada documento cae en una sola partida). */
+function csriPuenteDocs(X, Y, o){
+  const tol = o.tol;
+  const em = csriEmparejar(X, Y, tol);
+  const items = {}, orden = [];
+  const crear = (id, etq, exp, sg)=>{ if(!items[id]){ items[id] = { id, etq, exp:!!exp, sg:sg||0, v:csriBV(), docs:[] }; orden.push(id); } return items[id]; };
+  (o.lineas||[]).forEach(l=>crear(l[0], l[1], l[2], l[3]));
+  const poner = (it, d, v, sg, extra)=>{
+    csriBVAdd(it.v, v, sg, 1);
+    it.docs.push(Object.assign({ ref:(d.serie||d.sec)+' · '+(d.rucFull||d.ruc), nom:d.nom||'', fe:d.fe||'', k:d.ruc+'|'+d.sec, v, sg }, extra||{}));
+  };
+  for(const a of em.soloA){ const id = o.clsX(a); poner(crear(id, id, false, -1), a, a.v, -1, { nota:a.nota||'' }); }
+  for(const b of em.soloB){ const id = o.clsY(b); poner(crear(id, id, false, 1), b, b.v, 1, { nota:b.nota||'' }); }
+  for(const p of em.pares){
+    const d = csriBV();
+    for(const c of CSRI_BV_COLS) d[c] = csriR2((p.b.v[c]||0) - (p.a.v[c]||0));
+    const real = Math.abs(d.base) > tol || Math.abs(d.iva) > tol;
+    const colDif = ['bG','b0','bNo','bE','ot'].some(c=>Math.abs(d[c]) > tol);
+    const id = real ? 'valor' : (colDif ? 'composicion' : 'redondeo');
+    if(!(real || colDif || CSRI_BV_COLS.some(c=>Math.abs(d[c])>0.0001))) continue;
+    poner(crear(id, id, id!=='valor', 1), p.b, d, 1, { nota:'', det:[ { lado:o.nombreX||'Origen', v:p.a.v, nota:p.a.nota||'' }, { lado:o.nombreY||'Destino', v:p.b.v, nota:p.b.nota||'', rest:p.b.rest||0 } ] });
+  }
+  const ordenIds = orden.slice();
+  const lista = ordenIds.map(id=>{ const it = items[id]; csriBVRed(it.v); it.n = it.docs.length; it.v.n = it.docs.length; return it; });
+  const totX = csriBVDe(X), totY = csriBVDe(Y);
+  const sumIt = csriBV(); lista.forEach(it=>csriBVAdd(sumIt, it.v, 1, 0)); csriBVRed(sumIt);
+  const ident = csriBV(); for(const c of CSRI_BV_COLS) ident[c] = csriR2(totY[c] - totX[c] - sumIt[c]);
+  const pend = lista.filter(it=>!it.exp), expl = lista.filter(it=>it.exp);
+  const resid = csriBV(); pend.forEach(it=>csriBVAdd(resid, it.v, 1, 0)); csriBVRed(resid);
+  resid.n = pend.reduce((s,it)=>s+it.docs.length,0);
+  const bruto = csriR2(pend.reduce((s,it)=>s+csriSuma(it.docs,d=>Math.abs(d.v.total)),0));
+  return { em, items:lista, totX, totY, ident, resid, bruto, nPend:resid.n, expl, pend };
+}
+function csriPuenteEstado(bruto, ident, tolL, tolA){
+  if(!csriBVCero(ident, 0.01)) return 'bad';
+  if(bruto <= tolL + 1e-9) return 'ok';
+  return bruto <= tolA + 1e-9 ? 'warn' : 'bad';
+}
+
+/* ---------------- Puente A: ATS → comprobantes recibidos del SRI ---------------- */
+const CSRI_PA_LINEAS = [
+  ['a_propio','Emitidos por la propia empresa (liquidaciones de compra / reembolsos propios): no figuran en recibidos', true, -1],
+  ['a_fisico','Documentos físicos o preimpresos (notas de venta, autorización de 10 dígitos): no figuran en recibidos', true, -1],
+  ['a_noelec','Otros tipos que no se reciben como comprobante electrónico (importaciones, exterior, otros)', true, -1],
+  ['b_anul','Comprobantes anulados con nota de crédito que están en el SRI y correctamente no están en el ATS', true, 1],
+  ['b_viaje','Comprobantes del SRI clasificados como liquidación de viaje (sustento 05)', true, 1],
+  ['composicion','Diferencias de composición entre columnas de base (mismo total; p. ej. tarifas mezcladas)', true, 1],
+  ['redondeo','Redondeos entre fuentes (menores a la tolerancia por documento)', true, 1],
+  ['a_pend','PENDIENTE — En el ATS (electrónicos), sin comprobante en el SRI', false, -1],
+  ['b_pend','PENDIENTE — En el SRI, no reportados en el ATS', false, 1],
+  ['valor','PENDIENTE — Documentos emparejados con valores distintos', false, 1]
+];
+function csriPuenteSRI(S, C, VC, ctx){
+  const out = { id:'A', titulo:'Cuadre de compras: ATS ↔ comprobantes recibidos del SRI', disponible:false, falta:[] };
+  if(!S.ats) out.falta.push('ATS (XML)');
+  if(!S.sri) out.falta.push('Comprobantes recibidos del SRI');
+  if(out.falta.length) return out;
+  const tar = ctx.tarifa, tol = ctx.tolL;
+  const atsAll = csriDocsATS(S.ats, tar), pa = csriViajeParticion(VC, atsAll);
+  const sriAll = csriDocsSRI(S.sri, tar), ps = csriViajeParticion(VC, sriAll);
+  const R = csriPuenteDocs(pa.resto, ps.resto, {
+    tol, lineas:CSRI_PA_LINEAS, nombreX:'ATS', nombreY:'SRI (implícito)',
+    clsX:a=> a.propio ? 'a_propio' : (!a.elec ? 'a_fisico' : ((CSRI_TIPOS_ELEC.indexOf(a.tc)<0 && a.tc!=='41') ? 'a_noelec' : 'a_pend')),
+    clsY:b=> /anulad/i.test(b.marca||'') ? 'b_anul' : 'b_pend'
+  });
+  // comprobantes del SRI que caen en el grupo viaje: se agregan como partida explicada (su documento está en el bloque de viaje)
+  const itV = R.items.find(i=>i.id==='b_viaje');
+  ps.viaje.forEach(d=>{ csriBVAdd(itV.v, d.v, 1, 1); itV.docs.push({ ref:(d.serie||d.sec)+' · '+(d.rucFull||d.ruc), nom:d.nom||'', fe:d.fe||'', k:d.ruc+'|'+d.sec, v:d.v, sg:1, nota:'' }); });
+  csriBVRed(itV.v); itV.n = itV.docs.length; itV.v.n = itV.n;
+  // recalcular totales con los del SRI viaje incluidos
+  const totY = csriBVDe(sriAll), totX = csriBVDe(pa.resto);
+  const sumIt = csriBV(); R.items.forEach(it=>csriBVAdd(sumIt, it.v, 1, 0)); csriBVRed(sumIt);
+  const ident = csriBV(); for(const c of CSRI_BV_COLS) ident[c] = csriR2(totY[c] - totX[c] - sumIt[c]);
+  const pend = R.items.filter(it=>!it.exp), expl = R.items.filter(it=>it.exp);
+  const resid = csriBV(); pend.forEach(it=>csriBVAdd(resid, it.v, 1, 0)); csriBVRed(resid); resid.n = pend.reduce((s,it)=>s+it.docs.length,0);
+  const bruto = csriR2(pend.reduce((s,it)=>s+csriSuma(it.docs,d=>Math.abs(d.v.total)),0));
+  const vTot = csriBVDe(atsAll), vVia = csriBVDe(pa.viaje), vEmp = totX;
+  // talón (control oficial)
+  let talon = null;
+  if(S.talon && S.talon.comprasTot && !S.talon.manual){
+    const t = S.talon.comprasTot, n = Object.keys(S.talon.compras||{}).reduce((s,k)=>s+(S.talon.compras[k].n||0),0);
+    const v = csriVec({ bG:t.bG, b0:t.b0, bNo:t.bNo, iva:t.iva }); v.n = n;
+    talon = { v, dif:csriBVDif(vTot, v) };
+  }
+  // SRI: de VALOR_SIN_IMPUESTOS a la base compuesta (valores sin IVA que solo están en IMPORTE_TOTAL)
+  const conRest = sriAll.filter(d=>Math.abs(d.rest)>0.005);
+  const vsi = csriR2(csriSuma(sriAll,d=>d.rawBase));
+  const sriRaw = { vsi, vsiIva:csriR2(csriSuma(sriAll,d=>d.iva)), rest:csriR2(csriSuma(conRest,d=>d.rest)), nRest:conRest.length,
+    docs:conRest.map(d=>({ ref:d.serie+' · '+d.rucFull, nom:d.nom||'', fe:d.fe||'', k:d.ruc+'|'+d.sec, v:d.v, rest:d.rest, rawBase:d.rawBase, nota:'' })) };
+  // desglose del SRI por tipo de comprobante y por marca del contador
+  const tipos = {}, marcas = {};
+  sriAll.forEach(d=>{ const t = tipos[d.tc] || (tipos[d.tc] = { tc:d.tc, v:csriBV() }); csriBVAdd(t.v, d.v);
+    const m = (d.marca||'').trim().toUpperCase(); if(m && m!=='OK' && m!=='NO' && m!=='#N/A'){ const o = marcas[m] || (marcas[m] = { marca:m, v:csriBV() }); csriBVAdd(o.v, d.v); } });
+  const sriTipos = Object.keys(tipos).sort().map(k=>({ tc:k, etq:(CSRI_TIPOS_NOMBRE[k]||k), v:csriBVRed(tipos[k].v) }));
+  const sriMarcas = Object.keys(marcas).sort().map(k=>({ marca:k, v:csriBVRed(marcas[k].v) }));
+  const estado = csriPuenteEstado(bruto, ident, ctx.tolL, ctx.tolA);
+  return Object.assign(out, { disponible:true, vTot, vVia, vEmp, vSRI:totY, items:R.items, expl, pend, ident, resid, bruto, nPend:resid.n, estado, talon, sriRaw, sriTipos, sriMarcas,
+    vSRIvia:csriBVDe(ps.viaje), vSRIemp:csriBVDe(ps.resto), nViaje:pa.viaje.length, nSRIviaje:ps.viaje.length, pares:R.em.pares.length, nATS:pa.resto.length, nSRI:ps.resto.length, viajeOn:VC.on });
+}
+
+/* ---------------- Puente B: registro contable → ATS → reporte «Detalle de Compras» ---------------- */
+const CSRI_PB1_LINEAS = [
+  ['l_dau','Importaciones (DAU / liquidaciones de importación): no son comprobantes del ATS (se controlan en la sección 4)', true, -1],
+  ['l_anul','Comprobantes anulados en contabilidad (valor cero)', true, -1],
+  ['composicion','Diferencias de composición entre columnas de base (mismo total)', true, 1],
+  ['redondeo','Redondeos entre fuentes (menores a la tolerancia por documento)', true, 1],
+  ['l_pend','PENDIENTE — Registrados en contabilidad, no reportados en el ATS', false, -1],
+  ['a_pend','PENDIENTE — En el ATS, no encontrados en el registro contable', false, 1],
+  ['valor','PENDIENTE — Documentos emparejados con valores distintos', false, 1]
+];
+const CSRI_PB2_LINEAS = [
+  ['composicion','Diferencias de composición entre columnas de base (mismo total)', true, 1],
+  ['redondeo','Redondeos entre fuentes (menores a la tolerancia por documento)', true, 1],
+  ['a_pend','PENDIENTE — En el ATS, no encontrados en el reporte contable', false, -1],
+  ['r_pend','PENDIENTE — En el reporte contable, no reportados en el ATS', false, 1],
+  ['valor','PENDIENTE — Documentos emparejados con valores distintos', false, 1]
+];
+function csriPuenteContable(S, C, VC, ctx){
+  const out = { id:'B', titulo:'Cuadre contable: registro de compras ↔ ATS ↔ reporte «Detalle de Compras» del sistema', disponible:false, falta:[] };
+  if(!S.ats) out.falta.push('ATS (XML)');
+  if(!S.libro) out.falta.push('Registro de compras contable');
+  if(out.falta.length) return out;
+  const tar = ctx.tarifa, tol = ctx.tolL;
+  const atsAll = csriDocsATS(S.ats, tar), pa = csriViajeParticion(VC, atsAll);
+  const libRows = S.libro.rows||[];
+  const libDocs = libRows.filter(d=>!d.esDAU).map((d,i)=>csriDocLibro(d,i));
+  const dauRows = libRows.filter(d=>d.esDAU && !d.anulado);
+  const vLibTodo = csriBV(); libRows.forEach(d=>{ if(!d.anulado) csriBVAdd(vLibTodo, csriLibroVec(d)); }); csriBVRed(vLibTodo);
+  const vDau = csriBV(); dauRows.forEach(d=>csriBVAdd(vDau, csriLibroVec(d))); csriBVRed(vDau);
+  const R1 = csriPuenteDocs(libDocs, atsAll, {
+    tol, lineas:CSRI_PB1_LINEAS, nombreX:'Registro', nombreY:'ATS',
+    clsX:a=> a.anulado ? 'l_anul' : 'l_pend', clsY:()=>'a_pend'
+  });
+  // línea de DAU (documentos del propio archivo; se resta del total del registro para llegar a los comprobantes)
+  const itD = R1.items.find(i=>i.id==='l_dau');
+  dauRows.forEach(d=>{ const v = csriLibroVec(d); csriBVAdd(itD.v, v, -1, 1); itD.docs.push({ ref:(d.docRaw||d.sec)+' · '+csriRuc(d.ruc), nom:d.nom||'', fe:d.fe||'', k:csriRucBase(d.ruc)+'|'+d.sec, v, sg:-1, nota:d.tipoTxt||'' }); });
+  csriBVRed(itD.v); itD.n = itD.docs.length; itD.v.n = itD.n;
+  const hayRep = !!(S.rep && (S.rep.compras||[]).length);
+  let R2 = null, repDocs = [];
+  if(hayRep){
+    repDocs = csriDocsRep(S.rep);
+    R2 = csriPuenteDocs(atsAll, repDocs, { tol, lineas:CSRI_PB2_LINEAS, nombreX:'ATS', nombreY:'Reporte', clsX:()=>'a_pend', clsY:()=>'r_pend' });
+  }
+  const vLib = csriBVDe(libDocs), vAts = csriBVDe(atsAll), vRep = hayRep ? csriBVDe(repDocs) : null;
+  const pl = csriViajeParticion(VC, libDocs.filter(d=>!d.anulado)), pr = hayRep ? csriViajeParticion(VC, repDocs) : null;
+  const vLibVia = csriBVDe(pl.viaje), vLibEmp = csriBVDe(pl.resto), vRepVia = pr ? csriBVDe(pr.viaje) : null, vRepEmp = pr ? csriBVDe(pr.resto) : null;
+  const itemsTodos = R1.items.concat(R2 ? R2.items : []);
+  const pend = itemsTodos.filter(i=>!i.exp), expl = itemsTodos.filter(i=>i.exp);
+  const resid = csriBV(); pend.forEach(it=>csriBVAdd(resid, it.v, 1, 0)); csriBVRed(resid); resid.n = pend.reduce((s,it)=>s+it.docs.length,0);
+  const bruto = csriR2(pend.reduce((s,it)=>s+csriSuma(it.docs,d=>Math.abs(d.v.total)),0));
+  // identidades: (registro − DAU) + partidas = ATS ; ATS + partidas = reporte
+  const sum1 = csriBV(); R1.items.forEach(it=>csriBVAdd(sum1, it.v, 1, 0)); csriBVRed(sum1);
+  const ident1 = csriBV(); for(const c of CSRI_BV_COLS) ident1[c] = csriR2(vAts[c] - (vLibTodo[c] + sum1[c]));
+  let ident2 = csriBV();
+  if(R2){ const s2 = csriBV(); R2.items.forEach(it=>csriBVAdd(s2, it.v, 1, 0)); csriBVRed(s2); for(const c of CSRI_BV_COLS) ident2[c] = csriR2(vRep[c] - (vAts[c] + s2[c])); }
+  const ident = csriBV(); for(const c of CSRI_BV_COLS) ident[c] = csriR2(Math.abs(ident1[c]) + Math.abs(ident2[c]));
+  // totales del reporte según su propio resumen (debe coincidir con la suma de sus documentos)
+  const RRt = hayRep ? csriRepResumen(S.rep).compras.tot : null;
+  const estado = csriPuenteEstado(bruto, ident, ctx.tolL, ctx.tolA);
+  return Object.assign(out, { disponible:true, vLibTodo, vDau, vLib, vAts, vRep, vAtsVia:csriBVDe(pa.viaje), vAtsEmp:csriBVDe(pa.resto), items1:R1.items, items2:R2 ? R2.items : [], hayRep, vLibVia, vLibEmp, vRepVia, vRepEmp,
+    pend, expl, ident, ident1, ident2, resid, bruto, nPend:resid.n, estado, repResumen:RRt, nLib:libDocs.length, nAts:atsAll.length, nRep:repDocs.length, paresLA:R1.em.pares.length, paresAR:R2 ? R2.em.pares.length : 0 });
+}
+
+/* ---------------- Puente C: retenciones (renta e IVA) ---------------- */
+function csriPuenteRet(S, C, VC, ctx, R){
+  const out = { id:'C', titulo:'Retenciones de renta e IVA: ATS ↔ talón ↔ resumen de retenciones del sistema', disponible:false, falta:[], filas:[] };
+  if(!S.ats){ out.falta.push('ATS (XML)'); return out; }
+  const T = S.talon && !S.talon.manual ? S.talon : (S.talon || null), P = S.rep || null;
+  const f = (etq, a, t, p)=>{
+    const fila = { etq, ats:a, talon:(t==null?null:t), sist:(p==null?null:p), dT:(t==null?null:csriR2(a-t)), dS:(p==null?null:csriR2(a-p)) };
+    out.filas.push(fila); return fila;
+  };
+  f('Retención en la fuente de renta — base', R.airTot.base, T && T.retRentaTot ? T.retRentaTot.base : null, P && P.retRentaTot ? P.retRentaTot.base : null);
+  f('Retención en la fuente de renta — valor retenido', R.airTot.val, T && T.retRentaTot ? T.retRentaTot.val : null, P && P.retRentaTot ? P.retRentaTot.val : null);
+  f('Retención de IVA — valor retenido (total)', R.retIvaTot, T && T.retIvaTot!=null ? T.retIvaTot : null, P && P.retIvaTot!=null ? P.retIvaTot : null);
+  out.disponible = true;
+  let bruto = 0, nPend = 0;
+  out.filas.forEach(x=>{ [x.dT, x.dS].forEach(d=>{ if(d!=null && Math.abs(d) > 0.005){ bruto += Math.abs(d); nPend++; } }); x.faltaT = x.talon==null; x.faltaS = x.sist==null; });
+  out.bruto = csriR2(bruto); out.nPend = nPend;
+  out.hayTalon = out.filas.some(x=>x.talon!=null); out.haySist = out.filas.some(x=>x.sist!=null);
+  out.estado = (!out.hayTalon && !out.haySist) ? 'sd' : (out.bruto <= ctx.tolL+1e-9 ? 'ok' : (out.bruto <= ctx.tolA+1e-9 ? 'warn' : 'bad'));
+  return out;
+}
+
+function csriPuenteTodo(S, C, VC, ctx, R){
+  const P = { A:null, B:null, C:null };
+  try{ P.A = csriPuenteSRI(S, C, VC, ctx); }catch(e){ P.A = { id:'A', disponible:false, falta:[], error:String(e&&e.message||e) }; }
+  try{ P.B = csriPuenteContable(S, C, VC, ctx); }catch(e){ P.B = { id:'B', disponible:false, falta:[], error:String(e&&e.message||e) }; }
+  try{ P.C = R ? csriPuenteRet(S, C, VC, ctx, R) : { id:'C', disponible:false, falta:['ATS (XML)'] }; }catch(e){ P.C = { id:'C', disponible:false, falta:[], error:String(e&&e.message||e) }; }
+  const ev = [P.A, P.B, P.C].filter(x=>x && x.disponible);
+  let est = 'sd'; ev.forEach(x=>{ if(x.estado && x.estado!=='sd') est = csriPeor(est==='sd'?'ok':est, x.estado); });
+  P.estado = est;
+  try{ P.M = csriPuenteMatriz(S, C, VC, ctx, P); }catch(e){ P.M = { disponible:false, filas:[], falta:[], error:String(e&&e.message||e) }; }
+  P.bruto = csriR2(ev.reduce((s,x)=>s+(x.bruto||0),0));
+  P.nPend = ev.reduce((s,x)=>s+(x.nPend||0),0);
+  return P;
+}
+
+
+/* ---------------- Matriz «Cuadre de bases / puente»: conceptos × fuentes ----------------
+   Filas: compras totales → (−) liquidaciones de viaje (05) → (=) compras a nombre de la empresa → tipos de base e IVA.
+   Columnas: ATS, Talón, Reportes contables, Registro de compras, SRI recibidos, Diferencia (SRI − ATS).
+   Cada fila lleva su estado: ok (|dif| ≤ tolerancia), explicada (la diferencia la absorben partidas explicadas) o pendiente. */
+function csriPuenteMatriz(S, C, VC, ctx, P){
+  const A = P && P.A && P.A.disponible ? P.A : null, B = P && P.B && P.B.disponible ? P.B : null;
+  const M = { disponible:!!(A||B), filas:[], reemb:null, imp:null, tolL:ctx.tolL, tolA:ctx.tolA, falta:[] };
+  if(!M.disponible){ M.falta = ['ATS (XML)','Comprobantes recibidos del SRI o registro de compras']; return M; }
+  const n0 = csriBV();
+  const talonV = A && A.talon ? A.talon.v : null;
+  const col = (v)=>v||null;
+  const ats = A ? { tot:A.vTot, via:A.vVia, emp:A.vEmp } : { tot:B.vAts, via:B.vAtsVia, emp:B.vAtsEmp };
+  const src = {
+    ats,
+    talon: talonV ? { tot:talonV, via:null, emp:null } : null,
+    rep: B && B.hayRep ? { tot:B.vRep, via:B.vRepVia, emp:B.vRepEmp } : null,
+    lib: B ? { tot:B.vLib, via:B.vLibVia, emp:B.vLibEmp } : null,
+    sri: A ? { tot:A.vSRI, via:A.vSRIvia, emp:A.vSRIemp } : null
+  };
+  // partidas explicadas del puente A (absorben diferencia SRI − ATS empresa) y pendientes
+  const expA = A ? csriBVSum(A.expl.filter(i=>i.id!=='b_viaje').map(i=>i.v)) : n0;
+  const pendA = A ? A.resid : n0;
+  const fila = (id, etq, tipo, campo, o)=>{
+    o = o || {};
+    const g = k=> src[k] ? (campo ? (src[k][o.parte||'emp'] ? src[k][o.parte||'emp'][campo] : null) : null) : null;
+    const r = { id, etq, tipo, v:{ ats:g('ats'), talon:g('talon'), rep:g('rep'), lib:g('lib'), sri:g('sri') }, estado:'sd', dif:null, expl:null, pend:null, nota:o.nota||'' };
+    if(o.parte==='emp' && r.v.sri!=null && r.v.ats!=null){
+      // compras de la empresa: SRI − ATS = partidas explicadas + partidas pendientes (las pendientes son excepciones reales)
+      r.dif = csriR2(r.v.sri - r.v.ats); r.expl = expA[campo]; r.pend = csriR2(r.dif - r.expl);
+      if(Math.abs(r.dif) <= ctx.tolL + 1e-9) r.estado = 'ok';
+      else if(Math.abs(r.pend) <= ctx.tolL + 1e-9) r.estado = 'expl';
+      else r.estado = Math.abs(r.pend) <= ctx.tolA + 1e-9 ? 'warn' : 'bad';
+    } else {
+      // totales y viaje: las fuentes internas (ATS, talón, reportes, registro) deben coincidir entre sí; el SRI no se compara aquí
+      const vals = [r.v.ats, r.v.talon, r.v.rep, r.v.lib].filter(x=>x!=null);
+      const mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals);
+      r.dif = vals.length > 1 ? csriR2(mx - mn) : null;
+      r.estado = vals.length < 2 ? 'sd' : (r.dif <= ctx.tolL + 1e-9 ? 'ok' : (r.dif <= ctx.tolA + 1e-9 ? 'warn' : 'bad'));
+      r.difInterna = true;
+    }
+    M.filas.push(r); return r;
+  };
+  fila('tot', 'Compras totales — todos los sustentos', 'tot', 'total', { parte:'tot' });
+  fila('tot_base', '   Base total', 'sub', 'base', { parte:'tot' });
+  fila('tot_iva', '   IVA', 'sub', 'iva', { parte:'tot' });
+  fila('via', '(−) Liquidaciones de viaje (sustento 05)'+(VC.on?'':' — separación desactivada'), 'tot', 'total', { parte:'via' });
+  fila('emp', '(=) Compras a nombre de la empresa (comparables con el SRI)', 'tot', 'total', { parte:'emp' });
+  [['bG','   Base ≠ 0 % (gravada con la tarifa general)'],['b0','   Base 0 %'],['bNo','   Base no objeto de IVA'],['bE','   Base exenta'],['ot','   Otros valores sin IVA (ICE / cargos)'],['base','   Base total comparable'],['iva','   IVA']].forEach(([c,e])=>fila('emp_'+c, e, c==='base'||c==='iva' ? 'sub' : 'base', c, { parte:'emp' }));
+  fila('emp_total', '   Total (base + IVA)', 'sub', 'total', { parte:'emp' });
+  // reembolsos (cód. 41)
+  const R = S.ats ? csriAtsResumen(S.ats) : null;
+  if(S.ats){
+    const d41 = (S.ats.compras||[]).filter(d=>d.tc==='41');
+    const rv = (list)=>{ const a = csriBV(); list.forEach(d=>csriBVAdd(a, d.v)); return csriBVRed(a); };
+    const rAts = csriBV(); d41.forEach(d=>{ csriBVAdd(rAts, csriVec({ bG:d.bG, b0:d.b0, bNo:d.bNo, bE:d.bE, ot:d.ice||0, iva:d.iva })); }); csriBVRed(rAts);
+    const kReemb = {}; d41.forEach(d=>{ kReemb[csriRucBase(d.ruc)+'|'+csriSec(d.sec)] = 1; });
+    const rows = (S.libro&&S.libro.rows||[]).filter(r=>!r.anulado && !r.esDAU && (r.esReemb || kReemb[csriRucBase(r.ruc)+'|'+csriSec(r.sec)])), rLib = csriBV(); rows.forEach(r=>csriBVAdd(rLib, csriLibroVec(r))); csriBVRed(rLib);
+    const rep41 = (S.rep&&S.rep.compras||[]).filter(d=>d.tc==='41'), rRep = csriBV(); rep41.forEach(d=>csriBVAdd(rRep, csriVec({ bG:d.bG, b0:d.b0, iva:d.iva }))); csriBVRed(rRep);
+    const sri41 = S.sri ? csriDocsSRI(S.sri, ctx.tarifa).filter(d=>d.tc==='41') : [], rSri = csriBVDe(sri41);
+    const det = { n:R ? R.reemb.n : 0, base:R ? R.reemb.base : 0, iva:R ? R.reemb.iva : 0 };
+    const nm = d41.length;
+    const dAL = csriBVDif(rAts, rLib), dAR = csriBVDif(rAts, rRep);
+    const okL = rows.length ? Math.abs(dAL.base) <= ctx.tolL && Math.abs(dAL.iva) <= ctx.tolL : null, okR = rep41.length ? Math.abs(dAR.base) <= ctx.tolL && Math.abs(dAR.iva) <= ctx.tolL : null;
+    M.reemb = { nAts:nm, nLib:rows.length, nRep:rep41.length, nSri:sri41.length, ats:rAts, lib:rLib, rep:rRep, sri:rSri, det,
+      difLib:dAL, difRep:dAR, estadoLib: !S.libro ? 'sd' : (okL ? 'ok' : (nm===rows.length ? 'warn' : 'warn')), estadoRep: !S.rep ? 'sd' : (okR ? 'ok' : 'warn'),
+      nota:'Los comprobantes cód. 41 (reembolso) incluyen en su base el gasto reembolsado; el registro contable puede llevarlos solo en parte y el detalle de reembolsos del ATS (base '+csriFmt(det.base)+', IVA '+csriFmt(det.iva)+') es informativo.' };
+  }
+  // importaciones: libro de importaciones ↔ DAU del registro ↔ formulario 104 (casilleros 513/514/515 y 523/524/525)
+  if(S.imp){
+    const dau = (S.libro&&S.libro.rows||[]).filter(r=>r.esDAU && !r.anulado);
+    const dauIva = csriR2(csriSuma(dau, r=>r.iva)), dauBase = csriR2(csriSuma(dau, r=>r.base));
+    const declB = ['513','514','515'].map(c=>csriDeclarado(S,'104',c)), declI = ['523','524','525'].map(c=>csriDeclarado(S,'104',c));
+    const hay104 = csriHayDeclarado(S,'104');
+    const f104B = hay104 ? csriR2(declB.reduce((s,x)=>s+(x||0),0)) : null, f104I = hay104 ? csriR2(declI.reduce((s,x)=>s+(x||0),0)) : null;
+    const lib = { base:S.imp.tot.sub, iva:S.imp.tot.iva };
+    const dif = (a,b)=> (a==null||b==null) ? null : csriR2(a-b);
+    const est = (d, t)=> d==null ? 'sd' : (Math.abs(d) <= (t==null?ctx.tolL:t)+1e-9 ? 'ok' : (Math.abs(d) <= ctx.tolA+1e-9 ? 'warn' : 'bad'));
+    // el IVA se compara con tolerancia agregada (los libros de importación redondean por liquidación)
+    M.imp = { n:S.imp.rows.length, nDau:dau.length, lib, dau: S.libro ? { base:dauBase, iva:dauIva } : null, f104: hay104 ? { base:f104B, iva:f104I } : null,
+      difIvaDau:dif(lib.iva, S.libro ? dauIva : null), difIvaF104:dif(lib.iva, f104I), difBaseF104:dif(lib.base, f104B), difBaseDau:dif(lib.base, S.libro ? dauBase : null),
+      estIvaDau:est(dif(lib.iva, S.libro ? dauIva : null), ctx.tolA), estIvaF104:est(dif(lib.iva, f104I), ctx.tolA), estBaseF104:est(dif(lib.base, f104B), ctx.tolA),
+      nota:'La base de las filas DAU del registro suele ser mayor que el subtotal del libro de importaciones: incluye fletes, seguros, agente de aduana u otros gastos de la importación; por eso solo el IVA se exige igual.' };
+  }
+  // cierre: residual no explicado = identidad aritmética del puente A (debe ser 0,00) y pendientes identificados
+  M.residual = A ? A.ident : null;
+  M.pendientes = A ? { total:A.resid, bruto:A.bruto, n:A.nPend } : null;
+  M.estado = P.estado;
+  return M;
+}
+
+
 
 /* =========================================================================
    MOTOR DE CONCILIACIÓN (determinista, sin IA). Cada verificación produce:
@@ -17358,6 +17755,7 @@ const CSRI_GRUPOS = [
   ['g2','2. ATS vs reportes del sistema contable'],
   ['g3','3. Documentos: comprobantes SRI, registro contable y ATS'],
   ['g3b','3b. Liquidaciones de viaje (sustento 05): puente y control propio'],
+  ['g3c','3c. Cuadre de compras y bases (puentes ATS ↔ SRI ↔ registro ↔ reporte)'],
   ['g4','4. Importaciones'],
   ['g5','5. Formulario 104 (IVA): declarado vs esperado'],
   ['g6','6. Formulario 103 (retenciones): declarado vs esperado'],
@@ -17428,6 +17826,7 @@ const CSRI_TIPOS_ELEC = ['01','03','04','05'];
 function csriCalcular(S, C){
   C = C || {};
   const tolL = C.tolLinea!=null ? +C.tolLinea : 0.05, tolA = C.tolAgg!=null ? +C.tolAgg : 1;
+  CSRI_TARIFAS_CFG = csriTarifasParse(C.tarifasOtras);
   const E = csriEsperados(S, C);
   const R = S.ats ? csriAtsResumen(S.ats) : null;
   const RR = S.rep ? csriRepResumen(S.rep) : null;
@@ -17437,6 +17836,8 @@ function csriCalcular(S, C){
   const Remp = (VC.on && S.ats) ? csriAtsResumen(csriAtsFiltrar(S.ats, VC, false)) : R;
   const RRemp = (VC.on && S.rep) ? csriRepResumen(csriRepFiltrar(S.rep, VC, false)) : RR;
   const ctx = { S, C, E, R, RR, cat, tolL, tolA, tarifa:(C.tarifaIva||15), VC, VB };
+  /* 15va iteración: puentes de cuadre con bases compuestas (ver p4c_puente) */
+  const PU = csriPuenteTodo(S, C, VC, ctx, R); ctx.PU = PU;
   const L = [];
   const F_ATS = ['ATS (XML)'], F_TAL = ['Talón resumen ATS (PDF)'], F_REP = ['Reportes contables (Impuestos)'];
   const faltan = (...pares)=>pares.filter(p=>!p[0]).map(p=>p[1]);
@@ -17535,7 +17936,10 @@ function csriCalcular(S, C){
       const ref = d.est+'-'+d.pto+'-'+d.sec+' · '+d.ruc;
       if(d.bG>0 && d.iva>0 && d.tc!=='41'){
         const ok = tars.some(t=>Math.abs(d.iva - d.bG*t) <= 0.03);
-        if(!ok) ch.excep.push({tipo:'IVA ≠ base × tarifa', ref, detalle:'Base '+csriFmt(d.bG)+' · IVA '+csriFmt(d.iva)+' (tarifa efectiva '+(d.iva/d.bG*100).toFixed(2)+'%)', monto:csriR2(d.iva - d.bG*ctx.tarifa/100)});
+        const tn = csriTarifaNota(d.bG, d.iva, ctx.tarifa);
+        if(!ok && /^Tarifas mezcladas/.test(tn)) ch.excep.push({tipo:'Tarifas mezcladas en el comprobante', ref, detalle:'Base ≠ 0 % '+csriFmt(d.bG)+' · IVA '+csriFmt(d.iva)+'. '+tn+'. No es un error: el comprobante parece combinar bases con tarifas distintas.', monto:0, info:true});
+        else if(!ok) ch.excep.push({tipo:'IVA ≠ base × tarifa', ref, detalle:'Base '+csriFmt(d.bG)+' · IVA '+csriFmt(d.iva)+' (tarifa efectiva '+(d.iva/d.bG*100).toFixed(2)+'%)', monto:csriR2(d.iva - d.bG*ctx.tarifa/100)});
+        else if(tn) ch.excep.push({tipo:'Tarifa distinta de la configurada', ref, detalle:tn, monto:0, info:true});
       }
       for(const a of d.air){
         if(a.p>0 && Math.abs(a.v - a.b*a.p/100) > 0.03) ch.excep.push({tipo:'Retención renta ≠ base × %', ref, detalle:'Cód. '+a.c+': base '+csriFmt(a.b)+' al '+a.p+'% = '+csriFmt(a.b*a.p/100)+' pero el ATS trae '+csriFmt(a.v), monto:csriR2(a.v - a.b*a.p/100)});
@@ -17544,7 +17948,7 @@ function csriCalcular(S, C){
         if(d[f]>0 && Math.abs(d[f] - d.iva*pcts[f]) > 0.03 && d.tc!=='41') ch.excep.push({tipo:'Retención IVA ≠ % del IVA', ref, detalle:'Campo '+f+': '+csriFmt(d[f])+' vs '+(pcts[f]*100)+'% de '+csriFmt(d.iva)+' = '+csriFmt(d.iva*pcts[f]), monto:csriR2(d[f] - d.iva*pcts[f])});
       }
     }
-    ch.excepModo = true; ch.siempreEvalua = true; ch.nota = ch.excep.length ? '' : 'Todos los documentos recalculan correctamente.';
+    ch.excepModo = true; ch.siempreEvalua = true; ch.nota = ch.excep.filter(e=>!e.info).length ? '' : 'Todos los documentos recalculan correctamente.';
     return csriCerrar(ch, ctx);
   });
   csriSeguro(L,'ats-fechas','g1','Fechas del ATS', ()=>{
@@ -17628,6 +18032,18 @@ function csriCalcular(S, C){
     lista.forEach(d=>{ const k = d.ruc+'|'+d.sec; if(vistos[k]) return; vistos[k] = 1; n++; base += d.base; });
     return { n, base };
   };
+  /* causa probable de una diferencia entre dos comprobantes emparejados (15va) */
+  const causaPar = (p, nX, nY)=>{
+    const dB = csriR2(p.a.base - p.b.base), dI = csriR2(p.a.iva - p.b.iva), dG = csriR2((p.a.v?p.a.v.bG:0) - (p.b.v?p.b.v.bG:0));
+    const nt = p.a.nota || p.b.nota || '';
+    if(Math.abs(dB) > tolL && Math.abs(dI) <= tolL) return 'Mismo IVA y base distinta ('+csriFmt(dB)+'): valor sin IVA registrado en una sola fuente (flete, propina, descuento o error de digitación).';
+    if(Math.abs(dI) > tolL && Math.abs(dG) <= tolL) return 'Misma base ≠ 0 % e IVA distinto ('+csriFmt(dI)+'): tarifa de IVA aplicada distinta entre fuentes.'+(nt?' '+nt+'.':'');
+    if(Math.abs(dB) > tolL && Math.abs(dI) > tolL){
+      const imp = Math.abs(dG) > tolL ? csriR2(dI/dG*100) : null;
+      return 'Base ('+csriFmt(dB)+') e IVA ('+csriFmt(dI)+') distintos'+(imp!=null && isFinite(imp) ? ': el IVA implícito de la diferencia es '+imp.toFixed(1)+' % de la base ≠ 0 %' : '')+'; probable comprobante registrado con otro valor o parcialmente.'+(nt?' '+nt+'.':'');
+    }
+    return 'Diferencia menor al límite por línea.';
+  };
   const checkDocs = (id, nombre, desc, nX, nY, X, Y, reqs, opt)=>{
     const ch = csriNuevo(id,'g3',nombre,desc+(VC.on?' Vista «compras a nombre de la empresa»: se excluyen las liquidaciones de viaje (sustento 05).':''),nX,nY);
     if(reqs.length){ ch.falta = reqs; return ch; }
@@ -17635,7 +18051,9 @@ function csriCalcular(S, C){
     const em = csriEmparejar(X, Y, tolL);
     const sx = csriSuma(X,d=>d.base), sy = csriSuma(Y,d=>d.base);
     ch.lineas.push(csriLinea('Comprobantes (nº)', X.length, Y.length, {info:true, soft:true}));
-    ch.lineas.push(csriLinea('Base imponible total', sx, sy, {info:true}));
+    ch.lineas.push(csriLinea('Base total compuesta (≠0 % + 0 % + no objeto + exenta + otros sin IVA)', sx, sy, {info:true, nota:'Se compara la base compuesta (= total − IVA) de cada comprobante: cuando un comprobante tiene dos bases (p. ej. 15 % y 0 %) o valores sin IVA, no se compara una sola columna.'}));
+    ch.lineas.push(csriLinea('   de la cual base ≠ 0 % (en el SRI se deriva: IVA ÷ tarifa)', csriSuma(X,d=>d.v?d.v.bG:0), csriSuma(Y,d=>d.v?d.v.bG:0), {info:true}));
+    ch.lineas.push(csriLinea('   de la cual base 0 % / no objeto / exenta / otros sin IVA', csriSuma(X,d=>d.v?d.v.base-d.v.bG:0), csriSuma(Y,d=>d.v?d.v.base-d.v.bG:0), {info:true}));
     ch.lineas.push(csriLinea('IVA total', csriSuma(X,d=>d.iva), csriSuma(Y,d=>d.iva), {info:true}));
     ch.lineas.push(csriLinea('Comprobantes emparejados (RUC + secuencial)', em.pares.length, Math.max(X.length,Y.length), {info:true, soft:true}));
     if(opt.excl){
@@ -17644,16 +18062,40 @@ function csriCalcular(S, C){
     }
     for(const a of em.soloA){
       const info = opt.infoX && opt.infoX(a);
-      ch.excep.push({ tipo:opt.tSoloX, ref:a.serie+' · '+a.rucFull, detalle:(a.nom||'')+(a.marca?' ['+a.marca+']':'')+(a.fe?' · '+a.fe:''), monto:a.base, iva:a.iva, info:!!info, nota:info||'', k:a.ruc+'|'+a.sec });
+      ch.excep.push({ tipo:opt.tSoloX, ref:a.serie+' · '+a.rucFull, detalle:(a.nom||'')+(a.marca?' ['+a.marca+']':'')+(a.fe?' · '+a.fe:''), monto:a.base, iva:a.iva, info:!!info, nota:info||'', causa:info||('Sin contraparte (RUC + secuencial) en '+nY+': falta registrarlo o reportarlo, es de otro periodo o está anulado.'), k:a.ruc+'|'+a.sec });
     }
     for(const b of em.soloB){
       const info = opt.infoY && opt.infoY(b);
-      ch.excep.push({ tipo:opt.tSoloY, ref:b.serie+' · '+b.rucFull, detalle:(b.nom||'')+(b.fe?' · '+b.fe:''), monto:b.base, iva:b.iva, info:!!info, nota:info||'', k:b.ruc+'|'+b.sec });
+      ch.excep.push({ tipo:opt.tSoloY, ref:b.serie+' · '+b.rucFull, detalle:(b.nom||'')+(b.fe?' · '+b.fe:''), monto:b.base, iva:b.iva, info:!!info, nota:info||'', causa:info||('Sin contraparte (RUC + secuencial) en '+nX+': falta registrarlo o reportarlo, es de otro periodo o está anulado.'), k:b.ruc+'|'+b.sec });
     }
-    for(const p of em.difs) ch.excep.push({ tipo:'Valores distintos', ref:p.a.serie+' · '+p.a.rucFull, detalle:nX+' base '+csriFmt(p.a.base)+' / IVA '+csriFmt(p.a.iva)+' vs '+nY+' base '+csriFmt(p.b.base)+' / IVA '+csriFmt(p.b.iva), monto:csriR2(p.a.base-p.b.base), iva:csriR2(p.a.iva-p.b.iva), k:p.a.ruc+'|'+p.a.sec });
+    const detPar = p=>[ { lado:nX+(p.a.src==='SRI'?' (implícito)':''), v:p.a.v, nota:p.a.nota||'' }, { lado:nY+(p.b.src==='SRI'?' (implícito)':''), v:p.b.v, nota:p.b.nota||'' } ];
+    for(const p of em.difs) ch.excep.push({ tipo:'Valores distintos', ref:p.a.serie+' · '+p.a.rucFull, detalle:nX+' base compuesta '+csriFmt(p.a.base)+' / IVA '+csriFmt(p.a.iva)+' vs '+nY+' base compuesta '+csriFmt(p.b.base)+' / IVA '+csriFmt(p.b.iva), monto:csriR2(p.a.base-p.b.base), iva:csriR2(p.a.iva-p.b.iva), k:p.a.ruc+'|'+p.a.sec, det:detPar(p), causa:causaPar(p, nX, nY) });
+    let nDos = 0, nComp = 0, nTar = 0;
+    const enDifs = new Set(em.difs);
+    for(const p of em.pares){
+      if(enDifs.has(p)) continue;
+      const rawA = p.a.rawBase!=null ? p.a.rawBase : p.a.base, rawB = p.b.rawBase!=null ? p.b.rawBase : p.b.base;
+      const oculto = Math.abs(p.a.rest||0) > tolL || Math.abs(p.b.rest||0) > tolL;
+      const colDif = p.a.v && p.b.v && ['bG','b0','bNo','bE','ot'].some(c=>Math.abs(p.a.v[c]-p.b.v[c]) > tolL);
+      const ref = p.a.serie+' · '+p.a.rucFull;
+      if(oculto){
+        nDos++;
+        const q = Math.abs(p.a.rest||0) > tolL ? p.a : p.b, ot = q===p.a ? p.b : p.a;
+        ch.excep.push({ tipo:'Dos bases: el '+(q.src==='SRI'?'SRI':q.src)+' muestra solo una', ref, detalle:(q.src==='SRI'?'VALOR_SIN_IMPUESTOS '+csriFmt(q.rawBase)+' (base ≠ 0 % '+csriFmt(q.v.bG)+' + IVA '+csriFmt(q.iva)+'); IMPORTE_TOTAL − IVA = '+csriFmt(q.base)+' → '+csriFmt(q.rest)+' de valores sin IVA (servicio/propina u otros) que solo figuran en el total. ':'La base informada excluye '+csriFmt(q.rest)+' de valores sin IVA. ')+(q===p.a?nY:nX)+' los incluye en la base 0 % ('+csriFmt(ot.v.b0)+'). Base compuesta coincide: '+csriFmt(p.a.base)+'.',
+          monto:csriR2(rawA - rawB), iva:csriR2(p.a.iva-p.b.iva), info:true, nota:'Diferencia de composición, no es un error', causa:'Dos bases en el mismo comprobante: base con IVA más un cargo sin IVA (servicio/propina) que el SRI solo muestra en IMPORTE_TOTAL; la base compuesta cuadra.', det:detPar(p), k:p.a.ruc+'|'+p.a.sec });
+      } else if(colDif){
+        nComp++;
+        ch.excep.push({ tipo:'Composición distinta entre fuentes (mismo total)', ref, detalle:'La base compuesta coincide ('+csriFmt(p.a.base)+') pero se reparte distinto entre tipos de base.'+(p.a.nota||p.b.nota?' '+(p.a.nota||p.b.nota)+'.':''), monto:0, info:true, nota:'Diferencia de composición, no es un error', causa:'Mismo total con reparto distinto entre base 0 %, gravada, no objeto o exenta (clasificación distinta en cada fuente).', det:detPar(p), k:p.a.ruc+'|'+p.a.sec });
+      } else if(/^Tarifas mezcladas|^Base mixta|distinta de la configurada/.test((p.a.nota||'')+' '+(p.b.nota||''))){
+        nTar++;
+        ch.excep.push({ tipo:'Tarifas mezcladas / distinta de la configurada', ref, detalle:(p.a.nota||p.b.nota)+'.', monto:0, info:true, nota:'Informativo', causa:'IVA ÷ base ≠ 0 % no es la tarifa configurada: comprobante con tarifas mezcladas (p. ej. 15 % + 0 %) o con tarifa diferenciada (5 %, 8 %, 12 %). Verifique las tarifas en Ajustes.', det:detPar(p), k:p.a.ruc+'|'+p.a.sec });
+      }
+    }
+    ch.nDos = nDos; ch.nComp = nComp; ch.nTar = nTar;
     if(opt.extra) opt.extra(ch, em);
     ch.excepModo = true; ch.siempreEvalua = true;
     ch.nota = ch.excep.filter(e=>!e.info).length ? '' : 'Todos los comprobantes comparables coinciden.';
+    if(nDos||nComp||nTar) ch.nota = (ch.nota ? ch.nota+' ' : '')+'Comparación sobre bases compuestas: '+(nDos?nDos+' comprobante(s) con dos bases (valores sin IVA que el SRI solo muestra en el total)':'')+(nDos&&(nComp||nTar)?'; ':'')+(nComp?nComp+' con composición distinta entre fuentes':'')+(nComp&&nTar?'; ':'')+(nTar?nTar+' con tarifas mezcladas':'')+' — explicados como informativos, no como diferencias.';
     return csriCerrar(ch, ctx);
   };
   const reqSL = faltan([S.sri,'Comprobantes recibidos del SRI'],[S.libro,'Registro de compras contable']);
@@ -17661,9 +18103,9 @@ function csriCalcular(S, C){
   if(S.libro) S.libro.rows.forEach(r=>{ if(r.nom) nombresRuc[csriRucBase(r.ruc)] = r.nom; });
   if(S.sri) S.sri.rows.forEach(r=>{ if(r.nom) nombresRuc[csriRucBase(r.ruc)] = r.nom; });
   const atsIdx = {};
-  if(S.ats) csriDocsATS(S.ats).forEach(d=>{ (atsIdx[d.ruc+'|'+d.sec] = atsIdx[d.ruc+'|'+d.sec] || []).push(d); });
+  if(S.ats) csriDocsATS(S.ats, ctx.tarifa).forEach(d=>{ (atsIdx[d.ruc+'|'+d.sec] = atsIdx[d.ruc+'|'+d.sec] || []).push(d); });
   csriSeguro(L,'doc-sri-libro','g3','SRI recibidos vs registro contable', ()=>{
-    const X0 = S.sri ? csriDocsSRI(S.sri) : [], Y0 = S.libro ? csriDocsLibro(S.libro) : [];
+    const X0 = S.sri ? csriDocsSRI(S.sri, ctx.tarifa) : [], Y0 = S.libro ? csriDocsLibro(S.libro) : [];
     const px = csriViajeParticion(VC, X0), py = csriViajeParticion(VC, Y0), X = px.resto, Y = py.resto, ex = exclInfo(px.viaje.concat(py.viaje));
     return checkDocs('doc-sri-libro','Comprobantes recibidos en el SRI vs registro de compras contable','Cruza por RUC del emisor + secuencial (tolera ceros a la izquierda y prefijos 001-001-). Lista lo que está en el SRI y no en libros, lo registrado sin comprobante en el SRI, y las diferencias de valor. Los documentos emitidos por la propia empresa (liquidaciones de compra, reembolsos) y los físicos/preimpresos no se esperan en el listado del SRI.','SRI','Contabilidad',X,Y,reqSL,{
       excl:ex, tSoloX:'En el SRI, sin registro contable', tSoloY:'Registrado en contabilidad, sin comprobante en el SRI',
@@ -17681,7 +18123,7 @@ function csriCalcular(S, C){
   });
   const reqSA = faltan([S.sri,'Comprobantes recibidos del SRI'],[S.ats,'ATS (XML)']);
   csriSeguro(L,'doc-sri-ats','g3','SRI recibidos vs ATS', ()=>{
-    const X0 = S.sri ? csriDocsSRI(S.sri) : [], Yall = S.ats ? csriDocsATS(S.ats) : [];
+    const X0 = S.sri ? csriDocsSRI(S.sri, ctx.tarifa) : [], Yall = S.ats ? csriDocsATS(S.ats, ctx.tarifa) : [];
     const Y0 = Yall.filter(d=>d.elec && !d.propio && (CSRI_TIPOS_ELEC.indexOf(d.tc)>=0 || d.tc==='41'));
     const px = csriViajeParticion(VC, X0), py = csriViajeParticion(VC, Y0), X = px.resto, Y = py.resto, ex = exclInfo(px.viaje.concat(py.viaje));
     return checkDocs('doc-sri-ats','Comprobantes recibidos en el SRI vs compras del ATS','Cada comprobante electrónico recibido debería estar en el ATS (o estar anulado). Se excluyen del ATS los documentos emitidos por la propia empresa (liquidaciones de compra, reembolsos propios) y los físicos (autorización de 10 dígitos), que no aparecen en los recibidos del SRI.','SRI','ATS',X,Y,reqSA,{
@@ -17691,7 +18133,7 @@ function csriCalcular(S, C){
   });
   const reqLA = faltan([S.libro,'Registro de compras contable'],[S.ats,'ATS (XML)']);
   csriSeguro(L,'doc-libro-ats','g3','Registro contable vs ATS', ()=>{
-    const X0 = S.libro ? csriDocsLibro(S.libro).filter(d=>!d.anulado) : [], Y0 = S.ats ? csriDocsATS(S.ats) : [];
+    const X0 = S.libro ? csriDocsLibro(S.libro).filter(d=>!d.anulado) : [], Y0 = S.ats ? csriDocsATS(S.ats, ctx.tarifa) : [];
     const px = csriViajeParticion(VC, X0), py = csriViajeParticion(VC, Y0), X = px.resto, Y = py.resto, ex = exclInfo(px.viaje.concat(py.viaje));
     return checkDocs('doc-libro-ats','Registro de compras contable vs compras del ATS','Todo lo registrado en el libro de compras debe estar en el ATS con los mismos valores (un comprobante partido en varios códigos de sustento se suma).','Contabilidad','ATS',X,Y,reqLA,{
       excl:ex, tSoloX:'En contabilidad, no reportado en el ATS', tSoloY:'En el ATS, no encontrado en el registro contable'
@@ -17760,6 +18202,75 @@ function csriCalcular(S, C){
       return csriCerrar(ch, ctx);
     });
   }
+
+  /* ===== G3c: cuadre de compras y bases (puentes deterministas; 15va iteración) ===== */
+  const lstPend = items=>items.filter(i=>i.docs.length).map(i=>i.etq.replace(/^PENDIENTE — /,'')+' ('+i.docs.length+': base '+csriFmt(i.v.base)+', IVA '+csriFmt(i.v.iva)+')').join('; ');
+  const exPend = (ch, items)=>{ items.forEach(i=>i.docs.forEach(d=>ch.excep.push({ tipo:i.etq.replace(/^PENDIENTE — /,'Pendiente: '), ref:d.ref, detalle:(d.nom||'')+(d.fe?' · '+d.fe:''), monto:d.v.base, iva:d.v.iva, det:d.det, k:d.k }))); };
+  csriSeguro(L,'pte-sri-ident','g3c','Puente SRI: identidad aritmética', ()=>{
+    const ch = csriNuevo('pte-sri-ident','g3c','Puente SRI: compras de la empresa (ATS) ± partidas = total de comprobantes recibidos del SRI (identidad)','Verifica que cada comprobante del ATS y del SRI cae en una sola partida del puente, de modo que ATS (sin viaje) ± partidas = total del SRI (base compuesta = IMPORTE_TOTAL − IVA), tipo de base por tipo de base. Un resultado distinto de cero indicaría documentos duplicados o sin clasificar.','ATS empresa ± partidas','Total SRI (base compuesta)');
+    const A = PU.A; if(!A.disponible){ ch.falta = A.falta && A.falta.length ? A.falta : ['ATS (XML)','Comprobantes recibidos del SRI']; return ch; }
+    const si = csriBVSum(A.items.map(i=>i.v));
+    ch.lineas.push(csriLinea('Base total: ATS empresa ± partidas vs SRI', csriR2(A.vEmp.base+si.base), A.vSRI.base));
+    ch.lineas.push(csriLinea('IVA: ATS empresa ± partidas vs SRI', csriR2(A.vEmp.iva+si.iva), A.vSRI.iva));
+    ch.lineas.push(csriLinea('Total: ATS empresa ± partidas vs SRI', csriR2(A.vEmp.total+si.total), A.vSRI.total));
+    ['bG','b0','bNo','bE','ot'].forEach(c=>ch.lineas.push(csriLinea(CSRI_BV_ETQ[c]+': ATS empresa ± partidas vs SRI (implícito)', csriR2(A.vEmp[c]+si[c]), A.vSRI[c], {info:true})));
+    ch.nota = 'ATS total '+csriFmt(A.vTot.base)+' − viaje '+csriFmt(A.vVia.base)+' = empresa '+csriFmt(A.vEmp.base)+'; ± partidas '+csriFmt(si.base)+' = SRI '+csriFmt(A.vSRI.base)+' (base compuesta).';
+    return csriCerrar(ch, ctx);
+  });
+  csriSeguro(L,'pte-sri-resid','g3c','Puente SRI: residual', ()=>{
+    const ch = csriNuevo('pte-sri-resid','g3c','Puente SRI: residual de partidas pendientes = 0','Residual = suma de las partidas que NO están explicadas (comprobantes del SRI no reportados, del ATS sin comprobante en el SRI, o emparejados con valores distintos). Las partidas explicadas (propios, físicos, anulados con NC, composición de bases, redondeos) no cuentan. Cuadra cuando el residual es 0,00 (tolerancia de la configuración).','Total SRI','ATS empresa ± partidas explicadas');
+    const A = PU.A; if(!A.disponible){ ch.falta = A.falta && A.falta.length ? A.falta : ['ATS (XML)','Comprobantes recibidos del SRI']; return ch; }
+    ch.lineas.push(csriLinea('Residual: suma de valores absolutos de las partidas pendientes (total de cada documento)', A.bruto, 0));
+    ch.lineas.push(csriLinea('Residual neto — base total', A.resid.base, 0, {info:true}));
+    ch.lineas.push(csriLinea('Residual neto — IVA', A.resid.iva, 0, {info:true}));
+    ['bG','b0','bNo','bE','ot'].forEach(c=>ch.lineas.push(csriLinea('Residual neto — '+CSRI_BV_ETQ[c], A.resid[c], 0, {info:true})));
+    ch.lineas.push(csriLinea('Partidas pendientes (documentos)', A.nPend, 0, {soft:true, info:true}));
+    ch.nota = A.nPend ? 'Pendiente: '+lstPend(A.pend)+'.' : 'Todas las diferencias entre el ATS (compras de la empresa) y los comprobantes recibidos del SRI están explicadas.';
+    exPend(ch, A.pend);
+    ch.noKpiDif = true;
+    return csriCerrar(ch, ctx);
+  });
+  csriSeguro(L,'pte-sri-talon','g3c','Puente SRI: ATS total vs talón', ()=>{
+    const ch = csriNuevo('pte-sri-talon','g3c','Puente SRI: total de compras del ATS (todos los sustentos) vs talón del SRI','El primer renglón del puente: lo que el ATS informa en total (incluidas las liquidaciones de viaje) debe ser igual a las cifras de control del talón.','ATS total (todos los sustentos)','Talón del SRI');
+    const A = PU.A;
+    if(!S.ats || !S.talon || !(S.talon.comprasTot) || S.talon.manual){ ch.falta = [!S.ats?'ATS (XML)':'', !S.talon?'Talón resumen ATS (PDF)':(!S.talon.comprasTot||S.talon.manual?'Totales de compras del talón':'')].filter(Boolean); return ch; }
+    const v = A && A.disponible ? A.vTot : csriBVDe(csriDocsATS(S.ats, ctx.tarifa)), t = csriVec({ bG:S.talon.comprasTot.bG, b0:S.talon.comprasTot.b0, bNo:S.talon.comprasTot.bNo, iva:S.talon.comprasTot.iva });
+    ch.lineas.push(csriLinea('Base ≠ 0 %', v.bG, t.bG)); ch.lineas.push(csriLinea('Base 0 %', v.b0, t.b0)); ch.lineas.push(csriLinea('Base no objeto de IVA', v.bNo, t.bNo));
+    ch.lineas.push(csriLinea('Base total', v.base - v.bE - v.ot, t.base)); ch.lineas.push(csriLinea('IVA', v.iva, t.iva));
+    ch.nota = 'ATS '+csriFmt(v.base)+' de base y '+csriFmt(v.iva)+' de IVA vs talón '+csriFmt(t.base)+' y '+csriFmt(t.iva)+'.';
+    return csriCerrar(ch, ctx);
+  });
+  csriSeguro(L,'pte-ctb-ident','g3c','Puente contable: identidad aritmética', ()=>{
+    const ch = csriNuevo('pte-ctb-ident','g3c','Puente contable: registro de compras ± partidas = ATS ± partidas = reporte «Detalle de Compras» (identidad)','Verifica que el registro contable (sin importaciones DAU) ± partidas explicadas/pendientes reproduce el total del ATS, y que el ATS ± partidas reproduce el total del reporte contable del sistema.','Registro / ATS','ATS / Reporte contable');
+    const B = PU.B; if(!B.disponible){ ch.falta = B.falta && B.falta.length ? B.falta : ['ATS (XML)','Registro de compras contable']; return ch; }
+    const s1 = csriBVSum(B.items1.map(i=>i.v));
+    ch.lineas.push(csriLinea('Base total: registro − DAU ± partidas vs ATS (todos los sustentos)', csriR2(B.vLibTodo.base+s1.base), B.vAts.base));
+    ch.lineas.push(csriLinea('IVA: registro − DAU ± partidas vs ATS', csriR2(B.vLibTodo.iva+s1.iva), B.vAts.iva));
+    if(B.hayRep){ const s2 = csriBVSum(B.items2.map(i=>i.v));
+      ch.lineas.push(csriLinea('Base total: ATS ± partidas vs reporte «Detalle de Compras»', csriR2(B.vAts.base+s2.base), B.vRep.base));
+      ch.lineas.push(csriLinea('IVA: ATS ± partidas vs reporte «Detalle de Compras»', csriR2(B.vAts.iva+s2.iva), B.vRep.iva));
+      if(B.repResumen){ ch.lineas.push(csriLinea('Reporte: suma de documentos vs total del propio reporte — base', B.vRep.base, csriR2(B.repResumen.b0+B.repResumen.bG), {info:true})); ch.lineas.push(csriLinea('Reporte: suma de documentos vs total del propio reporte — IVA', B.vRep.iva, B.repResumen.iva, {info:true})); }
+    } else ch.nota = 'Sin el reporte contable «Detalle de Compras» solo se verifica registro ↔ ATS.';
+    return csriCerrar(ch, ctx);
+  });
+  csriSeguro(L,'pte-ctb-resid','g3c','Puente contable: residual', ()=>{
+    const ch = csriNuevo('pte-ctb-resid','g3c','Puente contable: residual de partidas pendientes = 0 (registro ↔ ATS ↔ reporte)','Residual = documentos registrados en contabilidad y no reportados en el ATS (o al revés), o con valores distintos entre el registro, el ATS y el reporte contable. Las importaciones DAU, anulados, redondeos y composición de bases son partidas explicadas.','Registro de compras','ATS / Reporte contable');
+    const B = PU.B; if(!B.disponible){ ch.falta = B.falta && B.falta.length ? B.falta : ['ATS (XML)','Registro de compras contable']; return ch; }
+    ch.lineas.push(csriLinea('Residual: suma de valores absolutos de las partidas pendientes', B.bruto, 0));
+    ch.lineas.push(csriLinea('Residual neto — base total', B.resid.base, 0, {info:true})); ch.lineas.push(csriLinea('Residual neto — IVA', B.resid.iva, 0, {info:true}));
+    ch.lineas.push(csriLinea('Registro de compras (sin DAU) — base total', B.vLib.base, B.vAts.base, {info:true})); ch.lineas.push(csriLinea('ATS (todos los sustentos) — base total', B.vAts.base, B.hayRep?B.vRep.base:null, {info:true}));
+    ch.nota = B.nPend ? 'Pendiente: '+lstPend(B.pend)+'.' : 'Registro de compras, ATS'+(B.hayRep?' y reporte «Detalle de Compras»':'')+' cuadran por tipo de base.';
+    exPend(ch, B.pend);
+    ch.noKpiDif = true;
+    return csriCerrar(ch, ctx);
+  });
+  csriSeguro(L,'pte-ret','g3c','Puente: retenciones renta e IVA', ()=>{
+    const ch = csriNuevo('pte-ret','g3c','Retenciones de renta e IVA: totales del ATS vs talón vs resumen de retenciones del sistema','Totales de base y valor retenido de renta y total de IVA retenido en las compras (el talón incluye todos los sustentos, también las liquidaciones de viaje).','ATS (XML)','Talón / Sistema contable');
+    const Rt = PU.C; if(!Rt || !Rt.disponible){ ch.falta = (Rt&&Rt.falta&&Rt.falta.length)?Rt.falta:['ATS (XML)']; return ch; }
+    if(!Rt.hayTalon && !Rt.haySist){ ch.falta = ['Talón resumen ATS (PDF) o resumen de retenciones del reporte contable']; return ch; }
+    Rt.filas.forEach(f=>{ if(f.talon!=null) ch.lineas.push(csriLinea(f.etq+' — ATS vs talón', f.ats, f.talon)); if(f.sist!=null) ch.lineas.push(csriLinea(f.etq+' — ATS vs sistema contable', f.ats, f.sist)); });
+    return csriCerrar(ch, ctx);
+  });
 
   /* ===== G4 importaciones ===== */
   csriSeguro(L,'imp-libro','g4','Importaciones vs registro contable (DAU)', ()=>{
@@ -17986,14 +18497,14 @@ function csriCalcular(S, C){
   const orden = {}; CSRI_GRUPOS.forEach((g,i)=>orden[g[0]]=i);
   L.forEach((c,i)=>c._i=i);
   L.sort((a,b)=> (orden[a.grupo]-orden[b.grupo]) || (a._i-b._i));
-  const res = { checks:L, E, R, RR, Remp, RRemp, viaje:VB, periodo:S.periodo, fecha:Date.now(), tolL, tolA };
+  const res = { checks:L, E, R, RR, Remp, RRemp, viaje:VB, puente:PU, periodo:S.periodo, fecha:Date.now(), tolL, tolA };
   res.recs = csriRecomendaciones(S, C, res);
   res.kpi = csriKPI(res);
   return res;
 }
 function csriKPI(res){
   const k = { n:res.checks.length, ok:0, warn:0, bad:0, sd:0, difAbs:0 };
-  for(const c of res.checks){ k[c.estado]++; if(c.estado==='warn'||c.estado==='bad') k.difAbs += Math.abs(c.dif||0); }
+  for(const c of res.checks){ k[c.estado]++; if((c.estado==='warn'||c.estado==='bad') && !c.noKpiDif) k.difAbs += Math.abs(c.dif||0); }
   const eval_ = k.ok+k.warn+k.bad;
   k.pct = eval_ ? Math.round(k.ok/eval_*1000)/10 : null;
   k.difAbs = csriR2(k.difAbs);
@@ -18015,6 +18526,7 @@ function csriSingular(t){
     .replace(/ figuran /,' figura ').replace(/ electrónicos /,' electrónico ').replace(/ marcados /,' marcado ').replace(/ emparejados /,' emparejado ').replace(/ recibidos /,' recibido ').replace(/ registrados /,' registrado ');
   return a + b;
 }
+function csriTarCfg(S, C){ return (C && C.tarifaIva) || 15; }
 function csriRecomendaciones(S, C, res){
   const by = {}; res.checks.forEach(c=>by[c.id]=c);
   const out = [];
@@ -18045,10 +18557,13 @@ function csriRecomendaciones(S, C, res){
   }
   const per = by['ats-periodo']; if(per && per.estado==='bad') add('alta','ats-periodo','El ATS no corresponde a la empresa/periodo seleccionados', per.nota, null);
   const cal = by['ats-calculos'];
-  if(cal && cal.excep.length){
-    const tipos = {}; cal.excep.forEach(e=>tipos[e.tipo]=(tipos[e.tipo]||0)+1);
-    add(cal.estado==='bad'?'alta':'media','ats-calculos','Cálculos de IVA/retenciones del ATS que no recalculan', Object.keys(tipos).map(t=>tipos[t]+' × '+t).join('; ')+'. Ejemplo: '+cal.excep[0].ref+' — '+cal.excep[0].detalle+'. Revise esos comprobantes (porcentaje de retención aplicado, base o IVA digitado).', cal.dif);
+  const calEx = cal ? cal.excep.filter(e=>!e.info) : [];
+  if(cal && calEx.length){
+    const tipos = {}; calEx.forEach(e=>tipos[e.tipo]=(tipos[e.tipo]||0)+1);
+    add(cal.estado==='bad'?'alta':'media','ats-calculos','Cálculos de IVA/retenciones del ATS que no recalculan', Object.keys(tipos).map(t=>tipos[t]+' × '+t).join('; ')+'. Ejemplo: '+calEx[0].ref+' — '+calEx[0].detalle+'. Revise esos comprobantes (porcentaje de retención aplicado, base o IVA digitado).', cal.dif);
   }
+  const calMx = cal ? cal.excep.filter(e=>e.info) : [];
+  if(calMx.length) add('baja','ats-calculos','Comprobantes con tarifas mezcladas o distintas de la configurada ('+calMx.length+')', calMx.length+' comprobante(s) del ATS tienen una tarifa efectiva (IVA ÷ base ≠ 0 %) que no es la configurada ('+(csriTarCfg(S,C))+'%): '+calMx.slice(0,3).map(e=>e.ref+' ('+e.detalle.split('. ')[0]+')').join('; ')+'. Es informativo, no un error: el comprobante puede combinar bases con tarifas distintas (p. ej. 15 % y 5 %) o aplicar una tarifa diferenciada; la comparación con el SRI usa la base compuesta, así que no genera diferencias falsas.', null);
   const fec = by['ats-fechas'];
   if(fec && fec.excep.length){
     const fuera = fec.excep.filter(e=>e.tipo==='Registro fuera del mes');
@@ -18130,6 +18645,23 @@ function csriRecomendaciones(S, C, res){
       if(g2.length) add('media','via-clasif','Liquidaciones de viaje que sí figuran en los comprobantes recibidos del SRI ('+g2.length+')', g2.length+' documento(s) clasificados como viaje aparecen en el SRI, es decir están a nombre de la empresa. Ej.: '+g2.slice(0,2).map(e=>e.ref).join('; ')+'. Revise si el sustento 05 es el correcto; si no lo es, quite la marca.', g2.reduce((s,e)=>s+Math.abs(e.monto||0),0));
     }
   }
+  /* --- cuadre de compras y bases (15va iteración) --- */
+  const PU = res.puente;
+  if(PU && PU.A && PU.A.disponible){
+    const A = PU.A, sr = A.sriRaw;
+    if(sr.nRest){
+      add('baja','pte-sri-ident','Comprobantes con dos bases: el SRI muestra solo una ('+sr.nRest+')', sr.nRest+' comprobante(s) del SRI traen VALOR_SIN_IMPUESTOS '+$(sr.vsi)+' en total, pero su IMPORTE_TOTAL − IVA es '+$(A.vSRI.base)+': la diferencia de '+$(sr.rest)+' son valores sin IVA (p. ej. servicio/propina del 10 % en restaurantes u otros cargos) que el SRI solo muestra dentro del total, mientras que el ATS y el registro contable los incluyen en la base 0 %. Se compara por base compuesta, por eso ya no se reportan como diferencias de base (Ej.: '+sr.docs.slice(0,3).map(d=>d.ref.split(' · ')[0]+' '+$(d.rest)).join('; ')+'). Confirme que el cargo sin IVA está bien tratado en su ATS (base 0 %, sin generar IVA ni retención de IVA sobre ese valor).', sr.rest);
+    }
+    const pen = A.pend.filter(i=>i.docs.length);
+    if(A.estado==='ok') add('baja','pte-sri-resid','Cuadre de compras ATS ↔ SRI: cuadrado','Compras de la empresa según el ATS '+$(A.vEmp.base)+' de base ± partidas explicadas = total de comprobantes recibidos del SRI '+$(A.vSRI.base)+' (base compuesta), sin partidas pendientes.',null);
+    else if(A.estado==='bad' || A.estado==='warn') add(A.estado==='bad' ? 'media' : 'baja','pte-sri-resid','Cuadre de compras ATS ↔ SRI: quedan '+$(A.bruto)+' por explicar ('+A.nPend+' partida'+(A.nPend===1?'':'s')+')', 'Compras de la empresa (ATS) '+$(A.vEmp.base)+' de base ± partidas explicadas '+$(csriBVSum(A.expl.map(i=>i.v)).base)+' = '+$(csriR2(A.vEmp.base+csriBVSum(A.expl.map(i=>i.v)).base))+' esperado vs SRI '+$(A.vSRI.base)+': residual base '+$(A.resid.base)+' e IVA '+$(A.resid.iva)+'. Pendiente: '+pen.map(i=>i.etq.replace(/^PENDIENTE — /,'')+' — '+i.docs.slice(0,3).map(d=>d.ref.split(' · ')[0]+' '+(d.nom||'').slice(0,28)+' ('+$(d.v.base)+(d.v.iva?' + IVA '+$(d.v.iva):'')+')').join('; ')).join(' | ')+'. Resuélvalas (registrar el comprobante, reportarlo en el ATS o pedir su anulación) y el cuadre quedará en 0,00.', A.bruto);
+    const comp = A.items.find(i=>i.id==='composicion');
+    if(comp && comp.docs.length) add('baja','pte-sri-ident','Diferencias de composición de bases entre el ATS y el SRI ('+comp.docs.length+')', comp.docs.length+' comprobante(s) tienen el mismo total pero la base repartida en columnas distintas (p. ej. tarifas mezcladas): se explican, no son un error. Ej.: '+comp.docs.slice(0,3).map(d=>d.ref.split(' · ')[0]).join('; ')+'.', null);
+  }
+  if(PU && PU.B && PU.B.disponible && PU.B.estado!=='ok'){
+    const B = PU.B, pen = B.pend.filter(i=>i.docs.length);
+    add(B.estado==='bad' ? 'media' : 'baja','pte-ctb-resid','Cuadre contable (registro ↔ ATS ↔ reporte): quedan '+$(B.bruto)+' por explicar','Partidas pendientes: '+pen.map(i=>i.etq.replace(/^PENDIENTE — /,'')+' ('+i.docs.length+': '+i.docs.slice(0,3).map(d=>d.ref.split(' · ')[0]).join(', ')+')').join(' | ')+'.', B.bruto);
+  } else if(PU && PU.B && PU.B.disponible) add('baja','pte-ctb-resid','Cuadre contable: registro de compras, ATS'+(PU.B.hayRep?' y reporte «Detalle de Compras»':'')+' cuadran','Registro de compras (sin importaciones DAU) '+$(PU.B.vLib.base)+' de base = ATS '+$(PU.B.vAts.base)+(PU.B.hayRep?' = reporte contable '+$(PU.B.vRep.base):'')+'; IVA '+$(PU.B.vAts.iva)+'.',null);
   /* documentos anulados con NC que siguen en el ATS */
   if(S.sri && S.ats){
     const idx = {}; csriDocsATS(S.ats).forEach(d=>{ idx[d.ruc+'|'+d.sec]=d; });
@@ -18245,7 +18777,7 @@ function csriS(){
   if(!csriMem[k]) csriMem[k] = csriVacio(csriPeriodo);
   return csriMem[k];
 }
-function csriCfgVacio(){ return { tolLinea:0.05, tolAgg:1, tarifaIva:15, mapeo:{}, perfiles:[], catalogo:null, viajeSep:true, viajeReglas:{ sust:true, tipoTxt:'', rucs:[] } }; }
+function csriCfgVacio(){ return { tolLinea:0.05, tolAgg:1, tarifaIva:15, tarifasOtras:'5, 8, 12, 13, 14', mapeo:{}, perfiles:[], catalogo:null, viajeSep:true, viajeReglas:{ sust:true, tipoTxt:'', rucs:[] } }; }
 function csriC(){
   if(!csriCfgMem[csriEmpresaId]) csriCfgMem[csriEmpresaId] = csriCfgVacio();
   return csriCfgMem[csriEmpresaId];
@@ -18322,7 +18854,7 @@ async function csriGuardar(){
     }
     for(const emp of Object.keys(csriDirtyCfg)){
       const C = csriCfgMem[emp]; delete csriDirtyCfg[emp]; if(!C) continue;
-      await db.ref(csriRutaCfg(emp)).set(limpiarUndefinedSeguro({ actualizado:Date.now(), tolLinea:C.tolLinea, tolAgg:C.tolAgg, tarifaIva:C.tarifaIva,
+      await db.ref(csriRutaCfg(emp)).set(limpiarUndefinedSeguro({ actualizado:Date.now(), tolLinea:C.tolLinea, tolAgg:C.tolAgg, tarifaIva:C.tarifaIva, tarifasOtras:String(C.tarifasOtras==null?'':C.tarifasOtras),
         mapeo: JSON.stringify(C.mapeo||{}), perfiles: JSON.stringify(C.perfiles||[]), catalogo: C.catalogo ? JSON.stringify(C.catalogo) : null,
         viajeSep: C.viajeSep!==false, viajeReglas: JSON.stringify(C.viajeReglas||{ sust:true, tipoTxt:'', rucs:[] }) }));
       hubo = true;
@@ -18340,7 +18872,7 @@ async function csriCargarCfg(emp){
     const snap = await db.ref(csriRutaCfg(emp)).once('value'); const v = snap.val();
     if(!v) return;
     const C = csriCfgMem[emp] || csriCfgVacio();
-    if(v.tolLinea!=null) C.tolLinea = +v.tolLinea; if(v.tolAgg!=null) C.tolAgg = +v.tolAgg; if(v.tarifaIva!=null) C.tarifaIva = +v.tarifaIva;
+    if(v.tolLinea!=null) C.tolLinea = +v.tolLinea; if(v.tolAgg!=null) C.tolAgg = +v.tolAgg; if(v.tarifaIva!=null) C.tarifaIva = +v.tarifaIva; if(v.tarifasOtras!=null) C.tarifasOtras = String(v.tarifasOtras);
     C.mapeo = csriJSON(v.mapeo, {}); C.perfiles = csriJSON(v.perfiles, []); C.catalogo = csriJSON(v.catalogo, null);
     C.viajeSep = !(v.viajeSep===false || v.viajeSep==='false' || v.viajeSep===0);
     C.viajeReglas = Object.assign({ sust:true, tipoTxt:'', rucs:[] }, csriJSON(v.viajeReglas, {}) || {});
@@ -18914,7 +19446,9 @@ function csriHtmlAjustes(){
       <div class="field"><label>Tolerancia por línea (USD)</label><input type="number" step="0.01" min="0" value="${C.tolLinea}" ${ed?'':'disabled'} onchange="csriAjuste('tolLinea',this.value)"></div>
       <div class="field"><label>Tolerancia agregada (USD)</label><input type="number" step="0.01" min="0" value="${C.tolAgg}" ${ed?'':'disabled'} onchange="csriAjuste('tolAgg',this.value)"></div>
       <div class="field"><label>Tarifa de IVA (%)</label><input type="number" step="1" min="0" value="${C.tarifaIva}" ${ed?'':'disabled'} onchange="csriAjuste('tarifaIva',this.value)"></div>
+      <div class="field"><label>Otras tarifas de IVA conocidas (%), separadas por coma</label><input type="text" value="${csriEsc(C.tarifasOtras==null?'5, 8, 12, 13, 14':C.tarifasOtras)}" ${ed?'':'disabled'} onchange="csriAjusteTxt('tarifasOtras',this.value)"></div>
     </div>
+    <div class="helpNote">Se usan para validar que el IVA de cada comprobante sea tarifa × base gravada: un comprobante cuya tarifa implícita no es la general se informa como «tarifa distinta» o «tarifas mezcladas» (p. ej. 15 % + 0 %, 5 % diferenciado).</div>
     <div class="helpNote">${csriEsc(CSRI_CAT_NOTA)}</div>
     <div class="csri-acc" style="margin-top:8px">${ed?`<button class="btn small" onclick="csriCatAgregar()">➕ Agregar casillero</button> <button class="btn small danger" onclick="csriCatRestablecer()">Restablecer catálogo predeterminado</button>`:''} <span class="csri-muted">${C.catalogo?'Catálogo personalizado de esta empresa':'Catálogo predeterminado'} · ${cat.length} casilleros</span></div>
     <div class="csri-tabla-scroll" style="max-height:420px"><table><thead><tr><th>Form.</th><th>Casillero</th><th>Descripción</th><th>Tipo</th><th>Fuente esperada (claves)</th><th></th></tr></thead><tbody>${cat.map((r,i)=>`<tr><td>${csriEsc(r.f)}</td>
@@ -18928,6 +19462,7 @@ function csriAjuste(k, v){
   const n = +v; if(isNaN(n) || n<0) return;
   csriC()[k] = n; csriMarcar('cfg');
 }
+function csriAjusteTxt(k, v){ csriC()[k] = String(v||'').trim(); csriMarcar('cfg'); }
 function csriCatEditable(){ const C = csriC(); if(!C.catalogo) C.catalogo = csriCatalogoDefault(); return C.catalogo; }
 function csriCatEditar(i, campo, val){
   const cat = csriCatEditable(), r = cat[i]; if(!r) return;
@@ -18988,8 +19523,8 @@ function csriHtmlCheck(c){
       const btn = e=> !conK || !e.k ? '' : (e.acc==='quitar'
         ? `<button class="btn small" title="Dejar de tratar como liquidación de viaje" onclick="csriViajeDesmarcar('${e.k}')">↩ Quitar de viaje</button>`
         : `<button class="btn small" title="Marcar como liquidación de viaje (sustento 05): se aparta de la conciliación con el SRI" onclick="csriViajeMarcar('${e.k}')">🧳 Es viaje</button>`);
-      cuerpo += `<div class="csri-sub">Excepciones (${c.excep.length})</div><div class="csri-tabla-scroll" style="max-height:380px"><table><thead><tr><th>Tipo</th><th>Referencia</th><th>Detalle</th><th class="num">Monto</th><th class="num">IVA</th>${conK?'<th></th>':''}</tr></thead><tbody>${
-        ex.map(e=>`<tr class="${e.info?'csri-r-info':''}"><td>${csriEsc(e.tipo)}${e.info?' <span class="pill muted">info</span>':''}</td><td>${csriEsc(e.ref)}</td><td>${csriEsc(e.detalle||'')}</td><td class="num">${e.monto==null?'':csriFmt(e.monto)}</td><td class="num">${e.iva==null?'':csriFmt(e.iva)}</td>${conK?`<td>${btn(e)}</td>`:''}</tr>`).join('')}</tbody></table></div>${c.excep.length>150?`<div class="csri-muted">Mostrando 150 de ${c.excep.length}; el detalle completo está en el Excel exportado.</div>`:''}`;
+      cuerpo += `<div class="csri-sub">Excepciones (${c.excep.length})</div><div class="csri-tabla-scroll" style="max-height:380px"><table><thead><tr><th>Tipo</th><th>Referencia</th><th>Detalle</th><th>Causa probable</th><th class="num">Monto</th><th class="num">IVA</th>${conK?'<th></th>':''}</tr></thead><tbody>${
+        ex.map(e=>`<tr class="${e.info?'csri-r-info':''}"><td>${csriEsc(e.tipo)}${e.info?' <span class="pill muted">info</span>':''}</td><td>${csriEsc(e.ref)}</td><td>${csriEsc(e.detalle||'')}</td><td>${csriEsc(e.causa||'')}</td><td class="num">${e.monto==null?'':csriFmt(e.monto)}</td><td class="num">${e.iva==null?'':csriFmt(e.iva)}</td>${conK?`<td>${btn(e)}</td>`:''}</tr>${e.det&&e.det.length?`<tr class="csri-q-doc"><td colspan="${conK?7:6}">${csriCuadreDetHTML(e.det)}</td></tr>`:''}`).join('')}</tbody></table></div>${c.excep.length>150?`<div class="csri-muted">Mostrando 150 de ${c.excep.length}; el detalle completo está en el Excel exportado.</div>`:''}`;
     }
   }
   return `<div class="csri-chk csri-e-${c.estado}"><div class="csri-chk-h" onclick="csriToggle('${c.id}')"><span class="csri-ico">${ico}</span><div class="csri-chk-t"><b>${csriEsc(c.nombre)}</b><div class="csri-muted">${csriEsc(c.srcA||'')}${c.srcB?' ↔ '+csriEsc(c.srcB):''}</div></div><div class="csri-chk-d">${csriEsc(difTxt)}</div><span class="csri-caret">${abierto?'▾':'▸'}</span></div>${abierto?`<div class="csri-chk-b">${cuerpo}</div>`:''}</div>`;
@@ -19020,7 +19555,9 @@ function csriHtmlResumen(){
       <span><button class="btn small" onclick="csriImprimir()">🖨️ Imprimir / PDF</button> <button class="btn small green" onclick="csriExportarXlsx()">📥 Exportar Excel</button></span></div>
       <div class="csri-ayuda">Cálculo determinista sobre los datos cargados (sin estimaciones). Tolerancias: ${csriFmtUSD(res.tolL)} por línea y ${csriFmtUSD(res.tolA)} agregado.</div>
       ${csriKpiHTML(res)}<div>${fuentes}</div></div>
+    ${csriHtmlMatriz(res)}
     ${csriHtmlViaje(res, 'res')}
+    ${csriHtmlCuadre(res)}
     <div class="card"><b>❌ / ⚠️ Lo que no cuadra (${mal.length})</b>${mal.length?`<div class="csri-tabla-scroll"><table><thead><tr><th></th><th>Verificación</th><th class="num">Diferencia</th><th>Principales excepciones</th></tr></thead><tbody>${mal.map(c=>`<tr><td>${CSRI_EST_ICO[c.estado]}</td><td>${csriEsc(c.nombre)}</td><td class="num">${csriFmt(c.dif)}</td><td>${csriEsc(csriTopExcep(c,3).map(x=>x.ref+(x.monto!=null?' ('+csriFmt(x.monto)+')':'')).join(' · ')||c.lineas.filter(l=>l.est==='bad'||l.est==='warn').slice(0,3).map(l=>l.etq+': '+csriNumTxt(l,l.dif)).join(' · '))}</td></tr>`).join('')}</tbody></table></div>`:'<div class="csri-muted">Ninguna.</div>'}</div>
     <div class="card"><b>✅ Lo que cuadra (${ok.length})</b><div class="csri-lista">${ok.map(c=>`<div>✅ ${csriEsc(c.nombre)}</div>`).join('')||'<div class="csri-muted">Ninguna verificación evaluada cuadra todavía.</div>'}</div></div>
     <div class="card"><b>⏳ Pendiente de datos (${sd.length})</b><div class="csri-lista">${sd.map(c=>`<div>⏳ ${csriEsc(c.nombre)} <span class="csri-muted">— falta: ${csriEsc((c.falta||[]).join('; ')||'datos para comparar')}</span></div>`).join('')||'<div class="csri-muted">Todas las verificaciones tienen datos.</div>'}</div></div>
@@ -19038,7 +19575,9 @@ function csriHtmlImpresion(res){
   <tr><td>${k.n}</td><td>${k.ok}</td><td>${k.warn}</td><td>${k.bad}</td><td>${k.sd}</td><td>${k.pct==null?'—':k.pct+'%'}</td><td class="num">${csriFmtUSD(k.difAbs)}</td></tr></tbody></table>
   <div class="bp-campo"><b>Fuentes utilizadas:</b> ${csriFuentesLista().map(f=>(f[1]?'☑ ':'☐ ')+csriEsc(f[0])).join(' &nbsp; ')}</div>
   <div class="bp-campo"><b>Tolerancias:</b> ${csriFmtUSD(res.tolL)} por línea; ${csriFmtUSD(res.tolA)} agregado.</div>`;
+  h += csriHtmlMatrizImpresion(res);
   h += csriHtmlViajeImpresion(res);
+  h += csriHtmlCuadreImpresion(res);
   for(const [g, titulo] of CSRI_GRUPOS){
     const cs = res.checks.filter(c=>c.grupo===g); if(!cs.length) continue;
     h += `<div class="bp-seccion">${csriEsc(titulo)}</div><table><thead>${th('','Verificación','Fuente A ↔ Fuente B','#num:Diferencia')}</thead><tbody>${
@@ -19052,7 +19591,7 @@ function csriHtmlImpresion(res){
       const ex = csriTopExcep(c, 8);
       h += `<div class="bp-campo"><b>${CSRI_EST_ICO[c.estado]} ${csriEsc(c.nombre)}</b> — diferencia ${csriFmtUSD(c.dif)}</div>`;
       if(lm.length) h += `<table><thead>${th('Concepto','#num:'+(c.srcA||'A'),'#num:'+(c.srcB||'B'),'#num:Diferencia')}</thead><tbody>${lm.map(l=>`<tr><td>${csriEsc(l.etq)}</td><td class="num">${csriNumTxt(l,l.a)}</td><td class="num">${csriNumTxt(l,l.b)}</td><td class="num">${csriNumTxt(l,l.dif)}</td></tr>`).join('')}</tbody></table>`;
-      if(ex.length) h += `<table><thead>${th('Excepción','Referencia','Detalle','#num:Monto')}</thead><tbody>${ex.map(x=>`<tr><td>${csriEsc(x.tipo)}</td><td>${csriEsc(x.ref)}</td><td>${csriEsc(x.detalle||'')}</td><td class="num">${x.monto==null?'':csriFmt(x.monto)}</td></tr>`).join('')}</tbody></table>${c.excep.filter(z=>!z.info).length>8?`<div class="bp-campo"><i>… y ${c.excep.filter(z=>!z.info).length-8} excepciones más (ver Excel).</i></div>`:''}`;
+      if(ex.length) h += `<table><thead>${th('Excepción','Referencia','Detalle','Causa probable','#num:Monto')}</thead><tbody>${ex.map(x=>`<tr><td>${csriEsc(x.tipo)}</td><td>${csriEsc(x.ref)}</td><td>${csriEsc(x.detalle||'')}</td><td>${csriEsc(x.causa||'')}</td><td class="num">${x.monto==null?'':csriFmt(x.monto)}</td></tr>`).join('')}</tbody></table>${c.excep.filter(z=>!z.info).length>8?`<div class="bp-campo"><i>… y ${c.excep.filter(z=>!z.info).length-8} excepciones más (ver Excel).</i></div>`:''}`;
     }
   }
   h += `<div class="bp-seccion">Recomendaciones</div>${res.recs.length?`<table><thead>${th('Prioridad','Recomendación','#num:Monto')}</thead><tbody>${res.recs.map(r=>`<tr><td>${CSRI_SEV[r.sev][0]}</td><td><b>${csriEsc(r.titulo)}</b><br>${csriEsc(r.texto)}</td><td class="num">${r.monto?csriFmtUSD(r.monto):''}</td></tr>`).join('')}</tbody></table>`:'<div class="bp-campo">Sin recomendaciones.</div>'}
@@ -19095,9 +19634,11 @@ function csriLibroExport(){
   const lin = [['Verificación','Concepto','Fuente A','Fuente B','Diferencia','Estado','Nota']];
   res.checks.forEach(c=>(c.lineas||[]).forEach(l=>lin.push([c.nombre, l.etq, l.a, l.b, l.dif, l.est==='info'?'Informativo':(CSRI_EST[l.est]||''), l.nota||''])));
   add('Detalle de líneas', lin, [44,50,16,16,14,18,40]);
-  const exc = [['Verificación','Tipo','Referencia','Detalle','Monto','IVA','Informativa']];
-  res.checks.forEach(c=>(c.excep||[]).forEach(x=>exc.push([c.nombre, x.tipo, x.ref, x.detalle||'', x.monto==null?'':x.monto, x.iva==null?'':x.iva, x.info?'Sí':''])));
-  add('Excepciones', exc, [40,30,36,70,14,12,10]);
+  const exc = [['Verificación','Tipo','Referencia','Detalle','Monto','IVA','Informativa','Causa probable']];
+  res.checks.forEach(c=>(c.excep||[]).forEach(x=>exc.push([c.nombre, x.tipo, x.ref, x.detalle||'', x.monto==null?'':x.monto, x.iva==null?'':x.iva, x.info?'Sí':'', x.causa||''])));
+  add('Excepciones', exc, [40,30,36,70,14,12,10,70]);
+  add('Composición de bases', csriComposicionAOA(res), [34,30,34,50,22,40,14,14,14,14,14,14,14]);
+  add('Cuadre de bases', csriMatrizAOA(res).concat([[]], csriCuadreAOA(res)), [64,16,16,18,18,18,16,16,14,14,14]);
   add('Recomendaciones', [['N.º','Prioridad','Verificación relacionada','Recomendación','Detalle','Monto']].concat(
     res.recs.map((r,i)=>[i+1, CSRI_SEV[r.sev][0], r.chk, r.titulo, r.texto, r.monto==null?'':r.monto])), [6,12,22,50,110,14]);
   add('Liquidaciones de viaje', csriViajeAOA(res), [44,22,36,20,12,14,14,14,14,16,34,8,10,10,8]);
@@ -19287,6 +19828,283 @@ function csriViajeAOA(res){
     VB.docs.forEach(d=>a.push([d.nom||'', d.rucFull||d.ruc, d.serie, CSRI_TIPOS_NOMBRE[d.tc]||d.tc||'', d.fe||'', d.b0, d.bG, d.base, d.iva, d.ret, d.motivo, d.enATS?'Sí':'', d.enRep?'Sí':'', d.enLibro?'Sí':'', d.enSRI?'Sí':'']));
     a.push([], ['Nota: documentos de gastos de viaje, hospedaje y alimentación (facturas a nombre de empleados). Deben respaldarse con los comprobantes de los empleados; el IVA solo es crédito tributario si la normativa vigente lo permite. Guía de revisión, no asesoría legal.']);
   }
+  return a;
+}
+
+
+/* =========================================================================
+   CUADRE DE COMPRAS Y BASES — pantalla (Resumen), impresión y Excel (15va iteración)
+   ========================================================================= */
+const CSRI_BV_UI = ['bG','b0','bNo','bE','ot','base','iva','total'];
+const CSRI_BV_CORTO = { bG:'Base ≠ 0 % (15 %)', b0:'Base 0 %', bNo:'No objeto de IVA', bE:'Exenta', ot:'Otros sin IVA', base:'Base total', iva:'IVA', total:'Total' };
+function csriBVCeldas(v, o){
+  o = o || {};
+  return CSRI_BV_UI.map(c=>{
+    const x = v ? v[c] : null;
+    const t = (x==null) ? '—' : (Math.abs(x) < 0.005 && !o.cero ? '0,00' : csriFmt(x));
+    return `<td class="num${c==='base'||c==='total'?' csri-col-t':''}">${t}</td>`;
+  }).join('');
+}
+function csriBVCabecera(prim){
+  return `<tr><th>${csriEsc(prim||'Concepto')}</th><th class="num">Docs.</th>${CSRI_BV_UI.map(c=>`<th class="num">${csriEsc(CSRI_BV_CORTO[c])}</th>`).join('')}</tr>`;
+}
+function csriCuadreBadge(estado, bruto, extra){
+  if(estado==='ok') return `<span class="csri-badge csri-badge-ok">✅ Cuadrado</span>`;
+  if(estado==='sd') return `<span class="csri-badge csri-badge-sd">⏳ Sin datos</span>`;
+  return `<span class="csri-badge csri-badge-${estado==='warn'?'warn':'bad'}">${estado==='warn'?'⚠️':'❌'} Pendiente ${csriFmtUSD(bruto)}</span>`+(extra?` <span class="csri-muted">${csriEsc(extra)}</span>`:'');
+}
+function csriCuadreBadgeTxt(estado, bruto){ return estado==='ok' ? '✅ Cuadrado' : (estado==='sd' ? '⏳ Sin datos' : (estado==='warn' ? '⚠️ Pendiente ' : '❌ Pendiente ')+csriFmtUSD(bruto)); }
+/* mini tabla de composición por fuente (detalle de una excepción o de un documento del puente) */
+function csriCuadreDetHTML(det){
+  if(!det || !det.length) return '';
+  return `<table class="csri-mini"><thead><tr><th>Fuente</th>${CSRI_BV_UI.filter(c=>c!=='base').map(c=>`<th class="num">${csriEsc(CSRI_BV_CORTO[c])}</th>`).join('')}<th>Nota</th></tr></thead><tbody>${
+    det.map(d=>`<tr><td>${csriEsc(d.lado)}</td>${CSRI_BV_UI.filter(c=>c!=='base').map(c=>`<td class="num">${d.v?csriFmt(d.v[c]):'—'}</td>`).join('')}<td>${csriEsc(d.nota||'')}</td></tr>`).join('')}</tbody></table>`;
+}
+/* filas del puente A (ATS → SRI) como estructura neutra: {t, etq, v, id, docs, exp} */
+function csriCuadreFilasA(A){
+  const f = [];
+  f.push({ t:'tot', etq:'Total compras según ATS — todos los sustentos', v:A.vTot });
+  if(A.talon){ f.push({ t:'memo', etq:'Talón del SRI (cifras de control; el talón no separa otros sin IVA)', v:A.talon.v }); f.push({ t:'memo', etq:'Diferencia ATS − talón', v:A.talon.dif, dif:true }); }
+  f.push({ t:'item', etq:'(−) Liquidaciones de viaje (sustento 05)'+(A.viajeOn?'':' — separación desactivada'), v:csriBVNeg(A.vVia), id:'via', exp:true });
+  f.push({ t:'sub', etq:'(=) Compras a nombre de la empresa según ATS (comparables con el SRI)', v:A.vEmp });
+  const pre = it=> it.id==='composicion'||it.id==='redondeo' ? '(±) ' : (it.sg<0 ? '(−) ' : '(+) ');
+  A.expl.forEach(it=>{ if(it.docs.length) f.push({ t:'item', id:it.id, etq:pre(it)+it.etq, v:it.v, docs:it.docs, exp:true }); });
+  const esp = csriBVSum([A.vEmp].concat(A.expl.map(i=>i.v)));
+  f.push({ t:'sub', etq:'(=) Total SRI esperado: ATS empresa ± partidas explicadas', v:esp });
+  A.pend.forEach(it=>f.push({ t:'item', id:it.id, etq:pre(it)+it.etq, v:it.v, docs:it.docs, exp:false }));
+  f.push({ t:'sub', etq:'(=) Total según SRI comprobantes recibidos (base compuesta = IMPORTE_TOTAL − IVA)', v:A.vSRI });
+  f.push({ t:'res', etq:'Excepciones pendientes identificadas (suma de las partidas pendientes, documento a documento)', v:A.resid });
+  f.push({ t:'res', etq:'Residual NO explicado = SRI − esperado − pendientes (debe ser 0,00)', v:Object.assign({ n:0 }, A.ident), cero:true });
+  return f;
+}
+function csriCuadreFilasSRIRaw(A){
+  const s = A.sriRaw, f = [];
+  const vsi = { bG:null, b0:null, bNo:null, bE:null, ot:null, base:s.vsi, iva:s.vsiIva, total:csriR2(s.vsi+s.vsiIva) };
+  const rest = { bG:null, b0:s.rest, bNo:null, bE:null, ot:null, base:s.rest, iva:0, total:s.rest };
+  f.push({ t:'memo', etq:'SRI: suma de VALOR_SIN_IMPUESTOS e IVA tal como vienen en el archivo', v:vsi, n:A.nSRI+A.nSRIviaje });
+  f.push({ t:'item', id:'sri_rest', etq:'(+) Valores sin IVA que forman parte de IMPORTE_TOTAL y no de VALOR_SIN_IMPUESTOS — servicio/propina/otros (implícito)', v:rest, docs:s.docs, n:s.nRest, exp:true });
+  f.push({ t:'sub', etq:'(=) Total SRI: base compuesta (IMPORTE_TOTAL − IVA)', v:A.vSRI });
+  return f;
+}
+function csriCuadreFilasB(B){
+  const f = [];
+  f.push({ t:'tot', etq:'Registro de compras contable — total del archivo (incluye importaciones DAU)', v:B.vLibTodo });
+  const i1 = id=>B.items1.find(i=>i.id===id);
+  const pre = it=> it.id==='composicion'||it.id==='redondeo' ? '(±) ' : (it.sg<0 ? '(−) ' : '(+) ');
+  const dau = i1('l_dau'); f.push({ t:'item', id:dau.id, etq:pre(dau)+dau.etq, v:dau.v, docs:dau.docs, exp:true });
+  f.push({ t:'sub', etq:'(=) Registro de compras — comprobantes comparables con el ATS', v:B.vLib });
+  B.items1.filter(i=>i.id!=='l_dau').forEach(it=>{ if(it.docs.length || !it.exp) f.push({ t:'item', id:it.id, etq:pre(it)+it.etq, v:it.v, docs:it.docs, exp:it.exp }); });
+  f.push({ t:'sub', etq:'(=) Total compras según ATS — todos los sustentos', v:B.vAts });
+  f.push({ t:'memo', etq:'   de los cuales liquidaciones de viaje (sustento 05)', v:B.vAtsVia });
+  f.push({ t:'memo', etq:'   de los cuales compras a nombre de la empresa', v:B.vAtsEmp });
+  if(B.hayRep){
+    B.items2.forEach(it=>{ if(it.docs.length || !it.exp) f.push({ t:'item', id:'2'+it.id, etq:pre(it)+it.etq, v:it.v, docs:it.docs, exp:it.exp }); });
+    f.push({ t:'sub', etq:'(=) Reporte «Detalle de Compras» del sistema contable — total', v:B.vRep });
+  }
+  f.push({ t:'res', etq:'Excepciones pendientes identificadas (suma de las partidas pendientes)', v:B.resid });
+  f.push({ t:'res', etq:'Residual NO explicado (identidad aritmética del puente; debe ser 0,00)', v:Object.assign({ n:0 }, B.ident), cero:true });
+  return f;
+}
+function csriCuadreTablaHTML(clave, filas, opt){
+  opt = opt || {};
+  const lim = opt.lim || 40;
+  let h = `<div class="csri-tabla-scroll" style="max-height:none"><table class="csri-cuadre"><thead>${csriBVCabecera('Concepto')}</thead><tbody>`;
+  for(const r of filas){
+    const cls = r.t==='tot' ? 'csri-q-tot' : r.t==='sub' ? 'csri-q-sub' : r.t==='res' ? 'csri-q-res' : r.t==='memo' ? 'csri-q-memo' : (r.exp===false ? 'csri-q-pend' : '');
+    const nd = r.docs ? (r.n!=null ? r.n : r.docs.length) : (r.v && r.v.n!=null && r.t!=='memo' ? r.v.n : (r.n!=null?r.n:''));
+    const key = 'pte:'+clave+':'+r.id;
+    const abierto = r.docs && r.docs.length && csriAbiertos[key];
+    const tog = r.docs && r.docs.length ? `<a href="javascript:void(0)" class="csri-lnk" onclick="csriToggle('${key}')">${abierto?'▾':'▸'} ver ${r.docs.length} documento${r.docs.length===1?'':'s'}</a>` : '';
+    h += `<tr class="${cls}"><td>${csriEsc(r.etq)}${r.exp===false?' <span class="pill danger">pendiente</span>':''}${tog?'<div>'+tog+'</div>':''}</td><td class="num">${nd===''?'':nd}</td>${csriBVCeldas(r.v)}</tr>`;
+    if(abierto){
+      for(const d of r.docs.slice(0, lim)){
+        h += `<tr class="csri-q-doc"><td>${csriEsc(d.ref)}<div class="csri-muted">${csriEsc((d.nom||'')+(d.fe?' · '+d.fe:'')+(d.nota?' · '+d.nota:''))}</div>${d.det?csriCuadreDetHTML(d.det):''}</td><td class="num">1</td>${csriBVCeldas(d.v)}</tr>`;
+      }
+      if(r.docs.length>lim) h += `<tr class="csri-q-doc"><td colspan="11" class="csri-muted">… y ${r.docs.length-lim} más (listado completo en el Excel, hoja «Cuadre de bases»).</td></tr>`;
+    }
+  }
+  return h + '</tbody></table></div>';
+}
+function csriCuadreRetHTML(C){
+  const n = x=> x==null ? '—' : csriFmt(x);
+  return `<div class="csri-tabla-scroll" style="max-height:none"><table class="csri-cuadre"><thead><tr><th>Concepto</th><th class="num">ATS</th><th class="num">Talón</th><th class="num">Sistema contable</th><th class="num">ATS − talón</th><th class="num">ATS − sistema</th></tr></thead><tbody>${
+    C.filas.map(f=>`<tr class="${(f.dT!=null&&Math.abs(f.dT)>0.005)||(f.dS!=null&&Math.abs(f.dS)>0.005)?'csri-r-bad':''}"><td>${csriEsc(f.etq)}</td><td class="num">${n(f.ats)}</td><td class="num">${n(f.talon)}</td><td class="num">${n(f.sist)}</td><td class="num">${n(f.dT)}</td><td class="num">${n(f.dS)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function csriHtmlCuadre(res){
+  const P = res.puente; if(!P) return '';
+  const A = P.A, B = P.B, Rt = P.C;
+  if(!(A&&A.disponible) && !(B&&B.disponible) && !(Rt&&Rt.disponible)){
+    const falta = Array.from(new Set([].concat((A&&A.falta)||[], (B&&B.falta)||[])));
+    return `<div class="card csri-cuadre-card"><div class="csri-src-h"><b>🧮 Cuadre de compras y bases</b></div><div class="csri-muted">Cargue ${csriEsc(falta.join(', ')||'el ATS, los comprobantes del SRI y el registro de compras')} para calcular el cuadre.</div></div>`;
+  }
+  const tolTxt = `Tolerancia: ${csriFmtUSD(res.tolL)} por línea (cuadrado) y ${csriFmtUSD(res.tolA)} agregado (diferencia menor).`;
+  let h = `<div class="card csri-cuadre-card"><div class="csri-src-h"><b>🧮 Cuadre de compras y bases</b><span>${csriCuadreBadge(P.estado, P.bruto, P.nPend? P.nPend+' partida'+(P.nPend===1?'':'s')+' sin explicar':'')}</span></div>
+    <div class="csri-ayuda">Puente determinista por tipo de base (≠ 0 % / 0 % / no objeto / exenta / otros sin IVA): cada diferencia entre fuentes cae en una partida <b>explicada</b> (esperada y justificada) o <b>pendiente</b> (excepción real). El residual es la suma de las pendientes: 0,00 = todo explicado. En el SRI la composición es <b>implícita</b> (el archivo solo trae VALOR_SIN_IMPUESTOS, IVA e IMPORTE_TOTAL). ${csriEsc(tolTxt)}</div>`;
+  if(A && A.disponible){
+    h += `<div class="csri-q-h"><b>A. ATS ↔ comprobantes recibidos del SRI</b> ${csriCuadreBadge(A.estado, A.bruto)}</div>`;
+    if(!A.viajeOn && A.vVia.n===0) h += '';
+    h += csriCuadreTablaHTML('A', csriCuadreFilasA(A));
+    h += `<div class="csri-sub">Cómo se forma el total del SRI (VALOR_SIN_IMPUESTOS → base compuesta)</div>` + csriCuadreTablaHTML('A', csriCuadreFilasSRIRaw(A));
+    h += `<div class="csri-sub">Comprobantes recibidos del SRI por tipo (columna TIPO_COMPROBANTE) y marca del contador</div><div class="csri-tabla-scroll" style="max-height:none"><table class="csri-cuadre"><thead>${csriBVCabecera('Tipo / marca')}</thead><tbody>${
+      A.sriTipos.map(t=>`<tr><td>${csriEsc(t.tc+' '+t.etq)}</td><td class="num">${t.v.n}</td>${csriBVCeldas(t.v)}</tr>`).join('')}${
+      A.sriMarcas.map(t=>`<tr class="csri-q-memo"><td>   con marca «${csriEsc(t.marca)}»</td><td class="num">${t.v.n}</td>${csriBVCeldas(t.v)}</tr>`).join('')}</tbody></table></div>`;
+    h += `<div class="csri-muted">Identidad aritmética (debe ser 0,00): base ${csriFmt(A.ident.base)} · IVA ${csriFmt(A.ident.iva)} · total ${csriFmt(A.ident.total)}. Documentos emparejados por RUC + secuencial: ${A.pares} de ${A.nATS} del ATS (empresa) y ${A.nSRI} del SRI.</div>`;
+  } else if(A && A.falta && A.falta.length) h += `<div class="csri-muted">Puente A (ATS ↔ SRI): falta ${csriEsc(A.falta.join(', '))}.</div>`;
+  if(B && B.disponible){
+    h += `<div class="csri-q-h"><b>B. Registro contable ↔ ATS ↔ reporte «Detalle de Compras» del sistema</b> ${csriCuadreBadge(B.estado, B.bruto)}</div>`;
+    h += csriCuadreTablaHTML('B', csriCuadreFilasB(B));
+    if(!B.hayRep) h += `<div class="csri-muted">Cargue el reporte contable (Detalle de Compras) para cerrar el puente hasta el reporte del sistema.</div>`;
+  } else if(B && B.falta && B.falta.length) h += `<div class="csri-muted">Puente B (registro ↔ ATS ↔ reporte): falta ${csriEsc(B.falta.join(', '))}.</div>`;
+  if(Rt && Rt.disponible){
+    h += `<div class="csri-q-h"><b>C. Retenciones de renta e IVA: ATS ↔ talón ↔ sistema</b> ${csriCuadreBadge(Rt.estado, Rt.bruto)}</div>`+csriCuadreRetHTML(Rt);
+  }
+  h += `</div>`;
+  return h;
+}
+/* ---------------- impresión ---------------- */
+function csriCuadreTablaImp(filas, limDocs){
+  let h = `<table><thead>${csriBVCabecera('Concepto')}</thead><tbody>`;
+  for(const r of filas){
+    const nd = r.docs ? (r.n!=null ? r.n : r.docs.length) : (r.v && r.v.n!=null && r.t!=='memo' ? r.v.n : (r.n!=null?r.n:''));
+    const b = (r.t==='tot'||r.t==='sub'||r.t==='res');
+    h += `<tr><td>${b?'<b>':''}${csriEsc(r.etq)}${r.exp===false?' <b>[PENDIENTE]</b>':''}${b?'</b>':''}</td><td class="num">${nd===''?'':nd}</td>${csriBVCeldas(r.v)}</tr>`;
+    if(r.docs && r.docs.length && (r.exp===false || r.id==='composicion' || r.id==='sri_rest')){
+      for(const d of r.docs.slice(0,limDocs)) h += `<tr><td>&nbsp;&nbsp;↳ ${csriEsc(d.ref+' '+(d.nom||'').slice(0,34))}</td><td class="num">1</td>${csriBVCeldas(d.v)}</tr>`;
+      if(r.docs.length>limDocs) h += `<tr><td colspan="11"><i>… y ${r.docs.length-limDocs} más (ver Excel).</i></td></tr>`;
+    }
+  }
+  return h + '</tbody></table>';
+}
+function csriHtmlCuadreImpresion(res){
+  const P = res.puente; if(!P) return '';
+  const A = P.A, B = P.B, Rt = P.C;
+  if(!(A&&A.disponible) && !(B&&B.disponible) && !(Rt&&Rt.disponible)) return '';
+  let h = `<div class="bp-seccion">🧮 Cuadre de compras y bases — ${csriEsc(csriCuadreBadgeTxt(P.estado, P.bruto))}</div>
+    <div class="bp-campo">Puente por tipo de base. Partida <b>explicada</b> = esperada y justificada; <b>pendiente</b> = excepción real. Residual = suma de pendientes (0,00 = cuadrado). Tolerancia ${csriFmtUSD(res.tolL)} por línea / ${csriFmtUSD(res.tolA)} agregado. En el SRI la composición por tipo de base es implícita.</div>`;
+  if(A && A.disponible){
+    h += `<div class="bp-campo"><b>A. ATS ↔ comprobantes recibidos del SRI:</b> ${csriEsc(csriCuadreBadgeTxt(A.estado, A.bruto))}</div>`+csriCuadreTablaImp(csriCuadreFilasA(A), 8)
+      +`<div class="bp-campo"><b>Formación del total del SRI</b></div>`+csriCuadreTablaImp(csriCuadreFilasSRIRaw(A), 8);
+    h += `<table><thead>${csriBVCabecera('Comprobantes del SRI por tipo / marca')}</thead><tbody>${A.sriTipos.map(t=>`<tr><td>${csriEsc(t.tc+' '+t.etq)}</td><td class="num">${t.v.n}</td>${csriBVCeldas(t.v)}</tr>`).join('')}${A.sriMarcas.map(t=>`<tr><td>&nbsp;&nbsp;marca «${csriEsc(t.marca)}»</td><td class="num">${t.v.n}</td>${csriBVCeldas(t.v)}</tr>`).join('')}</tbody></table>`;
+  }
+  if(B && B.disponible) h += `<div class="bp-campo"><b>B. Registro contable ↔ ATS ↔ reporte del sistema:</b> ${csriEsc(csriCuadreBadgeTxt(B.estado, B.bruto))}</div>`+csriCuadreTablaImp(csriCuadreFilasB(B), 8);
+  if(Rt && Rt.disponible){
+    const n = x=> x==null ? '—' : csriFmt(x);
+    h += `<div class="bp-campo"><b>C. Retenciones de renta e IVA:</b> ${csriEsc(csriCuadreBadgeTxt(Rt.estado, Rt.bruto))}</div><table><thead><tr><th>Concepto</th><th class="num">ATS</th><th class="num">Talón</th><th class="num">Sistema</th><th class="num">ATS − talón</th><th class="num">ATS − sistema</th></tr></thead><tbody>${Rt.filas.map(f=>`<tr><td>${csriEsc(f.etq)}</td><td class="num">${n(f.ats)}</td><td class="num">${n(f.talon)}</td><td class="num">${n(f.sist)}</td><td class="num">${n(f.dT)}</td><td class="num">${n(f.dS)}</td></tr>`).join('')}</tbody></table>`;
+  }
+  return h;
+}
+/* ---------------- Excel ---------------- */
+function csriCuadreAOA(res){
+  const P = res.puente, a = [];
+  a.push(['CUADRE DE COMPRAS Y BASES'], ['Estado general', P ? csriCuadreBadgeTxt(P.estado, P.bruto) : ''], ['Tolerancia por línea', res.tolL], ['Tolerancia agregada', res.tolA],
+    ['Partida explicada = esperada y justificada; pendiente = excepción real. Residual = suma de pendientes. La composición por tipo de base del SRI es implícita (IVA ÷ tarifa; el resto de IMPORTE_TOTAL − IVA a 0 % / otros).'], []);
+  if(!P) return a;
+  const cab = ['Concepto','Estado','Documentos'].concat(CSRI_BV_UI.map(c=>CSRI_BV_CORTO[c]));
+  const fila = (r, ce)=>{ const vv = r.v||{}; const nd = r.docs ? (r.n!=null?r.n:r.docs.length) : (vv.n!=null && r.t!=='memo' ? vv.n : (r.n!=null?r.n:'')); return [r.etq, r.t==='item' ? (r.exp===false?'PENDIENTE':'Explicada') : '', nd].concat(CSRI_BV_UI.map(c=>vv[c]==null?'':vv[c])); };
+  const docsHoja = [];
+  const bloque = (titulo, estadoTxt, filas, clave)=>{
+    a.push([titulo, estadoTxt], cab); filas.forEach(r=>{ a.push(fila(r)); (r.docs||[]).forEach(d=>docsHoja.push([clave, r.etq, d.ref, d.nom||'', d.fe||'', r.exp===false?'PENDIENTE':'Explicada', d.nota||''].concat(CSRI_BV_UI.map(c=>d.v&&d.v[c]!=null?d.v[c]:'')))); }); a.push([]);
+  };
+  const A = P.A, B = P.B, Rt = P.C;
+  if(A && A.disponible){
+    bloque('A. ATS ↔ COMPROBANTES RECIBIDOS DEL SRI', csriCuadreBadgeTxt(A.estado, A.bruto), csriCuadreFilasA(A), 'A');
+    bloque('A.1 Formación del total del SRI (VALOR_SIN_IMPUESTOS → base compuesta)', '', csriCuadreFilasSRIRaw(A), 'A');
+    a.push(['Comprobantes del SRI por tipo / marca'], cab);
+    A.sriTipos.forEach(t=>a.push([t.tc+' '+t.etq,'',t.v.n].concat(CSRI_BV_UI.map(c=>t.v[c]))));
+    A.sriMarcas.forEach(t=>a.push(['   marca «'+t.marca+'»','',t.v.n].concat(CSRI_BV_UI.map(c=>t.v[c]))));
+    a.push([], ['Identidad aritmética (debe ser 0)', '', ''].concat(CSRI_BV_UI.map(c=>A.ident[c])), []);
+  }
+  if(B && B.disponible) bloque('B. REGISTRO CONTABLE ↔ ATS ↔ REPORTE «DETALLE DE COMPRAS»', csriCuadreBadgeTxt(B.estado, B.bruto), csriCuadreFilasB(B), 'B');
+  if(Rt && Rt.disponible){
+    a.push(['C. RETENCIONES DE RENTA E IVA', csriCuadreBadgeTxt(Rt.estado, Rt.bruto)], ['Concepto','ATS','Talón','Sistema contable','ATS − talón','ATS − sistema']);
+    Rt.filas.forEach(f=>a.push([f.etq, f.ats, f.talon==null?'':f.talon, f.sist==null?'':f.sist, f.dT==null?'':f.dT, f.dS==null?'':f.dS]));
+    a.push([]);
+  }
+  a.push(['DOCUMENTOS POR PARTIDA'], ['Puente','Partida','Referencia','Proveedor','Fecha','Estado','Nota'].concat(CSRI_BV_UI.map(c=>CSRI_BV_CORTO[c])));
+  docsHoja.forEach(r=>a.push(r));
+  return a;
+}
+/* hoja con los documentos que tienen dos bases / composición distinta / tarifa mezclada (desde las excepciones con detalle) */
+function csriComposicionAOA(res){
+  const a = [['COMPROBANTES CON DOS BASES O COMPOSICIÓN DISTINTA ENTRE FUENTES'], ['Verificación','Tipo','Referencia','Detalle','Fuente','Nota de la fuente'].concat(CSRI_BV_UI.filter(c=>c!=='base').map(c=>CSRI_BV_CORTO[c]))];
+  res.checks.forEach(c=>(c.excep||[]).forEach(x=>{ if(x.det && x.det.length && (x.info || x.tipo==='Valores distintos')) x.det.forEach((d,i)=>a.push([i===0?c.nombre:'', i===0?x.tipo:'', i===0?x.ref:'', i===0?(x.detalle||''):'', d.lado, d.nota||''].concat(CSRI_BV_UI.filter(k=>k!=='base').map(k=>d.v?d.v[k]:''))));}));
+  return a;
+}
+
+/* ---------------- Matriz «Cuadre de bases / puente»: conceptos × fuentes ---------------- */
+const CSRI_MZ_FUENTES = [['ats','ATS'],['talon','Talón SRI'],['rep','Reportes contables'],['lib','Registro de compras'],['sri','SRI recibidos']];
+const CSRI_MZ_EST = { ok:['✅','Cuadra'], expl:['✅','Explicada'], warn:['⚠️','Diferencia menor'], bad:['❌','Pendiente'], sd:['⏳','Sin datos'] };
+function csriMzNum(x){ return x==null ? '—' : csriFmt(x); }
+function csriMatrizHTML(M, imp){
+  const filas = M.filas.map(r=>{
+    const e = CSRI_MZ_EST[r.estado] || CSRI_MZ_EST.sd;
+    const cls = r.tipo==='tot' ? 'csri-q-tot' : (r.tipo==='sub' ? 'csri-q-sub' : '');
+    const celdas = CSRI_MZ_FUENTES.map(f=>`<td class="num">${csriMzNum(r.v[f[0]])}</td>`).join('');
+    const dif = r.dif==null ? '—' : csriFmt(r.dif);
+    return imp ? `<tr><td>${csriEsc(r.etq)}</td>${CSRI_MZ_FUENTES.map(f=>`<td class="num">${csriMzNum(r.v[f[0]])}</td>`).join('')}<td class="num">${dif}</td><td>${e[0]} ${csriEsc(e[1])}</td></tr>`
+      : `<tr class="${cls}"><td>${csriEsc(r.etq)}${r.difInterna?'<div class="csri-muted">Diferencia = máximo − mínimo entre las fuentes internas</div>':''}</td>${celdas}<td class="num">${dif}</td><td title="${csriEsc(e[1])}">${e[0]} ${csriEsc(e[1])}</td></tr>`;
+  }).join('');
+  return `<div class="csri-tabla-scroll" style="max-height:none"><table class="csri-cuadre"><thead><tr><th>Concepto</th>${CSRI_MZ_FUENTES.map(f=>`<th class="num">${csriEsc(f[1])}</th>`).join('')}<th class="num">Diferencia</th><th>Estado</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+}
+function csriMatrizCierreHTML(res, imp){
+  const P = res.puente, M = P && P.M; if(!M || !M.disponible) return '';
+  const A = P.A && P.A.disponible ? P.A : null;
+  const row = (e, v, extra)=> imp ? `<tr><td>${csriEsc(e)}</td><td class="num">${v}</td><td>${extra||''}</td></tr>` : `<tr><td>${csriEsc(e)}</td><td class="num">${v}</td><td>${extra||''}</td></tr>`;
+  let t = '';
+  if(A){
+    const dTot = A.vSRI.total - A.vEmp.total, pend = A.resid.total, resid = A.ident.total;
+    t += row('Diferencia SRI − ATS (compras de la empresa, total)', csriFmt(csriR2(dTot)), '');
+    t += row('   explicada por partidas (propios, físicos, anulados con NC, redondeos…)', csriFmt(csriR2(dTot - pend)), '✅ Explicada');
+    t += row('   excepciones pendientes identificadas ('+A.nPend+' documento'+(A.nPend===1?'':'s')+', neto)', csriFmt(csriR2(pend)), A.nPend ? '⚠️ Ver detalle' : '✅');
+    t += row('Residual no explicado (debe ser 0,00)', csriFmt(csriR2(resid)), Math.abs(resid) <= 0.005 ? '✅ 0,00' : '❌ Revisar');
+  }
+  let h = `<table class="csri-cuadre"><thead><tr><th>Cierre del cuadre</th><th class="num">USD</th><th>Estado</th></tr></thead><tbody>${t}</tbody></table>`;
+  if(A && A.pend.some(it=>it.docs.length)){
+    h += `<div class="csri-sub">Excepciones que quedan (documentos pendientes de explicar)</div><table class="csri-cuadre"><thead><tr><th>Documento</th><th>Partida</th><th class="num">Base</th><th class="num">IVA</th><th class="num">Total</th></tr></thead><tbody>${
+      A.pend.map(it=>it.docs.map(d=>`<tr><td>${csriEsc(d.ref)}<div class="csri-muted">${csriEsc((d.nom||'')+(d.fe?' · '+d.fe:''))}</div></td><td>${csriEsc(it.etq.replace(/^PENDIENTE — /,''))}</td><td class="num">${csriFmt(d.v.base*(d.sg||1))}</td><td class="num">${csriFmt(d.v.iva*(d.sg||1))}</td><td class="num">${csriFmt(d.v.total*(d.sg||1))}</td></tr>`).join('')).join('')}</tbody></table>`;
+  }
+  // reembolsos
+  const Rb = M.reemb;
+  if(Rb){
+    const e = x=> (CSRI_MZ_EST[x]||CSRI_MZ_EST.sd);
+    const f = (n, v, d, est)=>`<tr><td>${csriEsc(n)}</td><td class="num">${v.n}</td><td class="num">${csriFmt(v.base)}</td><td class="num">${csriFmt(v.iva)}</td><td class="num">${d==null?'—':csriFmt(d)}</td><td>${est?e(est)[0]+' '+csriEsc(e(est)[1]):''}</td></tr>`;
+    h += `<div class="csri-sub">Reembolsos de gastos (comprobantes cód. 41)</div><table class="csri-cuadre"><thead><tr><th>Fuente</th><th class="num">Docs.</th><th class="num">Base</th><th class="num">IVA</th><th class="num">Dif. base vs ATS</th><th>Estado</th></tr></thead><tbody>${
+      f('ATS — comprobantes cód. 41', Object.assign({}, Rb.ats, { n:Rb.nAts }), null, null)}${f('Reportes contables (tipo 41)', Object.assign({}, Rb.rep, { n:Rb.nRep }), Rb.difRep.base, Rb.estadoRep)}${f('Registro de compras (mismos comprobantes)', Object.assign({}, Rb.lib, { n:Rb.nLib }), Rb.difLib.base, Rb.estadoLib)
+      }<tr class="csri-q-memo"><td>ATS — detalle de reembolsos (informativo)</td><td class="num">${Rb.det.n}</td><td class="num">${csriFmt(Rb.det.base)}</td><td class="num">${csriFmt(Rb.det.iva)}</td><td class="num">—</td><td></td></tr></tbody></table><div class="csri-muted">${csriEsc(Rb.nota)}</div>`;
+  }
+  const Ip = M.imp;
+  if(Ip){
+    const e = x=> (CSRI_MZ_EST[x]||CSRI_MZ_EST.sd);
+    h += `<div class="csri-sub">Importaciones</div><table class="csri-cuadre"><thead><tr><th>Concepto</th><th class="num">Libro de importaciones</th><th class="num">Registro (DAU)</th><th class="num">Formulario 104</th><th class="num">Libro − DAU</th><th class="num">Libro − F104</th><th>Estado</th></tr></thead><tbody>
+      <tr><td>Base (subtotal; casilleros 513+514+515 neto)</td><td class="num">${csriFmt(Ip.lib.base)}</td><td class="num">${Ip.dau?csriFmt(Ip.dau.base):'—'}</td><td class="num">${Ip.f104?csriFmt(Ip.f104.base):'—'}</td><td class="num">${Ip.difBaseDau==null?'—':csriFmt(Ip.difBaseDau)}</td><td class="num">${Ip.difBaseF104==null?'—':csriFmt(Ip.difBaseF104)}</td><td>${e(Ip.estBaseF104)[0]} ${csriEsc(Ip.f104?e(Ip.estBaseF104)[1]:'Sin formulario 104 declarado')}</td></tr>
+      <tr><td>IVA (casilleros 523+524+525)</td><td class="num">${csriFmt(Ip.lib.iva)}</td><td class="num">${Ip.dau?csriFmt(Ip.dau.iva):'—'}</td><td class="num">${Ip.f104?csriFmt(Ip.f104.iva):'—'}</td><td class="num">${Ip.difIvaDau==null?'—':csriFmt(Ip.difIvaDau)}</td><td class="num">${Ip.difIvaF104==null?'—':csriFmt(Ip.difIvaF104)}</td><td>${e(Ip.estIvaDau)[0]} ${csriEsc(e(Ip.estIvaDau)[1])} (DAU)${Ip.f104?' · '+e(Ip.estIvaF104)[0]+' '+csriEsc(e(Ip.estIvaF104)[1])+' (F104)':''}</td></tr></tbody></table><div class="csri-muted">${csriEsc(Ip.nota)} Liquidaciones: ${Ip.n}; filas DAU en el registro: ${Ip.nDau}.</div>`;
+  }
+  return h;
+}
+function csriHtmlMatriz(res){
+  const P = res.puente, M = P && P.M;
+  if(!M || !M.disponible) return `<div class="card csri-cuadre-card"><div class="csri-src-h"><b>🧮 Cuadre de bases / puente</b></div><div class="csri-muted">Cargue el ATS, el registro de compras y los comprobantes recibidos del SRI para ver el cuadre de bases.</div></div>`;
+  return `<div class="card csri-cuadre-card"><div class="csri-src-h"><b>🧮 Cuadre de bases / puente</b><span>${csriCuadreBadge(P.estado, P.bruto)}</span></div>
+    <div class="csri-ayuda">Compras totales (todos los sustentos) → menos liquidaciones de viaje (05) → compras a nombre de la empresa, por tipo de base, en cada fuente. La columna «Diferencia» compara SRI − ATS en las compras de la empresa; en los totales compara entre sí las fuentes internas. Tolerancia: ${csriFmtUSD(res.tolL)} por línea y ${csriFmtUSD(res.tolA)} agregado. El SRI no informa la composición por tipo de base: se deduce (IVA ÷ tarifa; el resto de IMPORTE_TOTAL − IVA se trata como valor sin IVA).</div>
+    ${csriMatrizHTML(M, false)}${csriMatrizCierreHTML(res, false)}</div>`;
+}
+function csriHtmlMatrizImpresion(res){
+  const P = res.puente, M = P && P.M; if(!M || !M.disponible) return '';
+  return `<div class="bp-seccion">🧮 Cuadre de bases / puente — ${csriEsc(csriCuadreBadgeTxt(P.estado, P.bruto))}</div>`+csriMatrizHTML(M, true)+csriMatrizCierreHTML(res, true);
+}
+function csriMatrizAOA(res){
+  const P = res.puente, M = P && P.M, a = [['CUADRE DE BASES / PUENTE'], ['Estado', P ? csriCuadreBadgeTxt(P.estado, P.bruto) : ''], []];
+  if(!M || !M.disponible) return a;
+  a.push(['Concepto'].concat(CSRI_MZ_FUENTES.map(f=>f[1]), ['Diferencia','Estado']));
+  M.filas.forEach(r=>a.push([r.etq.trim()].concat(CSRI_MZ_FUENTES.map(f=>r.v[f[0]]==null?'':r.v[f[0]]), [r.dif==null?'':r.dif, (CSRI_MZ_EST[r.estado]||CSRI_MZ_EST.sd)[1]])));
+  const A = P.A && P.A.disponible ? P.A : null;
+  if(A){ a.push([], ['Cierre del cuadre','USD']);
+    const dTot = csriR2(A.vSRI.total - A.vEmp.total);
+    a.push(['Diferencia SRI − ATS (compras de la empresa, total)', dTot], ['   explicada por partidas', csriR2(dTot - A.resid.total)], ['   excepciones pendientes identificadas (neto)', A.resid.total], ['Residual no explicado (debe ser 0,00)', A.ident.total]); }
+  if(M.reemb){ const R = M.reemb; a.push([], ['Reembolsos (cód. 41)','Docs.','Base','IVA','Dif. base vs ATS']);
+    a.push(['ATS — comprobantes cód. 41', R.nAts, R.ats.base, R.ats.iva, ''], ['Reportes contables', R.nRep, R.rep.base, R.rep.iva, R.difRep.base], ['Registro de compras', R.nLib, R.lib.base, R.lib.iva, R.difLib.base], ['ATS — detalle de reembolsos (informativo)', R.det.n, R.det.base, R.det.iva, '']); }
+  if(M.imp){ const I = M.imp; a.push([], ['Importaciones','Libro de importaciones','Registro (DAU)','Formulario 104','Libro − DAU','Libro − F104']);
+    a.push(['Base', I.lib.base, I.dau?I.dau.base:'', I.f104?I.f104.base:'', I.difBaseDau==null?'':I.difBaseDau, I.difBaseF104==null?'':I.difBaseF104], ['IVA', I.lib.iva, I.dau?I.dau.iva:'', I.f104?I.f104.iva:'', I.difIvaDau==null?'':I.difIvaDau, I.difIvaF104==null?'':I.difIvaF104]); }
   return a;
 }
 

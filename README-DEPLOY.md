@@ -244,6 +244,41 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Nuevo: cuadre de bases compuestas y tabla «Cuadre de bases / puente» en ⚖️ Conciliación SRI vs Mayores (15ta iteración).**
+  Pedido en español del usuario (literal): "en la diferencia de 49.54 revisa porque tienen dos bases 15% y otro porcentaje,
+  revisalo por favor, tambien en resumen cuadralo con gastos de viaje y estas otras bases para comparar que ya este cuadrado".
+  - **Diagnóstico de los 5 comprobantes (49,54).** Eran comprobantes con **dos bases**: el archivo de recibidos del SRI trae en
+    `VALOR_SIN_IMPUESTOS` solo la base con IVA, mientras que `IMPORTE_TOTAL` incluye además un cargo **sin IVA** (servicio/propina
+    del 10 % u otro) que el ATS y el registro contable llevan en la base 0 %. Por documento (cargo sin IVA = IMPORTE_TOTAL − IVA −
+    VALOR_SIN_IMPUESTOS): 001-001-000118210 (RUC 0993372383001) 19,67; 002-002-000011489 (1716185457001) 3,15; 001-001-000024646
+    (1793181694001) 8,06; 002-002-000035054 (0993381020001) 6,83; 001-002-000071991 (1792489970001) 11,83. En los cinco, base
+    compuesta e IVA coinciden exactamente entre SRI, ATS, registro y reporte: no eran errores.
+  - **Se compara igual con igual.** Cada comprobante lleva un vector de bases (≠ 0 %, 0 %, no objeto, exenta, otros sin IVA,
+    base total = total − IVA, IVA, total). Los comparativos SRI/registro/ATS/reporte usan la **base compuesta**; las diferencias
+    de composición salen como informativas («Dos bases: el SRI muestra solo una», «Composición distinta entre fuentes») con una
+    columna **Causa probable** y una mini-tabla por fuente (base ≠ 0 % / 0 % / no objeto / exenta / otros / IVA) en la pantalla,
+    la impresión y el Excel (hojas «Excepciones» y «Composición de bases»). El centavo de redondeo del SRI se conserva (el total
+    del SRI cuadra exacto: 92.200,25).
+  - **Validación del IVA por documento.** Se calcula la tarifa implícita (IVA ÷ base ≠ 0 %); si no es la configurada se informa
+    «tarifa distinta» (p. ej. 12 %, 5 %) o «tarifas mezcladas» (p. ej. 15 % + 0 %). Nuevo ajuste **«Otras tarifas de IVA conocidas»**
+    (por empresa, en ⚙️ Ajustes; guardado en la ruta de configuración existente, campo `tarifasOtras`; predeterminado 5, 8, 12, 13, 14).
+    Solo cambia la clasificación informativa, nunca la diferencia en dólares. Hallazgo aparte: 13 comprobantes de un mismo
+    proveedor (RUC 0990005737001) salen con tarifa efectiva 12 % en el ATS: conviene revisarlos.
+  - **Corrección genuina con la separación apagada.** SRI vs registro y SRI vs ATS pasan de 391,89 a **342,35** (−49,54: antes se
+    comparaba una sola columna de base). Con la separación encendida pasan de 58,41 a **8,87** (8,70 PECMANOIL sin registrar + 0,17 nota de
+    débito). Fuera de eso, con la separación apagada el estado y la diferencia de las demás verificaciones son idénticos a la 14va;
+    se añaden 6 verificaciones nuevas del grupo 3c, por lo que el KPI pasa de 38 a 44 verificaciones.
+  - **Resumen: «🧮 Cuadre de bases / puente».** Filas: compras totales (todos los sustentos) → (−) liquidaciones de viaje (05) → (=)
+    compras a nombre de la empresa → base ≠ 0 % / 0 % / no objeto / exenta / otros sin IVA / base total / IVA / total. Columnas: ATS,
+    Talón SRI, Reportes contables, Registro de compras, SRI recibidos y Diferencia, con estado ✅ / ⚠️ / ❌ por línea. Debajo: cierre
+    (diferencia SRI − ATS = explicada por partidas + excepciones pendientes identificadas), **residuo no explicado (0,00)**, lista de
+    documentos pendientes, reembolsos (cód. 41: ATS vs reporte vs registro) e importaciones (libro de importaciones vs filas DAU del
+    registro vs formulario 104, casilleros 513+514+515 y 523+524+525). Más abajo, los puentes detallados: A (ATS ↔ SRI), B (registro ↔ ATS ↔
+    reporte) y C (retenciones renta/IVA ↔ talón ↔ sistema). Cada partida es «explicada» (propios, físicos, anulados con NC, composición,
+    redondeos, DAU) o «pendiente» (excepción real) y cada documento cae en una sola partida, por lo que la identidad aritmética es exacta al centavo.
+    Va también en el informe impreso y en el Excel (hoja «Cuadre de bases»).
+  - **Firebase:** sin rutas nuevas (solo el campo `tarifasOtras` dentro de `conciliacion_sri_config`); `reglas_firebase_completas.json` no cambia.
+
 - **Nuevo: liquidaciones de viaje (sustento 05) aparte en ⚖️ Conciliación SRI vs Mayores (14va iteración).** Pedido en
   español del usuario (literal): "por favor en las facturas con sustento 05 son liquidaciones de viaje y no estan a
   nombre de la empresa no va a cuadrar con el sri, ponlas aparte como liquidaciones de viaje para que pueda cuadrar con
