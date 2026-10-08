@@ -17910,6 +17910,7 @@ function csriCalcular(S, C){
     return csriCerrar(ch, ctx);
   });
   csriSeguro(L,'ats-cabecera','g1','Coherencia interna del ATS', ()=>{
+    if(C.conciliarCabecera !== true) return null;   // 16ta: con facturación electrónica la cabecera del ATS no se concilia (ajuste «Conciliar cabecera del ATS»)
     const ch = csriNuevo('ats-cabecera','g1','Coherencia interna del XML: totalVentas y ventas por establecimiento','Un ATS válido tiene totalVentas igual a la suma de bases del detalle de ventas y ventasEstablecimiento coherente.','Encabezado del XML','Detalle de ventas del XML');
     if(!S.ats){ ch.falta = ['ATS (XML)']; return ch; }
     const sumVentas = R.ventas.bG + R.ventas.b0 + R.ventas.bNo;
@@ -18777,7 +18778,7 @@ function csriS(){
   if(!csriMem[k]) csriMem[k] = csriVacio(csriPeriodo);
   return csriMem[k];
 }
-function csriCfgVacio(){ return { tolLinea:0.05, tolAgg:1, tarifaIva:15, tarifasOtras:'5, 8, 12, 13, 14', mapeo:{}, perfiles:[], catalogo:null, viajeSep:true, viajeReglas:{ sust:true, tipoTxt:'', rucs:[] } }; }
+function csriCfgVacio(){ return { tolLinea:0.05, tolAgg:1, tarifaIva:15, tarifasOtras:'5, 8, 12, 13, 14', conciliarCabecera:false, mapeo:{}, perfiles:[], catalogo:null, viajeSep:true, viajeReglas:{ sust:true, tipoTxt:'', rucs:[] } }; }
 function csriC(){
   if(!csriCfgMem[csriEmpresaId]) csriCfgMem[csriEmpresaId] = csriCfgVacio();
   return csriCfgMem[csriEmpresaId];
@@ -18854,7 +18855,7 @@ async function csriGuardar(){
     }
     for(const emp of Object.keys(csriDirtyCfg)){
       const C = csriCfgMem[emp]; delete csriDirtyCfg[emp]; if(!C) continue;
-      await db.ref(csriRutaCfg(emp)).set(limpiarUndefinedSeguro({ actualizado:Date.now(), tolLinea:C.tolLinea, tolAgg:C.tolAgg, tarifaIva:C.tarifaIva, tarifasOtras:String(C.tarifasOtras==null?'':C.tarifasOtras),
+      await db.ref(csriRutaCfg(emp)).set(limpiarUndefinedSeguro({ actualizado:Date.now(), tolLinea:C.tolLinea, tolAgg:C.tolAgg, tarifaIva:C.tarifaIva, tarifasOtras:String(C.tarifasOtras==null?'':C.tarifasOtras), conciliarCabecera: C.conciliarCabecera===true,
         mapeo: JSON.stringify(C.mapeo||{}), perfiles: JSON.stringify(C.perfiles||[]), catalogo: C.catalogo ? JSON.stringify(C.catalogo) : null,
         viajeSep: C.viajeSep!==false, viajeReglas: JSON.stringify(C.viajeReglas||{ sust:true, tipoTxt:'', rucs:[] }) }));
       hubo = true;
@@ -18872,7 +18873,7 @@ async function csriCargarCfg(emp){
     const snap = await db.ref(csriRutaCfg(emp)).once('value'); const v = snap.val();
     if(!v) return;
     const C = csriCfgMem[emp] || csriCfgVacio();
-    if(v.tolLinea!=null) C.tolLinea = +v.tolLinea; if(v.tolAgg!=null) C.tolAgg = +v.tolAgg; if(v.tarifaIva!=null) C.tarifaIva = +v.tarifaIva; if(v.tarifasOtras!=null) C.tarifasOtras = String(v.tarifasOtras);
+    if(v.tolLinea!=null) C.tolLinea = +v.tolLinea; if(v.tolAgg!=null) C.tolAgg = +v.tolAgg; if(v.tarifaIva!=null) C.tarifaIva = +v.tarifaIva; if(v.tarifasOtras!=null) C.tarifasOtras = String(v.tarifasOtras); C.conciliarCabecera = (v.conciliarCabecera===true || v.conciliarCabecera==='true');
     C.mapeo = csriJSON(v.mapeo, {}); C.perfiles = csriJSON(v.perfiles, []); C.catalogo = csriJSON(v.catalogo, null);
     C.viajeSep = !(v.viajeSep===false || v.viajeSep==='false' || v.viajeSep===0);
     C.viajeReglas = Object.assign({ sust:true, tipoTxt:'', rucs:[] }, csriJSON(v.viajeReglas, {}) || {});
@@ -18982,7 +18983,7 @@ function csriHtmlFuentes(){
   const cards = [];
   cards.push(csriCardFuente({ id:'ats', icono:'🧾', titulo:'ATS (XML)', accept:'.xml,text/xml', ok:!!S.ats,
     desc:'Anexo Transaccional Simplificado del periodo. Es la fuente de los valores esperados de los formularios 103 y 104.',
-    detalle: S.ats ? `RUC ${csriEsc(S.ats.ruc)} · periodo ${csriEsc(csriPeriodoAts(S.ats))} · ${S.ats.compras.length} líneas de compras (base ≠0% ${$(R.tot.bG)}, IVA ${$(R.tot.iva)}) · ${S.ats.ventas.length} registros de ventas · retenciones renta ${$(R.airTot.val)}, IVA ${$(R.retIvaTot)} · ${R.anulados} anulados`+csriMeta('ats') : '' }));
+    detalle: S.ats ? `RUC ${csriEsc(S.ats.ruc)} · periodo ${csriEsc(csriPeriodoAts(S.ats))} · ${S.ats.compras.length} líneas de compras (base ≠0% ${$(R.tot.bG)}, IVA ${$(R.tot.iva)}) · ${S.ats.ventas.length} registros de ventas · retenciones renta ${$(R.airTot.val)}, IVA ${$(R.retIvaTot)} · ${R.anulados} anulados`+csriMeta('ats')+`<div class="csri-muted" style="margin-top:4px">Cabecera del ATS: totalVentas ${$(S.ats.totalVentas)} — ${csriC().conciliarCabecera ? 'se concilia contra el detalle de ventas (ajuste activado en Ajustes)' : 'no se concilia: con facturación electrónica el encabezado ya no es obligatorio cuadrarlo'}.</div>` : '' }));
   const T = S.talon;
   cards.push(csriCardFuente({ id:'talon', icono:'📄', titulo:'Talón resumen del ATS (PDF)', accept:'.pdf,application/pdf', ok:!!T,
     desc:'Resumen que emite el SRI al cargar el ATS. Sirve para comprobar que el XML coincide con lo que recibió el SRI. Si el PDF no se puede leer, ingrese los totales a mano.',
@@ -19448,6 +19449,7 @@ function csriHtmlAjustes(){
       <div class="field"><label>Tarifa de IVA (%)</label><input type="number" step="1" min="0" value="${C.tarifaIva}" ${ed?'':'disabled'} onchange="csriAjuste('tarifaIva',this.value)"></div>
       <div class="field"><label>Otras tarifas de IVA conocidas (%), separadas por coma</label><input type="text" value="${csriEsc(C.tarifasOtras==null?'5, 8, 12, 13, 14':C.tarifasOtras)}" ${ed?'':'disabled'} onchange="csriAjusteTxt('tarifasOtras',this.value)"></div>
     </div>
+    <div class="field" style="margin-top:8px"><label><input type="checkbox" ${C.conciliarCabecera===true?'checked':''} ${ed?'':'disabled'} onchange="csriAjusteChk('conciliarCabecera',this.checked)"> Conciliar cabecera del ATS (totalVentas / ventasEstablecimiento contra el detalle de ventas)</label><div class="csri-muted">Desactivado por defecto: con facturación electrónica el encabezado del ATS ya no es obligatorio cuadrarlo. Actívelo para periodos anteriores o casos sin facturación electrónica.</div></div>
     <div class="helpNote">Se usan para validar que el IVA de cada comprobante sea tarifa × base gravada: un comprobante cuya tarifa implícita no es la general se informa como «tarifa distinta» o «tarifas mezcladas» (p. ej. 15 % + 0 %, 5 % diferenciado).</div>
     <div class="helpNote">${csriEsc(CSRI_CAT_NOTA)}</div>
     <div class="csri-acc" style="margin-top:8px">${ed?`<button class="btn small" onclick="csriCatAgregar()">➕ Agregar casillero</button> <button class="btn small danger" onclick="csriCatRestablecer()">Restablecer catálogo predeterminado</button>`:''} <span class="csri-muted">${C.catalogo?'Catálogo personalizado de esta empresa':'Catálogo predeterminado'} · ${cat.length} casilleros</span></div>
@@ -19462,6 +19464,7 @@ function csriAjuste(k, v){
   const n = +v; if(isNaN(n) || n<0) return;
   csriC()[k] = n; csriMarcar('cfg');
 }
+function csriAjusteChk(k, v){ csriC()[k] = !!v; csriMarcar('cfg'); }
 function csriAjusteTxt(k, v){ csriC()[k] = String(v||'').trim(); csriMarcar('cfg'); }
 function csriCatEditable(){ const C = csriC(); if(!C.catalogo) C.catalogo = csriCatalogoDefault(); return C.catalogo; }
 function csriCatEditar(i, campo, val){

@@ -244,6 +244,16 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 
 ## Notas importantes
 
+- **Cambio: la cabecera del ATS ya no se concilia (16ta iteración).** Pedido en español del usuario (literal): "considera algo
+  adicional, la cabecera en el ats es diferente que el talon y el xml porque ahora se pone facturas electronicas y ya no es
+  necesario cuadrar el encabezado". La verificación «Coherencia interna del XML: totalVentas y ventas por establecimiento» y su
+  recomendación ya no se evalúan por defecto: no cuentan en el KPI, el % de cuadre, los ❌/⚠️ ni las recomendaciones. Ajuste nuevo
+  **«Conciliar cabecera del ATS»** (por empresa, desactivado por defecto; campo `conciliarCabecera` en la ruta de configuración
+  existente) para periodos anteriores o casos sin facturación electrónica. La tarjeta del ATS muestra una línea gris: «Cabecera del
+  ATS: totalVentas X — no se concilia…». El cabecero solo alimentaba esa verificación: ventas ATS vs talón, ATS vs reporte contable,
+  casilleros de ventas del 104 y el cuadre de bases usan el detalle de ventas, nunca totalVentas/ventasEstablecimiento. Con los
+  archivos reales: 47 verificaciones (antes 48), ❌ 4 → 3 (✅ 24, ⚠️ 4, ⏳ 16), % de cuadre 75 → 77,4; nada más cambia.
+
 - **Nuevo: cuadre de bases compuestas y tabla «Cuadre de bases / puente» en ⚖️ Conciliación SRI vs Mayores (15ta iteración).**
   Pedido en español del usuario (literal): "en la diferencia de 49.54 revisa porque tienen dos bases 15% y otro porcentaje,
   revisalo por favor, tambien en resumen cuadralo con gastos de viaje y estas otras bases para comparar que ya este cuadrado".
