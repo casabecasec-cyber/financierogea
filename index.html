@@ -11773,12 +11773,24 @@ function efCalcularArbol(valores, arbol){
   const nodes = arbol.nodes, n = nodes.length;
   const val = new Array(n).fill(0), propio = new Array(n).fill(false), ignorado = new Array(n).fill(false);
   const nz = new Array(n).fill(false), hecho = new Array(n).fill(false), ownv = new Array(n).fill(0);
+  /* Convención de saldos del libro mayor (débito +, crédito −): si las cuentas de naturaleza acreedora
+     (Pasivo, Patrimonio, Ingreso) vienen en conjunto NEGATIVAS, se presentan con signo natural (positivas)
+     para que Activo = Pasivo + Patrimonio y Utilidad = Ingresos − Costos − Gastos. Una cuenta acreedora con
+     signo contrario al normal queda en negativo (saldo contrario). */
+  const CRED = { Pasivo:1, Patrimonio:1, Ingreso:1 };
+  const rawT = { Pasivo:0, Patrimonio:0, Ingreso:0 };
+  nodes.forEach(nd=>{ if(!nd.excl && !nd.kids.length && CRED[nd.c.tipo]) rawT[nd.c.tipo] += efValorCuenta(nd.c, valores); });
+  // Ingresos y Pasivos nunca son naturalmente negativos en conjunto → si lo son, vienen en convención de mayor.
+  const flipT = { Ingreso: rawT.Ingreso < -0.005, Pasivo: rawT.Pasivo < -0.005 };
+  flipT.Patrimonio = rawT.Patrimonio < -0.005 || (flipT.Ingreso && flipT.Pasivo);
+  const convMayor = flipT.Ingreso || flipT.Pasivo || flipT.Patrimonio;
   const calc = i => {
     if(hecho[i]) return val[i];
     hecho[i] = true;
     const nd = nodes[i], c = nd.c;
     if(nd.excl){ val[i] = 0; return 0; }          // excluida de los estados
-    const o = efValorCuenta(c, valores);
+    let o = efValorCuenta(c, valores);
+    if(flipT[c.tipo]) o = -o;
     ownv[i] = o;
     if(!nd.kids.length){ val[i] = o; nz[i] = Math.abs(o)>=0.005; return o; }
     let s = 0, algunoNz = false;
@@ -11802,7 +11814,7 @@ function efCalcularArbol(valores, arbol){
   });
   const utilidad = tot.Ingreso - tot.Costo - tot.Gasto;
   const diferencia = tot.Activo - (tot.Pasivo + tot.Patrimonio + utilidad);
-  return { val, propio, ignorado, ownv, tot, corr, utilidad, diferencia, cuadre: Math.abs(diferencia)<0.01,
+  return { val, propio, ignorado, ownv, tot, corr, utilidad, diferencia, convMayor, cuadre: Math.abs(diferencia)<0.01,
     totActivo:tot.Activo, totPasivo:tot.Pasivo, totPatrimonio:tot.Patrimonio, totIngreso:tot.Ingreso, totCosto:tot.Costo, totGasto:tot.Gasto,
     acCorriente:corr.acC, acNoCorriente:corr.acNC, pasCorriente:corr.pasC, pasNoCorriente:corr.pasNC };
 }
@@ -13313,6 +13325,7 @@ function efGenerarEstados(idx){
     <h3>Estado de Situación Financiera — ${escapeHtml(est.label||'')} <span class="mut" style="font-size:12px;font-weight:400;">${escapeHtml(t.esf)}</span></h3>
     ${efTablaEstadoHTML(m.esf, m.labels, { conCodigo:true })}
     <p style="font-weight:700;color:${cc.cuadre?'#0a9468':'#c0392b'}">${cc.cuadre?'✓ Balance cuadrado (Activo = Pasivo + Patrimonio)':'⚠ Balance NO cuadra — diferencia: '+pbUSD(cc.diferencia)}</p>
+    ${cc.convMayor ? `<p class="helpNote">ℹ Los saldos de Pasivo, Patrimonio e Ingresos vienen en negativo (convención del libro mayor: crédito −); se presentan con signo natural (positivos) para que Activo = Pasivo + Patrimonio y Utilidad = Ingresos − Costos − Gastos.</p>` : ''}
     ${avisos.length ? `<p class="helpNote" style="color:#a15c00;">⚠ Cuentas de grupo usando su valor propio guardado (sus subcuentas están vacías): ${escapeHtml(avisos.slice(0,5).join('; '))}. Digítelo en las subcuentas.</p>` : ''}
     <h3>Estado de Resultados — ${escapeHtml(est.label||'')} <span class="mut" style="font-size:12px;font-weight:400;">${escapeHtml(t.eri)}</span></h3>
     ${efTablaEstadoHTML(m.eri, m.labels, { conCodigo:true })}
