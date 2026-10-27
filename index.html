@@ -13343,7 +13343,7 @@ function efCompararEstados(){
 }
 
 /* ---------- diálogo de exportación (Excel / PDF) ---------- */
-let efExpOpc = { formato:'excel', idxs:[0], nivel:'completo', variacion:true, vA:null, vB:null, conCodigo:true, caratula:true, plan:true, indicadores:true, resumen:true, vertical:false };
+let efExpOpc = { formato:'excel', idxs:[0], nivel:'completo', variacion:true, vA:null, vB:null, conCodigo:true, caratula:true, plan:true, indicadores:true, resumen:true, vertical:false, soloValor:false };
 function efAbrirDialogoExport(formato, cual){
   if(!efEstados.length){ toast('No hay periodos para exportar', 'warning'); return; }
   const todos = efEstados.map((_,i)=>i);
@@ -13384,6 +13384,7 @@ function efExpRender(){
       <label class="efChk"><input type="checkbox" ${o.caratula?'checked':''} onchange="efExpSet('caratula',this.checked)"> Incluir ${esExcel?'carátula':'portada'}</label>
       <label class="efChk"><input type="checkbox" ${o.conCodigo?'checked':''} onchange="efExpSet('conCodigo',this.checked)"> Mostrar código de cuenta</label>
       <label class="efChk"><input type="checkbox" ${o.resumen?'checked':''} onchange="efExpSet('resumen',this.checked)"> Resumen ejecutivo con gráficos${esExcel?'':' e indicadores'}</label>
+      <label class="efChk"><input type="checkbox" ${o.soloValor?'checked':''} onchange="efExpSet('soloValor',this.checked)"> Solo cuentas con valor (ocultar las que están en cero)</label>
       <label class="efChk"><input type="checkbox" ${o.vertical?'checked':''} onchange="efExpSet('vertical',this.checked)"> Análisis vertical (% sobre activo / ingresos)</label>
       ${esExcel?`<label class="efChk"><input type="checkbox" ${o.indicadores?'checked':''} onchange="efExpSet('indicadores',this.checked)"> Hoja de indicadores</label><label class="efChk"><input type="checkbox" ${o.plan?'checked':''} onchange="efExpSet('plan',this.checked)"> Hoja con el plan de cuentas</label>`:''}
     </div>
@@ -13709,6 +13710,19 @@ function efEscribirEstadoExcel(ws, filas, o){
   ws.properties.outlineLevelRow = maxLv;
   return { R0, ultima: R0+filas.length-1, ncols };
 }
+/* «Solo cuentas con valor»: oculta las filas cuyo importe es cero en todos los periodos seleccionados
+   (cuentas, grupos y sus totales). Los totales generales y de sección se conservan. */
+function efFiltrarSoloConValor(m){
+  const cero = f => !f.v || f.v.every(x=>Math.abs(x)<0.005);
+  [m.esf, m.eri].forEach(filas=>{
+    filas.forEach((f,a)=>{
+      if(f.k==='cuenta' || f.k==='grupoA' || f.k==='totalA'){ if(cero(f)) f.oculto = true; }
+      else if(f.k==='grupoH'){ const t = filas.find(x=>x.k==='totalA' && x.i===f.i); if(t && cero(t)) f.oculto = true; }
+      else if(f.k==='grupoB'){ const b = filas.findIndex((x,j)=>j>a && x.k==='totalB'); if(b>=0 && cero(filas[b])){ f.oculto = true; filas[b].oculto = true; } }
+    });
+  });
+  return m;
+}
 function efTextoPeriodos(idxs){ return idxs.map(i=>String(efEstados[i].label||'')).join(' · '); }
 
 
@@ -13815,6 +13829,7 @@ function efConstruirLibroExcel(EJS, opc){
   const idxs = opc.idxs.slice().sort((a,b)=>a-b);
   const nivel = opc.nivel || efNivelDetalle;
   const m = efModeloEstados(idxs, nivel);
+  if(opc.soloValor) efFiltrarSoloConValor(m);
   const P = m.P;
   const emp = efEmpresaActual();
   const pres = efPresentacion || {};
@@ -14018,6 +14033,7 @@ async function efExportarExcelPro(opc){
 function efExportarExcelBasico(opc){
   const idxs = (opc && opc.idxs && opc.idxs.length) ? opc.idxs.slice().sort((a,b)=>a-b) : [efEstadoActivo];
   const m = efModeloEstados(idxs, (opc&&opc.nivel)||efNivelDetalle);
+  if(opc && opc.soloValor) efFiltrarSoloConValor(m);
   const emp = efEmpresaActual();
   const t = efTitulosEstado(idxs);
   const aoa = (filas, titulo, sub) => {
@@ -14179,6 +14195,7 @@ function efSvgAPng(svg, w, h){
 function efConstruirHtmlPDF(opc){
   const idxs = opc.idxs.slice().sort((a,b)=>a-b);
   const m = efModeloEstados(idxs, opc.nivel || efNivelDetalle);
+  if(opc.soloValor) efFiltrarSoloConValor(m);
   const P = m.P;
   const emp = efEmpresaActual();
   const pres = efPresentacion || {};
