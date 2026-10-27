@@ -13213,9 +13213,11 @@ function efModeloEstados(idxs, nivel){
   if(hayCosto){
     iCos = seccion(eri, 'Costo', 'COSTOS');
     eri.push(mk({ k:'blank' }));
-    eri.push(mk({ k:'calc', nom:'UTILIDAD BRUTA', v:calcs.map(cc=>cc.tot.Ingreso-cc.tot.Costo), op:[[iIng,1],[iCos,-1]] }));
-    iBru = eri.length-1;
-    eri.push(mk({ k:'blank' }));
+    if(hayGasto){   // sin gastos separados, el resultado tras costos ya es la utilidad del ejercicio (no se duplica como «bruta»)
+      eri.push(mk({ k:'calc', nom:'UTILIDAD BRUTA', v:calcs.map(cc=>cc.tot.Ingreso-cc.tot.Costo), op:[[iIng,1],[iCos,-1]] }));
+      iBru = eri.length-1;
+      eri.push(mk({ k:'blank' }));
+    }
   }
   if(hayGasto){ iGas = seccion(eri, 'Gasto', 'GASTOS'); eri.push(mk({ k:'blank' })); }
   const op = [[iIng,1]]; if(iCos>=0) op.push([iCos,-1]); if(iGas>=0) op.push([iGas,-1]);
