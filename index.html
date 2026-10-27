@@ -11709,7 +11709,7 @@ function efConstruirArbol(plan){
   // corriente efectiva (propia o heredada del ancestro estructural) — solo para ordenar
   nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.corr = ''; while(j>=0 && g++<50){ const v = nodes[j].c.corriente; if(v==='Sí' || v==='No'){ nd.corr = v; break; } j = nodes[j].parent; } });
   // cuenta excluida de los estados (marca propia o heredada de un ancestro estructural)
-  nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.excl = false; while(j>=0 && g++<50){ if(nodes[j].c.excluir){ nd.excl = true; break; } j = nodes[j].parent; } });
+  nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.excl = false; while(j>=0 && g++<50){ if(nodes[j].c.excluir || (!String(nodes[j].c.codigo||'').trim() && /^\s*total\b/i.test(nodes[j].c.nombre||''))){ nd.excl = true; break; } j = nodes[j].parent; } });
   nodes.forEach(nd=>{ nd.allKids = efOrdenarNodos(nodes, nd.allKids); nd.kids = efOrdenarNodos(nodes, nd.kids); });
   // profundidades (el padre siempre es más corto → no hay ciclos)
   const dep = i => { const nd=nodes[i]; if(nd._dep!==undefined) return nd._dep; nd._dep = nd.parent<0 ? 0 : dep(nd.parent)+1; return nd._dep; };
@@ -11871,8 +11871,12 @@ function efInferirPlan(raw, cfg){
   const avisos = { duplicados:[], nombresVacios:0, huerfanas:[], sinTipo:[], omitidas:0 };
   let filas = [];
   const vistos = new Set();
+  const hayCodigos = raw.some(r=>String(r.codigo||'').trim());
   raw.forEach(r=>{
+    r.nombre = String(r.nombre||'').replace(/^[\s.·_\-]+/,'').trim(); // "......VENTA DE BIENES" → "VENTA DE BIENES"
     const k = String(r.codigo||'').trim().toLowerCase();
+    // filas sin código en un plan con códigos = títulos de banda o subtotales ("Total ...", "INGRESOS"): no son cuentas
+    if(hayCodigos && !k){ avisos.omitidas++; avisos.sinCodigo=(avisos.sinCodigo||0)+1; return; }
     if(!String(r.nombre||'').trim()) avisos.nombresVacios++;
     if(k && vistos.has(k)){
       avisos.duplicados.push(r.codigo);
@@ -13280,6 +13284,8 @@ function efTablaEstadoHTML(filas, labels, o){
     if(f.k==='totalB'){ cuerpo += '</tbody>'; abierto = false; }
   });
   if(abierto) cuerpo += '</tbody>';
+  // PDF: un solo cuerpo de tabla (sin grupos tbody anidados) → paginación estable en tablas largas
+  if(o.plano) cuerpo = '<tbody>'+cuerpo.replace(/<\/?tbody[^>]*>/g,'')+'</tbody>';
   return `<table class="efEst">${th}${cuerpo}</table>`;
 }
 
@@ -14309,8 +14315,8 @@ function efConstruirHtmlPDF(opc){
     </section>`;
   const vertE = act.totActivo!==0 ? { pos:L, base:act.totActivo, titulo:'% s/ Activo' } : null;
   const vertR = act.totIngreso!==0 ? { pos:L, base:act.totIngreso, titulo:'% s/ Ingresos' } : null;
-  const tablaE = efTablaEstadoHTML(m.esf, m.labels, { conCodigo, variacion:vr, vertical: opc.vertical ? vertE : null });
-  const tablaR = efTablaEstadoHTML(m.eri, m.labels, { conCodigo, variacion:vr, vertical: opc.vertical ? vertR : null });
+  const tablaE = efTablaEstadoHTML(m.esf, m.labels, { conCodigo, variacion:vr, plano:true, vertical: opc.vertical ? vertE : null });
+  const tablaR = efTablaEstadoHTML(m.eri, m.labels, { conCodigo, variacion:vr, plano:true, vertical: opc.vertical ? vertR : null });
   const css = `
     @page { size: A4 ${land?'landscape':'portrait'}; margin: 20mm 14mm 18mm 14mm;
       @top-left { content: "${efCssStr(emp.nombre)}"; font: bold 8.5px Arial, Helvetica, sans-serif; color:#1f3a5f; }
@@ -14364,10 +14370,9 @@ function efConstruirHtmlPDF(opc){
     table.efEst td.num.neg{ color:#b3382c; }
     table.efEst td.pct{ color:#5f6b7a; font-size:9px; }
     table.efEst td.cod{ color:#7a8696; font-size:8.5px; white-space:nowrap; width:${land?'80':'66'}px; }
-    tbody.grp{ break-inside:avoid; } tr{ break-inside:avoid; }
-    table.efEst .r-seccion td{ background:#1f3a5f; color:#fff; font-weight:700; font-size:10px; letter-spacing:1.6px; padding:4.5px 8px; border:0; break-after:avoid; }
-    tbody.sec{ break-after:avoid; }
-    table.efEst .r-grupoB td{ font-weight:700; color:#1f3a5f; background:#eef2f7; border-left:3px solid #c08a3e; padding-top:3.5px; padding-bottom:3.5px; break-after:avoid; border-bottom:0; }
+    tr{ break-inside:avoid; page-break-inside:avoid; }
+    table.efEst .r-seccion td{ background:#1f3a5f; color:#fff; font-weight:700; font-size:10px; letter-spacing:1.6px; padding:4.5px 8px; border:0; }
+    table.efEst .r-grupoB td{ font-weight:700; color:#1f3a5f; background:#eef2f7; border-left:3px solid #c08a3e; padding-top:3.5px; padding-bottom:3.5px; border-bottom:0; }
     table.efEst .r-totalB td{ font-weight:700; border-top:1px solid #1f3a5f; border-bottom:0; background:#f6f8fb; }
     table.efEst .r-grupoA.conhijos td, table.efEst .r-grupoH td{ font-weight:700; }
     table.efEst .r-grupoH td{ border-bottom:0; padding-top:3px; }
