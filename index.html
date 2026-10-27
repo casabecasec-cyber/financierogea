@@ -12996,20 +12996,20 @@ function efPintarValoresEstado(){
     const nd = nodes[i], c = nd.c, esGrupo = nd.allKids.length>0;
     const sangria = 8 + nd.dpt*16;
     if(esGrupo){
-      return `<tr class="efGrupoFila"><td class="mono">${escapeHtml(c.codigo||'-')}</td><td style="padding-left:${sangria}px"><b>${escapeHtml(c.nombre||'-')}</b> <span class="efMarcaG" data-gm="${i}"></span></td><td>${escapeHtml(c.tipo||'-')}</td>
-        <td class="num efGval" data-g="${i}"></td></tr>`;
+      return `<tr class="efGrupoFila"><td class="mono">${escapeHtml(c.codigo||'-')}</td><td style="padding-left:${sangria}px"><input class="efIn" data-i="${i}" value="${escapeHtml(c.nombre||'')}" oninput="efEditarCampo(this,'nombre')" title="Editar el nombre de la cuenta" style="width:calc(100% - 64px);min-width:180px;font-weight:700"> <span class="efMarcaG" data-gm="${i}"></span></td><td>${escapeHtml(c.tipo||'-')}</td>
+        <td class="num efGval" data-g="${i}"></td><td class="efAccion"><button class="btn small danger" title="Eliminar la cuenta y sus subcuentas" onclick="efEliminarCuenta(${i})">✕</button></td></tr>`;
     }
     const v = est.valores[efIdDe(c)];
-    return `<tr><td class="mono">${escapeHtml(c.codigo||'-')}</td><td style="padding-left:${sangria}px">${escapeHtml(c.nombre||'-')}${c.contra?' <span class="mut" title="Cuenta contra: se resta">(−)</span>':''}</td><td>${escapeHtml(c.tipo||'-')}</td>
-      <td><input type="number" step="0.01" data-i="${i}" value="${v!=null && v!==0 ? v : (v===0?'0':'')}" oninput="efEditarValor(this)" style="width:130px;text-align:right"></td></tr>`;
+    return `<tr><td class="mono">${escapeHtml(c.codigo||'-')}</td><td style="padding-left:${sangria}px"><input class="efIn" data-i="${i}" value="${escapeHtml(c.nombre||'')}" oninput="efEditarCampo(this,'nombre')" title="Editar el nombre de la cuenta" style="width:calc(100% - 28px);min-width:180px">${c.contra?' <span class="mut" title="Cuenta contra">(−)</span>':''}</td><td>${escapeHtml(c.tipo||'-')}</td>
+      <td><input type="number" step="0.01" data-i="${i}" value="${v!=null && v!==0 ? v : (v===0?'0':'')}" oninput="efEditarValor(this)" style="width:130px;text-align:right"></td><td class="efAccion"><button class="btn small danger" title="Eliminar la cuenta y su valor" onclick="efEliminarCuenta(${i})">✕</button></td></tr>`;
   }).join('');
   const hu = efValoresHuerfanos(est);
   cont.innerHTML = `
     <div class="field"><label>Etiqueta del periodo</label><input value="${escapeHtml(est.label||'')}" oninput="efEstados[efEstadoActivo].label=this.value; efPintarEstadoTabs(); efProgramarAutoguardado()"></div>
     <div id="efResumenValores" class="efResumenValores"></div>
     <div class="efFiltros"><input type="search" placeholder="🔎 Buscar cuenta…" value="${escapeHtml(efFiltroValores)}" oninput="efFiltroValores=this.value; efProgramarRepintadoValores()" style="min-width:220px;">
-      <span class="mut" style="font-size:12px;">Las cuentas de <b>grupo</b> (en negrita) se calculan solas con la suma de sus subcuentas; digite solo en las cuentas de detalle.</span></div>
-    <div class="efTablaScroll"><table class="efTabla"><thead><tr><th>Código</th><th>Cuenta</th><th>Tipo</th><th class="num">Valor (USD)</th></tr></thead><tbody>${html}</tbody></table></div>
+      <span class="mut" style="font-size:12px;">Las cuentas de <b>grupo</b> (en negrita) se calculan solas con la suma de sus subcuentas; digite solo en las cuentas de detalle. Puede <b>editar el nombre</b> de cualquier cuenta directamente en la tabla o eliminarla con ✕.</span></div>
+    <div class="efTablaScroll"><table class="efTabla"><thead><tr><th>Código</th><th>Cuenta</th><th>Tipo</th><th class="num">Valor (USD)</th><th></th></tr></thead><tbody>${html}</tbody></table></div>
     ${filas.length>LIM?`<p class="helpNote">Se muestran las primeras ${LIM} filas; use el buscador.</p>`:''}
     ${hu.length?`<p class="helpNote" style="color:#a15c00;">⚠ Este periodo tiene ${hu.length} valor(es) guardado(s) de cuentas que ya no existen en el plan. <a href="javascript:void(0)" onclick="efLimpiarHuerfanos()">Limpiar valores huérfanos</a></p>`:''}
     <div class="doc-btn-row" style="margin-top:10px;">
