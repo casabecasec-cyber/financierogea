@@ -11630,6 +11630,46 @@ function efPrefijoSegmentos(cod, k){
   const t = String(cod).split(/([.\-_\/\s]+)/);
   return t.slice(0, 2*k-1).join('');
 }
+/* ---------- orden canónico ----------
+   Tipo (Activo → Pasivo → Patrimonio → Ingreso → Costo → Gasto), luego orden
+   jerárquico por código (segmentos numéricos: 1.2 < 1.10; 101 < 10101 < 10102 < 102),
+   hijas inmediatamente después de su cuenta de grupo (recorrido en profundidad),
+   corriente antes que no corriente (solo Activo/Pasivo, cuando la marca es «No»),
+   y las cuentas sin código al final de su tipo en su orden original. */
+const EF_ORDEN_TIPOS = ['Activo','Pasivo','Patrimonio','Ingreso','Costo','Gasto'];
+function efRangoTipo(t){ const k = EF_ORDEN_TIPOS.indexOf(t); return k<0 ? 9 : k; }
+function efCmpCodigo(a, b){
+  a = String(a||'').trim().toLowerCase(); b = String(b||'').trim().toLowerCase();
+  if(a===b) return 0;
+  const sa = a.split(/[.\-_\/\s]+/).filter(Boolean), sb = b.split(/[.\-_\/\s]+/).filter(Boolean);
+  if(sa.length<=1 && sb.length<=1){ return a<b ? -1 : 1; }
+  const n = Math.min(sa.length, sb.length);
+  for(let k=0;k<n;k++){
+    const x = sa[k], y = sb[k];
+    if(x===y) continue;
+    if(/^\d+$/.test(x) && /^\d+$/.test(y)){
+      const xs = x.replace(/^0+(?=\d)/,''), ys = y.replace(/^0+(?=\d)/,'');
+      if(xs.length!==ys.length) return xs.length<ys.length ? -1 : 1;
+      if(xs!==ys) return xs<ys ? -1 : 1;
+      continue;
+    }
+    return x<y ? -1 : 1;
+  }
+  if(sa.length!==sb.length) return sa.length<sb.length ? -1 : 1;
+  return a<b ? -1 : (a>b ? 1 : 0);
+}
+function efOrdenarNodos(nodes, lista){
+  const rk = nd => (nd.c.tipo==='Activo'||nd.c.tipo==='Pasivo') && nd.corr==='No' ? 1 : 0;
+  return lista.slice().sort((p,q)=>{
+    const a = nodes[p], b = nodes[q];
+    let d = efRangoTipo(a.c.tipo) - efRangoTipo(b.c.tipo); if(d) return d;
+    if(efRangoTipo(a.c.tipo)===9 && a.c.tipo!==b.c.tipo) return String(a.c.tipo)<String(b.c.tipo) ? -1 : 1;
+    d = rk(a) - rk(b); if(d) return d;
+    if(!a.cod !== !b.cod) return a.cod ? -1 : 1;
+    if(a.cod){ d = efCmpCodigo(a.cod, b.cod); if(d) return d; }
+    return p - q;
+  });
+}
 function efConstruirArbol(plan){
   plan = plan || efPlanCuentas;
   const nodes = plan.map((c,i)=>({ i, c, id:efIdDe(c), cod:efCodigoTxt(c).replace(/[.\-_\/\s]+$/,''), compact:'', parent:-1, pt:-1, kids:[], allKids:[], dep:0, dpt:0, huerfana:false }));
@@ -11666,15 +11706,30 @@ function efConstruirArbol(plan){
       if(nodes[nd.parent].c.tipo === nd.c.tipo){ nd.pt = nd.parent; nodes[nd.parent].kids.push(nd.i); }
     }
   });
+  // corriente efectiva (propia o heredada del ancestro estructural) — solo para ordenar
+  nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.corr = ''; while(j>=0 && g++<50){ const v = nodes[j].c.corriente; if(v==='Sí' || v==='No'){ nd.corr = v; break; } j = nodes[j].parent; } });
+  nodes.forEach(nd=>{ nd.allKids = efOrdenarNodos(nodes, nd.allKids); nd.kids = efOrdenarNodos(nodes, nd.kids); });
   // profundidades (el padre siempre es más corto → no hay ciclos)
   const dep = i => { const nd=nodes[i]; if(nd._dep!==undefined) return nd._dep; nd._dep = nd.parent<0 ? 0 : dep(nd.parent)+1; return nd._dep; };
   const dpt = i => { const nd=nodes[i]; if(nd._dpt!==undefined) return nd._dpt; nd._dpt = nd.pt<0 ? 0 : dpt(nd.pt)+1; return nd._dpt; };
   nodes.forEach(nd=>{ nd.dep = dep(nd.i); nd.dpt = dpt(nd.i); });
-  // orden DFS por padre estructural (para la tabla del plan)
+  // orden canónico: tipo → recorrido en profundidad por padre del mismo tipo (pt)
   const orden = [];
-  const visitar = i => { orden.push(i); nodes[i].allKids.forEach(visitar); };
-  nodes.filter(nd=>nd.parent<0).forEach(nd=>visitar(nd.i));
-  return { nodes, orden, raices:nodes.filter(nd=>nd.parent<0).map(nd=>nd.i) };
+  const visitar = i => { orden.push(i); nodes[i].kids.forEach(visitar); };
+  const raicesT = efOrdenarNodos(nodes, nodes.filter(nd=>nd.pt<0).map(nd=>nd.i));
+  raicesT.forEach(visitar);
+  return { nodes, orden, raices:efOrdenarNodos(nodes, nodes.filter(nd=>nd.parent<0).map(nd=>nd.i)), raicesT };
+}
+/* Reordena el plan guardado (en el mismo arreglo, para no perder la referencia de la caché).
+   Los valores van por id de cuenta, así que ningún monto cambia. Devuelve true si algo se movió. */
+function efReordenarPlan(){
+  if(!efPlanCuentas.length) return false;
+  const arbol = efConstruirArbol();
+  const nuevo = arbol.orden.map(i=>efPlanCuentas[i]);
+  let cambio = false;
+  for(let k=0;k<nuevo.length;k++) if(nuevo[k]!==efPlanCuentas[k]){ cambio = true; break; }
+  if(cambio) efPlanCuentas.splice(0, efPlanCuentas.length, ...nuevo);
+  return cambio;
 }
 function efDescendientes(arbol, i){
   const out = []; const rec = j => arbol.nodes[j].allKids.forEach(k=>{ out.push(k); rec(k); });
@@ -11900,7 +11955,7 @@ function efInferirPlan(raw, cfg){
     return o;
   });
   // orden DFS (hijos después del padre, hermanos en orden del archivo)
-  const orden = arbol.orden.slice();
+  const orden = efConstruirArbol(cuentas).orden.slice(); // orden canónico con los tipos ya resueltos
   arbol.nodes.forEach(nd=>{ if(nd.huerfana) avisos.huerfanas.push(nd.cod); });
   for(let i=0;i<n;i++){
     const nd = arbol.nodes[i];
@@ -12548,6 +12603,7 @@ async function pintarEstadosFinancieros(){
     efPresentacion = datos.presentacion || {};
     efEmpresaCargada = emp;
     efNormalizarIds();
+    efReordenarPlan();
     efSyncCache();
   }
   if(efPresentacion.nivelDetalle && ['resumido','intermedio','completo'].includes(efPresentacion.nivelDetalle)) efNivelDetalle = efPresentacion.nivelDetalle;
@@ -12574,7 +12630,7 @@ async function pintarEstadosFinancieros(){
       <div class="efFiltros">
         <input type="search" placeholder="🔎 Buscar cuenta por código o nombre…" value="${escapeHtml(efFiltroPlan)}" oninput="efFiltroPlan=this.value; efProgramarRepintadoPlan()" style="min-width:220px;">
         <select onchange="efFiltroTipo=this.value; efPintarTablaPlan()"><option value="">Todos los tipos</option>${EF_TIPOS.map(t=>`<option ${efFiltroTipo===t?'selected':''}>${t}</option>`).join('')}</select>
-        <button class="btn small" onclick="efPlegarTodo(true)">Plegar grupos</button><button class="btn small" onclick="efPlegarTodo(false)">Expandir todo</button>
+        <button class="btn small" onclick="efReordenarManual()" title="Ordena el plan: Activo, Pasivo, Patrimonio, Ingresos, Costos y Gastos, y por código dentro de cada tipo. No cambia ningún valor.">↕ Reordenar plan</button><button class="btn small" onclick="efPlegarTodo(true)">Plegar grupos</button><button class="btn small" onclick="efPlegarTodo(false)">Expandir todo</button>
       </div>
       <div id="efTablaPlan" class="efTablaScroll"></div>
     </div>
@@ -12639,6 +12695,11 @@ function efPintarBannerPlan(){
 /* ---------- tabla del plan (jerárquica) ---------- */
 let efRepintadoTimer = null;
 function efProgramarRepintadoPlan(){ clearTimeout(efRepintadoTimer); efRepintadoTimer = setTimeout(efPintarTablaPlan, 200); }
+function efReordenarManual(){
+  const mov = efReordenarPlan();
+  efPlanCambio();
+  toast(mov ? 'Plan reordenado: Activo, Pasivo, Patrimonio, Ingresos, Costos y Gastos ✓ (los valores no cambian)' : 'El plan ya estaba en el orden correcto', mov?'success':'info');
+}
 function efPlegarTodo(plegar){
   efColapsados = {};
   if(plegar){ const arbol = efConstruirArbol(); arbol.nodes.forEach(nd=>{ if(nd.allKids.length) efColapsados[nd.id] = true; }); }
@@ -12665,14 +12726,14 @@ function efPintarTablaPlan(){
     nodes.forEach(nd=>{
       const okTxt = !f || efNorm(nd.cod+' '+(nd.c.nombre||'')).includes(f);
       const okTipo = !efFiltroTipo || nd.c.tipo===efFiltroTipo;
-      if(okTxt && okTipo){ let j = nd.i, g = 0; while(j>=0 && g++<50){ visibles.add(j); j = nodes[j].parent; } }
+      if(okTxt && okTipo){ let j = nd.i, g = 0; while(j>=0 && g++<50){ visibles.add(j); j = nodes[j].pt; } }
     });
   }
   const ocultos = new Set();
   const filas = [];
   arbol.orden.forEach(i=>{
     const nd = nodes[i];
-    if(nd.parent>=0 && (ocultos.has(nd.parent) || efColapsados[nodes[nd.parent].id])) ocultos.add(i);
+    if(nd.pt>=0 && (ocultos.has(nd.pt) || efColapsados[nodes[nd.pt].id])) ocultos.add(i);
     if(filtrando){ if(!visibles.has(i)) return; }
     else if(ocultos.has(i)) return;
     filas.push(i);
@@ -12684,7 +12745,7 @@ function efPintarTablaPlan(){
     const tenue = filtrando && !((!f || efNorm(nd.cod+' '+(c.nombre||'')).includes(f)) && (!efFiltroTipo || c.tipo===efFiltroTipo));
     const plegado = !!efColapsados[nd.id];
     return `<tr class="${esGrupo?'efGrupoFila':''} ${tenue?'efTenue':''}${nd.huerfana?' efHuerfana':''}">
-      <td style="white-space:nowrap;padding-left:${6+nd.dep*16}px">${esGrupo?`<a class="efToggle" href="javascript:void(0)" onclick="efTogglePlan(${i})" title="${plegado?'Expandir':'Plegar'}">${plegado?'▸':'▾'}</a>`:'<span class="efToggle"> </span>'}<input class="efIn efCod" data-i="${i}" value="${escapeHtml(c.codigo||'')}" onchange="efEditarCodigo(this)" style="width:108px"></td>
+      <td style="white-space:nowrap;padding-left:${6+nd.dpt*16}px">${esGrupo?`<a class="efToggle" href="javascript:void(0)" onclick="efTogglePlan(${i})" title="${plegado?'Expandir':'Plegar'}">${plegado?'▸':'▾'}</a>`:'<span class="efToggle"> </span>'}<input class="efIn efCod" data-i="${i}" value="${escapeHtml(c.codigo||'')}" onchange="efEditarCodigo(this)" style="width:108px"></td>
       <td><input class="efIn" data-i="${i}" value="${escapeHtml(c.nombre||'')}" oninput="efEditarCampo(this,'nombre')" style="width:100%;min-width:200px;${esGrupo?'font-weight:700':''}"></td>
       <td><select class="efIn" data-i="${i}" onchange="efCambiarTipoCuenta(this)">${EF_TIPOS.map(t=>`<option ${c.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
       <td><select class="efIn" data-i="${i}" onchange="efEditarCampo(this,'corriente')"><option value="" ${!c.corriente?'selected':''}>N/A</option><option ${c.corriente==='Sí'?'selected':''}>Sí</option><option ${c.corriente==='No'?'selected':''}>No</option></select></td>
@@ -12699,9 +12760,10 @@ function efPintarTablaPlan(){
 function efEditarCampo(el, campo){
   const i = parseInt(el.dataset.i,10); const c = efPlanCuentas[i]; if(!c) return;
   c[campo] = el.value;
+  if(campo==='corriente'){ efPlanCambio(); return; }
   efSyncCache();
   efProgramarAutoguardado();
-  if(campo==='nombre' || campo==='corriente') efProgramarRefresco();
+  if(campo==='nombre') efProgramarRefresco();
 }
 function efToggleContra(el){
   const i = parseInt(el.dataset.i,10); const c = efPlanCuentas[i]; if(!c) return;
@@ -12766,7 +12828,7 @@ function efAgregarCuenta(){
   efPlanCuentas.push({ codigo:'', nombre:'', tipo:'Activo', corriente:'', nivel:1 });
   if(!efPlanOrigen || efPlanOrigen==='niif' || efPlanOrigen==='supercias') efPlanOrigen = 'manual';
   efPlanCambio();
-  setTimeout(()=>{ const ins = document.querySelectorAll('#efTablaPlan input.efCod'); const u = ins[ins.length-1]; if(u){ u.focus(); u.scrollIntoView({block:'center'}); } }, 30);
+  setTimeout(()=>{ const ins = [...document.querySelectorAll('#efTablaPlan input.efCod')]; const u = ins.find(x=>!x.value) || ins[ins.length-1]; if(u){ u.focus(); u.scrollIntoView({block:'center'}); } }, 30);
 }
 function efEliminarCuenta(i){
   const c = efPlanCuentas[i]; if(!c) return;
@@ -12794,6 +12856,7 @@ function efLimpiarHuerfanos(){
 function efPlanCambio(opt){
   opt = opt || {};
   efNormalizarIds();
+  efReordenarPlan();
   efRecalcularNiveles();
   efSyncCache();
   if(opt.sinTabla) efPintarBannerPlan(); else efPintarTablaPlan();
@@ -12922,13 +12985,13 @@ function efPintarValoresEstado(){
   let visibles = null;
   if(f){
     visibles = new Set();
-    nodes.forEach(nd=>{ if(efNorm(nd.cod+' '+(nd.c.nombre||'')).includes(f)){ let j = nd.i, g = 0; while(j>=0 && g++<50){ visibles.add(j); j = nodes[j].parent; } } });
+    nodes.forEach(nd=>{ if(efNorm(nd.cod+' '+(nd.c.nombre||'')).includes(f)){ let j = nd.i, g = 0; while(j>=0 && g++<50){ visibles.add(j); j = nodes[j].pt; } } });
   }
   const filas = arbol.orden.filter(i=>!visibles || visibles.has(i));
   const LIM = 1200;
   const html = filas.slice(0, LIM).map(i=>{
     const nd = nodes[i], c = nd.c, esGrupo = nd.allKids.length>0;
-    const sangria = 8 + nd.dep*16;
+    const sangria = 8 + nd.dpt*16;
     if(esGrupo){
       return `<tr class="efGrupoFila"><td class="mono">${escapeHtml(c.codigo||'-')}</td><td style="padding-left:${sangria}px"><b>${escapeHtml(c.nombre||'-')}</b> <span class="efMarcaG" data-gm="${i}"></span></td><td>${escapeHtml(c.tipo||'-')}</td>
         <td class="num efGval" data-g="${i}"></td></tr>`;
@@ -13060,7 +13123,7 @@ function efModeloEstados(idxs, nivel){
   }
 
   function seccion(rows, tipo, titulo, extra){
-    const roots = nodes.filter(nd=>nd.pt<0 && nd.c.tipo===tipo).map(nd=>nd.i);
+    const roots = arbol.raicesT.filter(i=>nodes[i].c.tipo===tipo);
     rows.push(mk({ k:'seccion', nom:titulo }));
     let tops = [], filasTop = [];
     if(roots.length===1 && nodes[roots[0]].kids.length){
