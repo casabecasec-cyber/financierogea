@@ -359,7 +359,7 @@ table.efEst td.cod{color:var(--muted);font-size:11.5px;white-space:nowrap;width:
 table.efEst .r-seccion td{background:rgba(120,140,160,.22);font-weight:700;letter-spacing:.3px;}
 table.efEst .r-grupoB td{font-weight:700;color:var(--accent);}
 table.efEst .r-totalB td{font-weight:700;background:rgba(120,140,160,.08);}
-table.efEst .r-grupoA.conhijos td{font-weight:700;}
+table.efEst .r-grupoA.conhijos td,table.efEst .r-grupoH td{font-weight:700;} table.efEst .r-totalA td{font-weight:700;border-top:1px solid var(--border);background:rgba(120,140,160,.07);}
 table.efEst .r-total td,table.efEst .r-calc td{font-weight:700;background:rgba(120,140,160,.14);}
 table.efEst .r-granTotal td{font-weight:800;background:rgba(59,167,255,.14);border-bottom:3px double var(--accent);}
 table.efEst .r-check td{font-size:11.5px;font-style:italic;color:var(--muted);} table.efEst .r-check.ok td{color:var(--accent2);} table.efEst .r-check.mal td{color:var(--danger);font-weight:700;}
@@ -13116,6 +13116,15 @@ function efModeloEstados(idxs, nivel){
       return rows.length-1;
     }
     const idx = rows.length;
+    if(kidsVisible){
+      // grupo con detalle visible: encabezado sin importe, detalle y línea «Total …» con la sumatoria
+      rows.push(mk({ k:'grupoH', cod:c.codigo||'', nom:c.nombre||'', nivel:d, lvl:L, oculto, i }));
+      const refs = [];
+      if(tienePropio){ rows.push(filaPropio()); refs.push(rows.length-1); }
+      nd.kids.forEach(k=>refs.push(emitirNodo(rows, k, d+1)));
+      rows.push(mk({ k:'totalA', nom:'Total '+(c.nombre||''), v:vals, refs, nivel:d, lvl:L, oculto, i, constante:!!c.contra }));
+      return rows.length-1;
+    }
     rows.push(mk({ k:'grupoA', cod:c.codigo||'', nom:c.nombre||'', v:vals, refs:[], nivel:d, lvl:L, oculto, i, constante:!!c.contra }));
     if(tienePropio){ rows.push(filaPropio()); rows[idx].refs.push(rows.length-1); }
     nd.kids.forEach(k=>rows[idx].refs.push(emitirNodo(rows, k, d+1)));
@@ -13614,7 +13623,7 @@ function efEscribirEstadoExcel(ws, filas, o){
     if(f.k==='blank'){ row.height = 7; return; }
     const esNeg = false; void esNeg;
     const nivelTxt = Math.min(f.nivel+1, 10);
-    let estNom = { v:f.nom, h:'left', indent:(f.k==='cuenta'||f.k==='grupoA')?nivelTxt:0, wrap:false };
+    let estNom = { v:f.nom, h:'left', indent:(f.k==='cuenta'||f.k==='grupoA'||f.k==='grupoH'||f.k==='totalA')?nivelTxt:0, wrap:false };
     let estCod = { v:f.cod||'', color:ABX.muted, sz:9, h:'left' };
     let estNum = { fmt:ABX.fmtNum, h:'right' };
     let colorFondo = null;
@@ -13626,6 +13635,11 @@ function efEscribirEstadoExcel(ws, filas, o){
       case 'grupoB':
         colorFondo = ABX.gris; row.height = 18;
         estNom = Object.assign(estNom, { b:true, color:ABX.navy, indent:0, fill:colorFondo }); estCod = Object.assign(estCod, { b:true, fill:colorFondo }); estNum = Object.assign(estNum, { fill:colorFondo }); break;
+      case 'grupoH':
+        estNom = Object.assign(estNom, { b:true, color:ABX.navy }); estCod = Object.assign(estCod, { b:true }); break;
+      case 'totalA': {
+        const tp = { style:'thin', color:{ argb:ABX.borde } };
+        estNom = Object.assign(estNom, { b:true, top:tp, fill:ABX.gris }); estNum = Object.assign(estNum, { b:true, top:tp, fill:ABX.gris }); estCod = Object.assign(estCod, { top:tp, fill:ABX.gris }); colorFondo = ABX.gris; break; }
       case 'totalB':
         estNom = Object.assign(estNom, { b:true, indent:0, top:true }); estNum = Object.assign(estNum, { b:true, top:true }); estCod.top = true; break;
       case 'grupoA': {
@@ -13651,11 +13665,12 @@ function efEscribirEstadoExcel(ws, filas, o){
     for(let p=0;p<P;p++){
       let est = Object.assign({}, estNum);
       const col = C0+p;
-      if(f.k==='seccion' || f.k==='grupoB'){ abxCelda(ws, n, col, est); continue; }
+      if(f.k==='seccion' || f.k==='grupoB' || f.k==='grupoH'){ abxCelda(ws, n, col, est); continue; }
       const val = efRedondear(f.v ? f.v[p] : 0);
       let formula = null;
       if(f.enlace==='utilidad' && o.utilRef) formula = `'${o.utilRef.hoja}'!${L(C0+p)}${o.utilRef.fila}`;
       else if((f.k==='totalB' || f.k==='total') && f.refs) formula = sumaDe(f.refs, p);
+      else if(f.k==='totalA' && f.refs && f.refs.length && !f.constante) formula = sumaDe(f.refs, p);
       else if(f.k==='grupoA' && f.refs && f.refs.length && !f.constante) formula = sumaDe(f.refs, p);
       else if(f.k==='granTotal' && f.refs) formula = f.refs.map(ri=>celdaRef(ri,p)).join('+');
       else if((f.k==='granTotal' || f.k==='calc') && f.op) formula = f.op.map(([ri,s],k)=>`${s<0?'-':(k?'+':'')}${celdaRef(ri,p)}`).join('');
@@ -13683,7 +13698,7 @@ function efEscribirEstadoExcel(ws, filas, o){
       } else abxCelda(ws, n, cV, Object.assign({}, estNum, colorFondo?{fill:colorFondo}:{}));
     }
     // esquema de niveles (detalle plegable) y filas ocultas según el nivel de detalle
-    if(f.lvl>2 && (f.k==='cuenta'||f.k==='grupoA')){ row.outlineLevel = Math.min(f.lvl-2, 7); maxLv = Math.max(maxLv, row.outlineLevel); }
+    if(f.lvl>2 && (f.k==='cuenta'||f.k==='grupoA'||f.k==='grupoH'||f.k==='totalA')){ row.outlineLevel = Math.min(f.lvl-2, 7); maxLv = Math.max(maxLv, row.outlineLevel); }
     if(f.oculto) row.hidden = true;
   });
   // ExcelJS marca como «collapsed» toda fila con nivel >= outlineLevelRow; se fija al nivel máximo usado
@@ -14318,7 +14333,9 @@ function efConstruirHtmlPDF(opc){
     tbody.sec{ break-after:avoid; }
     table.efEst .r-grupoB td{ font-weight:700; color:#1f3a5f; background:#eef2f7; border-left:3px solid #c08a3e; padding-top:3.5px; padding-bottom:3.5px; break-after:avoid; border-bottom:0; }
     table.efEst .r-totalB td{ font-weight:700; border-top:1px solid #1f3a5f; border-bottom:0; background:#f6f8fb; }
-    table.efEst .r-grupoA.conhijos td{ font-weight:700; }
+    table.efEst .r-grupoA.conhijos td, table.efEst .r-grupoH td{ font-weight:700; }
+    table.efEst .r-grupoH td{ border-bottom:0; padding-top:3px; }
+    table.efEst .r-totalA td{ font-weight:700; border-top:1px solid #8a96a6; border-bottom:1px solid #8a96a6; background:#f6f8fb; }
     table.efEst .r-total td{ font-weight:700; background:#e3e9f1; border-top:1.5px solid #1f3a5f; border-bottom:1px solid #1f3a5f; color:#1f3a5f; }
     table.efEst .r-calc td{ font-weight:700; border-top:1px solid #1f3a5f; background:#f6f8fb; }
     table.efEst .r-granTotal td{ font-weight:700; background:#1f3a5f; color:#fff; border:0; font-size:10.5px; padding-top:5px; padding-bottom:5px; }
