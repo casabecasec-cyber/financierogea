@@ -11757,10 +11757,13 @@ function efCorrienteEfectiva(arbol, i){
    subcuentas están en cero/vacías, se usa su valor propio (propio[i]=true,
    se avisa con ⚠). Si además hay valores en las subcuentas, el propio se
    ignora (ignorado[i]=true) → nunca hay doble conteo. */
+/* La marca «contra» fuerza el signo negativo solo en los planes predefinidos (NIIF / Supercías).
+   En los planes propios o manuales se respeta siempre el signo que digita el usuario. */
+function efContraAplica(){ return efPlanOrigen==='niif' || efPlanOrigen==='supercias'; }
 function efValorCuenta(c, valores){
   const v = Number((valores||{})[efIdDe(c)]);
   const n = isFinite(v) ? v : 0;
-  return c.contra ? -Math.abs(n) : n;
+  return (c.contra && efContraAplica()) ? -Math.abs(n) : n;
 }
 function efCalcularArbol(valores, arbol){
   arbol = arbol || efConstruirArbol();
@@ -11778,7 +11781,7 @@ function efCalcularArbol(valores, arbol){
     nd.kids.forEach(k=>{ s += calc(k); if(nz[k]) algunoNz = true; });
     s = Math.round(s*1e6)/1e6;
     if(!algunoNz && Math.abs(o)>=0.005){ val[i] = o; propio[i] = true; nz[i] = true; }
-    else { if(Math.abs(o)>=0.005) ignorado[i] = true; val[i] = c.contra ? -Math.abs(s) : s; nz[i] = algunoNz; }
+    else { if(Math.abs(o)>=0.005) ignorado[i] = true; val[i] = (c.contra && efContraAplica()) ? -Math.abs(s) : s; nz[i] = algunoNz; }
     return val[i];
   };
   for(let i=0;i<n;i++) calc(i);
@@ -12749,7 +12752,7 @@ function efPintarTablaPlan(){
       <td><input class="efIn" data-i="${i}" value="${escapeHtml(c.nombre||'')}" oninput="efEditarCampo(this,'nombre')" style="width:100%;min-width:200px;${esGrupo?'font-weight:700':''}"></td>
       <td><select class="efIn" data-i="${i}" onchange="efCambiarTipoCuenta(this)">${EF_TIPOS.map(t=>`<option ${c.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
       <td><select class="efIn" data-i="${i}" onchange="efEditarCampo(this,'corriente')"><option value="" ${!c.corriente?'selected':''}>N/A</option><option ${c.corriente==='Sí'?'selected':''}>Sí</option><option ${c.corriente==='No'?'selected':''}>No</option></select></td>
-      <td style="text-align:center"><input type="checkbox" data-i="${i}" ${c.contra?'checked':''} onchange="efToggleContra(this)" title="Cuenta de naturaleza contraria (se resta; ej. depreciación acumulada). Digite el valor en positivo."></td>
+      <td style="text-align:center"><input type="checkbox" data-i="${i}" ${c.contra?'checked':''} onchange="efToggleContra(this)" title="Cuenta de naturaleza contraria. En los planes predefinidos (NIIF/Supercías) se resta siempre (digite el valor en positivo). En un plan propio o manual se respeta el signo que usted digite."></td>
       <td class="mut" style="text-align:center">${nd.dep+1}</td>
       <td style="white-space:nowrap"><button class="btn small" title="Agregar subcuenta" onclick="efAgregarSubcuenta(${i})">+ sub</button> <button class="btn small danger" title="Eliminar${esGrupo?' (con sus subcuentas)':''}" onclick="efEliminarCuenta(${i})">✕</button></td>
     </tr>`;
@@ -13122,10 +13125,10 @@ function efModeloEstados(idxs, nivel){
       const refs = [];
       if(tienePropio){ rows.push(filaPropio()); refs.push(rows.length-1); }
       nd.kids.forEach(k=>refs.push(emitirNodo(rows, k, d+1)));
-      rows.push(mk({ k:'totalA', nom:'Total '+(c.nombre||''), v:vals, refs, nivel:d, lvl:L, oculto, i, constante:!!c.contra }));
+      rows.push(mk({ k:'totalA', nom:'Total '+(c.nombre||''), v:vals, refs, nivel:d, lvl:L, oculto, i, constante:!!(c.contra && efContraAplica()) }));
       return rows.length-1;
     }
-    rows.push(mk({ k:'grupoA', cod:c.codigo||'', nom:c.nombre||'', v:vals, refs:[], nivel:d, lvl:L, oculto, i, constante:!!c.contra }));
+    rows.push(mk({ k:'grupoA', cod:c.codigo||'', nom:c.nombre||'', v:vals, refs:[], nivel:d, lvl:L, oculto, i, constante:!!(c.contra && efContraAplica()) }));
     if(tienePropio){ rows.push(filaPropio()); rows[idx].refs.push(rows.length-1); }
     nd.kids.forEach(k=>rows[idx].refs.push(emitirNodo(rows, k, d+1)));
     return idx;
