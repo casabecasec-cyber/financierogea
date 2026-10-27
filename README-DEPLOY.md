@@ -2360,3 +2360,4 @@ editar; con cualquiera distinta de "Sin acceso" permite ver):
   con `pdf.js` directamente en el navegador (o se puede pegar manualmente), y solo ese texto
   se guarda en Realtime Database junto con el diagnóstico de la IA.
 - **28va iteración (importador de planes):** las filas sin código (títulos de banda como «INGRESOS» y subtotales «Total ......») ya no se importan como cuentas; se quitan los puntos iniciales de los nombres («......VENTA DE BIENES»). En planes ya guardados, una cuenta sin código cuyo nombre empieza con «Total» se trata como excluida. Esto elimina el «TOTAL ACTIVO» suelto y los ceros duplicados en el Estado de Resultados.
+- **29na iteración:** en los estados, toda cuenta SIN código (títulos de banda, subtotales «Total …», «TOTAL ACTIVO» importados desde un reporte de ERP) se excluye automáticamente, también en planes ya guardados; y se quitan los puntos iniciales de los nombres («......VENTAS»).

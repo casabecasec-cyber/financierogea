@@ -11709,7 +11709,7 @@ function efConstruirArbol(plan){
   // corriente efectiva (propia o heredada del ancestro estructural) — solo para ordenar
   nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.corr = ''; while(j>=0 && g++<50){ const v = nodes[j].c.corriente; if(v==='Sí' || v==='No'){ nd.corr = v; break; } j = nodes[j].parent; } });
   // cuenta excluida de los estados (marca propia o heredada de un ancestro estructural)
-  nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.excl = false; while(j>=0 && g++<50){ if(nodes[j].c.excluir || (!String(nodes[j].c.codigo||'').trim() && /^\s*total\b/i.test(nodes[j].c.nombre||''))){ nd.excl = true; break; } j = nodes[j].parent; } });
+  nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.excl = false; while(j>=0 && g++<50){ if(nodes[j].c.excluir || (!String(nodes[j].c.codigo||'').trim() && String(nodes[j].c.nombre||'').trim())){ nd.excl = true; break; } j = nodes[j].parent; } });
   nodes.forEach(nd=>{ nd.allKids = efOrdenarNodos(nodes, nd.allKids); nd.kids = efOrdenarNodos(nodes, nd.kids); });
   // profundidades (el padre siempre es más corto → no hay ciclos)
   const dep = i => { const nd=nodes[i]; if(nd._dep!==undefined) return nd._dep; nd._dep = nd.parent<0 ? 0 : dep(nd.parent)+1; return nd._dep; };
@@ -13114,7 +13114,8 @@ function efModeloEstados(idxs, nivel){
   const labels = idxs.map(ix=>String((efEstados[ix]||{}).label||('Periodo '+(ix+1))));
   const P = idxs.length;
   const cero = () => new Array(P).fill(0);
-  const mk = o => Object.assign({ k:'cuenta', cod:'', nom:'', v:null, refs:null, oculto:false, nivel:0, lvl:1 }, o);
+  const limpiaNom = t => String(t||'').replace(/^(total\s+)?[\s.·]+/i,'$1');   // «......VENTA» → «VENTA», «Total ...X» → «Total X»
+  const mk = o => { const r = Object.assign({ k:'cuenta', cod:'', nom:'', v:null, refs:null, oculto:false, nivel:0, lvl:1 }, o); r.nom = limpiaNom(r.nom); return r; };
 
   function emitirNodo(rows, i, d){
     const nd = nodes[i], c = nd.c, L = nd.dpt+1;
