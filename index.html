@@ -11708,6 +11708,8 @@ function efConstruirArbol(plan){
   });
   // corriente efectiva (propia o heredada del ancestro estructural) — solo para ordenar
   nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.corr = ''; while(j>=0 && g++<50){ const v = nodes[j].c.corriente; if(v==='Sí' || v==='No'){ nd.corr = v; break; } j = nodes[j].parent; } });
+  // cuenta excluida de los estados (marca propia o heredada de un ancestro estructural)
+  nodes.forEach(nd=>{ let j = nd.i, g = 0; nd.excl = false; while(j>=0 && g++<50){ if(nodes[j].c.excluir){ nd.excl = true; break; } j = nodes[j].parent; } });
   nodes.forEach(nd=>{ nd.allKids = efOrdenarNodos(nodes, nd.allKids); nd.kids = efOrdenarNodos(nodes, nd.kids); });
   // profundidades (el padre siempre es más corto → no hay ciclos)
   const dep = i => { const nd=nodes[i]; if(nd._dep!==undefined) return nd._dep; nd._dep = nd.parent<0 ? 0 : dep(nd.parent)+1; return nd._dep; };
@@ -11774,7 +11776,9 @@ function efCalcularArbol(valores, arbol){
   const calc = i => {
     if(hecho[i]) return val[i];
     hecho[i] = true;
-    const nd = nodes[i], c = nd.c, o = efValorCuenta(c, valores);
+    const nd = nodes[i], c = nd.c;
+    if(nd.excl){ val[i] = 0; return 0; }          // excluida de los estados
+    const o = efValorCuenta(c, valores);
     ownv[i] = o;
     if(!nd.kids.length){ val[i] = o; nz[i] = Math.abs(o)>=0.005; return o; }
     let s = 0, algunoNz = false;
@@ -11955,6 +11959,9 @@ function efInferirPlan(raw, cfg){
     const ctr = /^(si|sí|s|x|1|true|verdadero|contra|yes)$/.test(efNorm(filas[i].contraTxt||''));
     const o = { codigo:c.codigo, nombre:c.nombre, tipo:c.tipo, corriente:c.corriente, nivel:(isFinite(nv)&&nv>0)?nv:(arbol.nodes[i].dep+1) };
     if(ctr) o.contra = true;
+    // cuentas de orden / cierre (código 9x sin tipo conocido): fuera de los estados
+    const cod9 = /^9/.test(efCompacto(c.codigo)) && ['defecto','herencia'].includes((tipoMemo[i]||{}).origen);
+    if(cod9 || /cuentas?\s+de\s+orden/.test(efNorm(c.nombre))) o.excluir = true;
     return o;
   });
   // orden DFS (hijos después del padre, hermanos en orden del archivo)
@@ -12747,17 +12754,18 @@ function efPintarTablaPlan(){
     const nd = nodes[i], c = nd.c, esGrupo = nd.allKids.length>0;
     const tenue = filtrando && !((!f || efNorm(nd.cod+' '+(c.nombre||'')).includes(f)) && (!efFiltroTipo || c.tipo===efFiltroTipo));
     const plegado = !!efColapsados[nd.id];
-    return `<tr class="${esGrupo?'efGrupoFila':''} ${tenue?'efTenue':''}${nd.huerfana?' efHuerfana':''}">
+    return `<tr class="${esGrupo?'efGrupoFila':''} ${tenue||nd.excl?'efTenue':''}${nd.huerfana?' efHuerfana':''}">
       <td style="white-space:nowrap;padding-left:${6+nd.dpt*16}px">${esGrupo?`<a class="efToggle" href="javascript:void(0)" onclick="efTogglePlan(${i})" title="${plegado?'Expandir':'Plegar'}">${plegado?'▸':'▾'}</a>`:'<span class="efToggle"> </span>'}<input class="efIn efCod" data-i="${i}" value="${escapeHtml(c.codigo||'')}" onchange="efEditarCodigo(this)" style="width:108px"></td>
       <td><input class="efIn" data-i="${i}" value="${escapeHtml(c.nombre||'')}" oninput="efEditarCampo(this,'nombre')" style="width:100%;min-width:200px;${esGrupo?'font-weight:700':''}"></td>
       <td><select class="efIn" data-i="${i}" onchange="efCambiarTipoCuenta(this)">${EF_TIPOS.map(t=>`<option ${c.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
       <td><select class="efIn" data-i="${i}" onchange="efEditarCampo(this,'corriente')"><option value="" ${!c.corriente?'selected':''}>N/A</option><option ${c.corriente==='Sí'?'selected':''}>Sí</option><option ${c.corriente==='No'?'selected':''}>No</option></select></td>
       <td style="text-align:center"><input type="checkbox" data-i="${i}" ${c.contra?'checked':''} onchange="efToggleContra(this)" title="Cuenta de naturaleza contraria. En los planes predefinidos (NIIF/Supercías) se resta siempre (digite el valor en positivo). En un plan propio o manual se respeta el signo que usted digite."></td>
+      <td style="text-align:center"><input type="checkbox" data-i="${i}" ${c.excluir?'checked':(nd.excl?'checked disabled':'')} onchange="efToggleExcluir(this)" title="${nd.excl&&!c.excluir?'Excluida porque una cuenta superior está excluida':'Excluir de los estados (y sus subcuentas)'}"></td>
       <td class="mut" style="text-align:center">${nd.dep+1}</td>
       <td style="white-space:nowrap"><button class="btn small" title="Agregar subcuenta" onclick="efAgregarSubcuenta(${i})">+ sub</button> <button class="btn small danger" title="Eliminar${esGrupo?' (con sus subcuentas)':''}" onclick="efEliminarCuenta(${i})">✕</button></td>
     </tr>`;
   }).join('');
-  cont.innerHTML = `<table class="efTabla"><thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Corriente</th><th title="Cuenta contra (resta)">(−)</th><th>Nivel</th><th></th></tr></thead><tbody>${html || '<tr><td colspan="7" class="mut" style="padding:14px;">Ninguna cuenta coincide con el filtro.</td></tr>'}</tbody></table>
+  cont.innerHTML = `<table class="efTabla"><thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Corriente</th><th title="Cuenta contra (resta; solo en planes predefinidos)">(−)</th><th title="Excluir esta cuenta (y sus subcuentas) de los estados: por ejemplo, cuentas de orden 9x">Excl.</th><th>Nivel</th><th></th></tr></thead><tbody>${html || '<tr><td colspan="8" class="mut" style="padding:14px;">Ninguna cuenta coincide con el filtro.</td></tr>'}</tbody></table>
     ${recortado ? `<p class="helpNote">Se muestran las primeras ${LIM} filas de ${filas.length}. Use el buscador para ubicar una cuenta.</p>` : ''}`;
 }
 function efEditarCampo(el, campo){
@@ -12767,6 +12775,11 @@ function efEditarCampo(el, campo){
   efSyncCache();
   efProgramarAutoguardado();
   if(campo==='nombre') efProgramarRefresco();
+}
+function efToggleExcluir(el){
+  const i = parseInt(el.dataset.i,10); const c = efPlanCuentas[i]; if(!c) return;
+  if(el.checked) c.excluir = true; else delete c.excluir;
+  efPlanCambio();
 }
 function efToggleContra(el){
   const i = parseInt(el.dataset.i,10); const c = efPlanCuentas[i]; if(!c) return;
@@ -12990,7 +13003,8 @@ function efPintarValoresEstado(){
     visibles = new Set();
     nodes.forEach(nd=>{ if(efNorm(nd.cod+' '+(nd.c.nombre||'')).includes(f)){ let j = nd.i, g = 0; while(j>=0 && g++<50){ visibles.add(j); j = nodes[j].pt; } } });
   }
-  const filas = arbol.orden.filter(i=>!visibles || visibles.has(i));
+  const nExcl = nodes.filter(nd=>nd.excl).length;
+  const filas = arbol.orden.filter(i=>!nodes[i].excl && (!visibles || visibles.has(i)));
   const LIM = 1200;
   const html = filas.slice(0, LIM).map(i=>{
     const nd = nodes[i], c = nd.c, esGrupo = nd.allKids.length>0;
@@ -13008,7 +13022,7 @@ function efPintarValoresEstado(){
     <div class="field"><label>Etiqueta del periodo</label><input value="${escapeHtml(est.label||'')}" oninput="efEstados[efEstadoActivo].label=this.value; efPintarEstadoTabs(); efProgramarAutoguardado()"></div>
     <div id="efResumenValores" class="efResumenValores"></div>
     <div class="efFiltros"><input type="search" placeholder="🔎 Buscar cuenta…" value="${escapeHtml(efFiltroValores)}" oninput="efFiltroValores=this.value; efProgramarRepintadoValores()" style="min-width:220px;">
-      <span class="mut" style="font-size:12px;">Las cuentas de <b>grupo</b> (en negrita) se calculan solas con la suma de sus subcuentas; digite solo en las cuentas de detalle. Puede <b>editar el nombre</b> de cualquier cuenta directamente en la tabla o eliminarla con ✕.</span></div>
+      <span class="mut" style="font-size:12px;">Las cuentas de <b>grupo</b> (en negrita) se calculan solas con la suma de sus subcuentas; digite solo en las cuentas de detalle. Puede <b>editar el nombre</b> de cualquier cuenta directamente en la tabla o eliminarla con ✕.${nExcl?` <b>${nExcl}</b> cuenta(s) excluida(s) de los estados no se muestran aquí (casilla «Excl.» en el plan).`:''}</span></div>
     <div class="efTablaScroll"><table class="efTabla"><thead><tr><th>Código</th><th>Cuenta</th><th>Tipo</th><th class="num">Valor (USD)</th><th></th></tr></thead><tbody>${html}</tbody></table></div>
     ${filas.length>LIM?`<p class="helpNote">Se muestran las primeras ${LIM} filas; use el buscador.</p>`:''}
     ${hu.length?`<p class="helpNote" style="color:#a15c00;">⚠ Este periodo tiene ${hu.length} valor(es) guardado(s) de cuentas que ya no existen en el plan. <a href="javascript:void(0)" onclick="efLimpiarHuerfanos()">Limpiar valores huérfanos</a></p>`:''}
@@ -13100,21 +13114,22 @@ function efModeloEstados(idxs, nivel){
 
   function emitirNodo(rows, i, d){
     const nd = nodes[i], c = nd.c, L = nd.dpt+1;
+    const kidsN = nd.kids.filter(k=>!nodes[k].excl);
     const oculto = L>maxL;
     const vals = calcs.map(cc=>cc.val[i]);
-    if(!nd.kids.length){
+    if(!kidsN.length){
       rows.push(mk({ k:'cuenta', cod:c.codigo||'', nom:c.nombre||'', v:vals, nivel:d, lvl:L, oculto, i }));
       return rows.length-1;
     }
     const tienePropio = calcs.some(cc=>cc.propio[i]);
-    const kidsVisible = nd.kids.some(k=>nodes[k].dpt+1<=maxL);
+    const kidsVisible = kidsN.some(k=>nodes[k].dpt+1<=maxL);
     const esB = d===0 && kidsVisible;
     const filaPropio = () => mk({ k:'cuenta', nom:'Valor propio de la cuenta de grupo (sin subcuentas)', v:calcs.map(cc=>cc.propio[i]?cc.val[i]:0), nivel:d+1, lvl:L+1, oculto:(L+1>maxL), propioDe:i });
     if(esB){
       rows.push(mk({ k:'grupoB', cod:c.codigo||'', nom:c.nombre||'', nivel:0, lvl:L, i }));
       const refs = [];
       if(tienePropio){ rows.push(filaPropio()); refs.push(rows.length-1); }
-      nd.kids.forEach(k=>refs.push(emitirNodo(rows, k, d+1)));
+      kidsN.forEach(k=>refs.push(emitirNodo(rows, k, d+1)));
       rows.push(mk({ k:'totalB', nom:'Total '+(c.nombre||''), v:vals, refs, nivel:0, lvl:L, i }));
       return rows.length-1;
     }
@@ -13124,31 +13139,31 @@ function efModeloEstados(idxs, nivel){
       rows.push(mk({ k:'grupoH', cod:c.codigo||'', nom:c.nombre||'', nivel:d, lvl:L, oculto, i }));
       const refs = [];
       if(tienePropio){ rows.push(filaPropio()); refs.push(rows.length-1); }
-      nd.kids.forEach(k=>refs.push(emitirNodo(rows, k, d+1)));
+      kidsN.forEach(k=>refs.push(emitirNodo(rows, k, d+1)));
       rows.push(mk({ k:'totalA', nom:'Total '+(c.nombre||''), v:vals, refs, nivel:d, lvl:L, oculto, i, constante:!!(c.contra && efContraAplica()) }));
       return rows.length-1;
     }
     rows.push(mk({ k:'grupoA', cod:c.codigo||'', nom:c.nombre||'', v:vals, refs:[], nivel:d, lvl:L, oculto, i, constante:!!(c.contra && efContraAplica()) }));
     if(tienePropio){ rows.push(filaPropio()); rows[idx].refs.push(rows.length-1); }
-    nd.kids.forEach(k=>rows[idx].refs.push(emitirNodo(rows, k, d+1)));
+    kidsN.forEach(k=>rows[idx].refs.push(emitirNodo(rows, k, d+1)));
     return idx;
   }
 
   function seccion(rows, tipo, titulo, extra){
-    const roots = arbol.raicesT.filter(i=>nodes[i].c.tipo===tipo);
+    const roots = arbol.raicesT.filter(i=>nodes[i].c.tipo===tipo && !nodes[i].excl);
     rows.push(mk({ k:'seccion', nom:titulo }));
     let tops = [], filasTop = [];
-    if(roots.length===1 && nodes[roots[0]].kids.length){
+    if(roots.length===1 && nodes[roots[0]].kids.filter(k=>!nodes[k].excl).length){
       const r0 = nodes[roots[0]];
       if(calcs.some(cc=>cc.propio[r0.i])) filasTop.push({ propio:r0.i });
-      tops = r0.kids.slice();
+      tops = r0.kids.filter(k=>!nodes[k].excl);
     } else tops = roots;
     const refs = [];
     filasTop.forEach(fp=>{
       rows.push(mk({ k:'cuenta', nom:'Valor propio de la cuenta de grupo (sin subcuentas)', v:calcs.map(cc=>cc.propio[fp.propio]?cc.val[fp.propio]:0), nivel:0, lvl:2, propioDe:fp.propio }));
       refs.push(rows.length-1);
     });
-    const todasHoja = tops.length>0 && tops.every(i=>!nodes[i].kids.length);
+    const todasHoja = tops.length>0 && tops.every(i=>!nodes[i].kids.filter(k=>!nodes[k].excl).length);
     if((tipo==='Activo' || tipo==='Pasivo') && todasHoja){
       // plan plano: separar corriente / no corriente según la marca de cada cuenta
       const cor = tops.filter(i=>efCorrienteEfectiva(arbol,i)==='Sí'), noc = tops.filter(i=>efCorrienteEfectiva(arbol,i)!=='Sí');
@@ -13188,7 +13203,7 @@ function efModeloEstados(idxs, nivel){
   const eri = [];
   const iIng = seccion(eri, 'Ingreso', 'INGRESOS');
   eri.push(mk({ k:'blank' }));
-  const hayCosto = nodes.some(nd=>nd.c.tipo==='Costo'), hayGasto = nodes.some(nd=>nd.c.tipo==='Gasto');
+  const hayCosto = nodes.some(nd=>nd.c.tipo==='Costo' && !nd.excl), hayGasto = nodes.some(nd=>nd.c.tipo==='Gasto' && !nd.excl);
   let iCos = -1, iGas = -1, iBru = -1;
   if(hayCosto){
     iCos = seccion(eri, 'Costo', 'COSTOS');
@@ -13988,6 +14003,7 @@ function efConstruirLibroExcel(EJS, opc){
     abxBandaEncabezado(wsP, 7, ['Código','Nombre','Tipo','Nivel','Corriente','Naturaleza'], { izq:2 });
     let f = 8;
     m.arbol.orden.forEach(i=>{
+      if(m.arbol.nodes[i].excl) return;
       const nd = m.arbol.nodes[i], c = nd.c, grupo = nd.allKids.length>0;
       const base = { b:grupo, fill:(grupo&&nd.dep===0)?ABX.gris:undefined, bottom:true };
       abxCelda(wsP, f, 1, Object.assign({ v:c.codigo||'', h:'left' }, base));
