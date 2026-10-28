@@ -11813,8 +11813,13 @@ function efCalcularArbol(valores, arbol){
     else { if(esC) corr.pasC += val[nd.i]; else corr.pasNC += val[nd.i]; }
   });
   const utilidad = tot.Ingreso - tot.Costo - tot.Gasto;
-  const diferencia = tot.Activo - (tot.Pasivo + tot.Patrimonio + utilidad);
-  return { val, propio, ignorado, ownv, tot, corr, utilidad, diferencia, convMayor, cuadre: Math.abs(diferencia)<0.01,
+  /* Si el patrimonio YA trae el resultado del ejercicio (cuenta de utilidad/ganancia neta del periodo dentro del grupo 3,
+     como en un balance cerrado) y así cuadra, no se suma otra vez la utilidad calculada de ingresos − costos − gastos. */
+  const dSin = tot.Activo - (tot.Pasivo + tot.Patrimonio);
+  const utilIncl = Math.abs(dSin) < 0.01 && Math.abs(utilidad) >= 0.01;
+  const utilPat = utilIncl ? 0 : utilidad;
+  const diferencia = tot.Activo - (tot.Pasivo + tot.Patrimonio + utilPat);
+  return { val, propio, ignorado, ownv, tot, corr, utilidad, utilPat, utilIncl, diferencia, convMayor, cuadre: Math.abs(diferencia)<0.01,
     totActivo:tot.Activo, totPasivo:tot.Pasivo, totPatrimonio:tot.Patrimonio, totIngreso:tot.Ingreso, totCosto:tot.Costo, totGasto:tot.Gasto,
     acCorriente:corr.acC, acNoCorriente:corr.acNC, pasCorriente:corr.pasC, pasNoCorriente:corr.pasNC };
 }
@@ -13202,6 +13207,7 @@ function efModeloEstados(idxs, nivel){
   }
 
   const utilV = calcs.map(cc=>cc.utilidad);
+  const utilPatV = calcs.map(cc=>cc.utilPat), utilInclAlguna = calcs.some(cc=>cc.utilIncl), utilInclTodas = calcs.every(cc=>cc.utilIncl);
   // ---- Estado de Situación Financiera
   const esf = [];
   const iAct = seccion(esf, 'Activo', 'ACTIVO');
@@ -13209,10 +13215,10 @@ function efModeloEstados(idxs, nivel){
   const iPas = seccion(esf, 'Pasivo', 'PASIVO');
   esf.push(mk({ k:'blank' }));
   const iPat = seccion(esf, 'Patrimonio', 'PATRIMONIO', {
-    antesTotal: rows => { rows.push(mk({ k:'cuenta', nom:'Utilidad (pérdida) del ejercicio', v:utilV, nivel:0, enlace:'utilidad' })); return rows.length-1; },
-    suma: utilV, totalNom:'TOTAL PATRIMONIO' });
+    antesTotal: rows => { rows.push(mk({ k:'cuenta', nom:'Utilidad (pérdida) del ejercicio', v:utilPatV, nivel:0, enlace:utilInclAlguna?'':'utilidad', oculto:utilInclTodas })); return rows.length-1; },
+    suma: utilPatV, totalNom:'TOTAL PATRIMONIO' });
   esf.push(mk({ k:'blank' }));
-  esf.push(mk({ k:'granTotal', nom:'TOTAL PASIVO Y PATRIMONIO', v:calcs.map(cc=>cc.tot.Pasivo+cc.tot.Patrimonio+cc.utilidad), refs:[iPas, iPat] }));
+  esf.push(mk({ k:'granTotal', nom:'TOTAL PASIVO Y PATRIMONIO', v:calcs.map(cc=>cc.tot.Pasivo+cc.tot.Patrimonio+cc.utilPat), refs:[iPas, iPat] }));
   const iGran = esf.length-1;
   esf.push(mk({ k:'check', nom:'Verificación: Activo − (Pasivo + Patrimonio)', v:calcs.map(cc=>cc.diferencia), refs:[iAct, iGran] }));
   const iChk = esf.length-1;
@@ -13240,7 +13246,7 @@ function efModeloEstados(idxs, nivel){
 
 /* ---- indicadores (solo si hay datos suficientes) ---- */
 function efIndicadores(cc){
-  const pt = cc.totPatrimonio + cc.utilidad;
+  const pt = cc.totPatrimonio + cc.utilPat;
   const div = (a,b) => (b!==0 && isFinite(a/b)) ? a/b : null;
   return {
     capitalTrabajo: (cc.acCorriente!==0 || cc.pasCorriente!==0) ? cc.acCorriente - cc.pasCorriente : null,
@@ -13325,6 +13331,7 @@ function efGenerarEstados(idx){
     <h3>Estado de Situación Financiera — ${escapeHtml(est.label||'')} <span class="mut" style="font-size:12px;font-weight:400;">${escapeHtml(t.esf)}</span></h3>
     ${efTablaEstadoHTML(m.esf, m.labels, { conCodigo:true })}
     <p style="font-weight:700;color:${cc.cuadre?'#0a9468':'#c0392b'}">${cc.cuadre?'✓ Balance cuadrado (Activo = Pasivo + Patrimonio)':'⚠ Balance NO cuadra — diferencia: '+pbUSD(cc.diferencia)}</p>
+    ${cc.utilIncl ? `<p class="helpNote">ℹ El patrimonio ya incluye el resultado del ejercicio (cuenta de ganancia/utilidad del periodo), por eso no se suma de nuevo la utilidad de ingresos − costos − gastos en el balance.</p>` : ''}
     ${cc.convMayor ? `<p class="helpNote">ℹ Los saldos de Pasivo, Patrimonio e Ingresos vienen en negativo (convención del libro mayor: crédito −); se presentan con signo natural (positivos) para que Activo = Pasivo + Patrimonio y Utilidad = Ingresos − Costos − Gastos.</p>` : ''}
     ${avisos.length ? `<p class="helpNote" style="color:#a15c00;">⚠ Cuentas de grupo usando su valor propio guardado (sus subcuentas están vacías): ${escapeHtml(avisos.slice(0,5).join('; '))}. Digítelo en las subcuentas.</p>` : ''}
     <h3>Estado de Resultados — ${escapeHtml(est.label||'')} <span class="mut" style="font-size:12px;font-weight:400;">${escapeHtml(t.eri)}</span></h3>
@@ -13551,7 +13558,7 @@ function abxBandaEncabezado(ws, fila, textos, o){
 }
 function abxImpresion(ws, o){
   o = o || {};
-  const esc = s => String(s||'').replace(/&/g,'&&');
+  const esc = s => ' '+String(s||'').replace(/[\u0000-\u001f]/g,' ').replace(/&/g,'&&').slice(0,90);   // espacio inicial: evita que un nombre que empieza con dígito se lea como tamaño de fuente; máx. 255 caracteres por sección
   ws.pageSetup = {
     paperSize:9, orientation:o.landscape?'landscape':'portrait',
     fitToPage:true, fitToWidth:1, fitToHeight:0,
@@ -13572,9 +13579,9 @@ function abxFirmas(ws, fila, o){
     if(!d) return;
     if(cb>ca) { ws.mergeCells(fila,ca,fila,cb); ws.mergeCells(fila+1,ca,fila+1,cb); ws.mergeCells(fila+2,ca,fila+2,cb); }
     for(let c=ca;c<=cb;c++) abxCelda(ws, fila, c, { top:{ style:'thin', color:{ argb:ABX.txt } } });
-    abxCelda(ws, fila, ca, { v:d.nombre||'', b:true, h:'center', wrap:true, top:{ style:'thin', color:{ argb:ABX.txt } } });
+    abxCelda(ws, fila, ca, { v:d.nombre||'Nombre: ______________________', b:!!d.nombre, color:d.nombre?undefined:ABX.muted, h:'center', wrap:true, top:{ style:'thin', color:{ argb:ABX.txt } } });
     abxCelda(ws, fila+1, ca, { v:d.titulo||'', h:'center', color:ABX.muted });
-    abxCelda(ws, fila+2, ca, { v:d.id ? d.id : '', h:'center', sz:9, color:ABX.muted });
+    abxCelda(ws, fila+2, ca, { v:d.id ? d.id : ((d.titulo==='Contador'?'RUC':'C.I./RUC')+': ______________________'), h:'center', sz:9, color:ABX.muted });
   };
   bloque(o.c1a, o.c1b, o.izq); bloque(o.c2a, o.c2b, o.der);
   ws.getRow(fila).height = 30;
@@ -13620,7 +13627,7 @@ function abxCaratula(wb, o){
     abxCelda(ws, f, 2, { v:'Contenido', b:true, color:ABX.blanco, fill:ABX.navy }); abxCelda(ws, f, 3, { v:'Descripción', b:true, color:ABX.blanco, fill:ABX.navy });
     f++;
     o.indice.forEach(x=>{
-      abxCelda(ws, f, 2, { v:{ text:x.hoja, hyperlink:`#'${x.hoja}'!A1` }, color:'FF0B5394', u:true, bottom:true });
+      abxCelda(ws, f, 2, { f:`HYPERLINK("#'${x.hoja}'!A1","${x.hoja}")`, r:x.hoja, color:'FF0B5394', u:true, bottom:true });   // fórmula HYPERLINK: más compatible que el hipervínculo interno de ExcelJS
       ws.getCell(f,2).font = { name:ABX.fuente, size:ABX.tam, color:{ argb:'FF0B5394' }, underline:true };
       abxCelda(ws, f, 3, { v:x.desc||'', bottom:true, wrap:true, color:ABX.muted });
       f++;
@@ -13820,7 +13827,7 @@ function efHojaResumenExcel(wb, ctx){
   const conceptos = [
     { n:'Total activo', hoja:NOM_ESF, fila:R0+ix.iAct, v:cc.map(c=>c.totActivo) },
     { n:'Total pasivo', hoja:NOM_ESF, fila:R0+ix.iPas, v:cc.map(c=>c.totPasivo) },
-    { n:'Total patrimonio', hoja:NOM_ESF, fila:R0+ix.iPat, v:cc.map(c=>c.totPatrimonio+c.utilidad) },
+    { n:'Total patrimonio', hoja:NOM_ESF, fila:R0+ix.iPat, v:cc.map(c=>c.totPatrimonio+c.utilPat) },
     { n:'Ingresos', hoja:NOM_ERI, fila:R0+ix.iIng, v:cc.map(c=>c.totIngreso) },
   ];
   if(ix.iCos>=0) conceptos.push({ n:'Costos', hoja:NOM_ERI, fila:R0+ix.iCos, v:cc.map(c=>c.totCosto) });
@@ -13972,7 +13979,7 @@ function efConstruirLibroExcel(EJS, opc){
     sec('DATOS BASE');
     filaBase('act','Total activo',NOM_ESF,R0+m.ix.iAct,m.calcs.map(c=>c.totActivo));
     filaBase('pas','Total pasivo',NOM_ESF,R0+m.ix.iPas,m.calcs.map(c=>c.totPasivo));
-    filaBase('pat','Total patrimonio (incluye utilidad del ejercicio)',NOM_ESF,R0+m.ix.iPat,m.calcs.map(c=>c.totPatrimonio+c.utilidad));
+    filaBase('pat','Total patrimonio (incluye utilidad del ejercicio)',NOM_ESF,R0+m.ix.iPat,m.calcs.map(c=>c.totPatrimonio+c.utilPat));
     filaBase('ing','Ingresos',NOM_ERI,R0+m.ix.iIng,m.calcs.map(c=>c.totIngreso));
     if(m.ix.iCos>=0) filaBase('cos','Costos',NOM_ERI,R0+m.ix.iCos,m.calcs.map(c=>c.totCosto));
     filaBase('uti','Utilidad (pérdida) del ejercicio',NOM_ERI,R0+m.ix.iUtil,m.calcs.map(c=>c.utilidad));
@@ -14129,7 +14136,7 @@ function efFmtRatio(r, v){
 /* Datos del resumen ejecutivo (PDF y Excel): cifras clave, variaciones y lectura automática */
 function efDatosResumen(m, idxs){
   const cc = m.calcs, P = m.P, L = P-1;
-  const pt = c => c.totPatrimonio + c.utilidad;
+  const pt = c => c.totPatrimonio + c.utilPat;
   const ind = cc.map(efIndicadores);
   const kpis = [
     { id:'activo',     t:'Total activo',            v:cc.map(c=>c.totActivo),  buenoSube:null },
@@ -14199,7 +14206,7 @@ function efSvgsResumen(m, o){
   const g1 = efSvgBarras(labels, [
     { nom:'Activo', color:EF_COL.navy, vals:cc.map(c=>c.totActivo) },
     { nom:'Pasivo', color:EF_COL.oro, vals:cc.map(c=>c.totPasivo) },
-    { nom:'Patrimonio', color:EF_COL.teal, vals:cc.map(c=>c.totPatrimonio+c.utilidad) },
+    { nom:'Patrimonio', color:EF_COL.teal, vals:cc.map(c=>c.totPatrimonio+c.utilPat) },
   ], o);
   const g2 = efSvgBarras(labels, [
     { nom:'Ingresos', color:EF_COL.navy, vals:cc.map(c=>c.totIngreso) },
@@ -14261,8 +14268,8 @@ function efConstruirHtmlPDF(opc){
       <div class="cab-usd">Expresado en dólares de los Estados Unidos de América (USD)</div>
     </header>`;
   const firmas = `
-    <div class="firmas"><div class="firma"><div class="linea"></div><div class="fn">${escapeHtml(pres.representante||' ')}</div><div class="fc">Representante Legal</div>${pres.rucRepresentante?`<div class="fi">C.I./RUC: ${escapeHtml(pres.rucRepresentante)}</div>`:''}</div>
-      <div class="firma"><div class="linea"></div><div class="fn">${escapeHtml(pres.contador||' ')}</div><div class="fc">Contador</div>${pres.rucContador?`<div class="fi">RUC: ${escapeHtml(pres.rucContador)}</div>`:''}</div></div>`;
+    <div class="firmas"><div class="firma"><div class="linea"></div>${efFirmaNombre(pres.representante)}<div class="fc">Representante Legal</div>${efFirmaId('C.I./RUC', pres.rucRepresentante)}</div>
+      <div class="firma"><div class="linea"></div>${efFirmaNombre(pres.contador)}<div class="fc">Contador</div>${efFirmaId('RUC', pres.rucContador)}</div></div>`;
   const nota = (pres.notas && pres.notas.trim()) ? pres.notas.trim() : 'Las notas explicativas adjuntas son parte integrante de los estados financieros.';
   const notas = `<div class="notas"><div class="notas-t">Notas</div><div class="notas-c">${escapeHtml(nota).replace(/\n/g,'<br>')}</div></div>`;
   const indiceItems = [].concat(conResumen?['Resumen ejecutivo e indicadores']:[], ['Estado de Situación Financiera','Estado de Resultados Integral']);
@@ -14305,7 +14312,7 @@ function efConstruirHtmlPDF(opc){
   };
   const svgs = efSvgsResumen(m, { w:440, h:(land?150:230) });
   const act = cc[L];
-  const ptL = act.totPatrimonio + act.utilidad;
+  const ptL = act.totPatrimonio + act.utilPat;
   let barra = '';
   if(act.totPasivo>=0 && ptL>=0 && (act.totPasivo+ptL)>0){
     const tt = act.totPasivo + ptL, wp = act.totPasivo/tt*100, wq = ptL/tt*100;
@@ -14404,7 +14411,7 @@ function efConstruirHtmlPDF(opc){
     .notas{ margin-top:10px; break-inside:avoid; } .notas-t{ font-weight:700; color:#1f3a5f; border-bottom:1px solid #b8c4d4; font-size:9px; letter-spacing:1.5px; text-transform:uppercase; padding-bottom:2px; margin-bottom:4px; } .notas-c{ font-size:9px; color:#333; }
     .firmas{ display:flex; gap:40px; justify-content:space-around; margin-top:36px; break-inside:avoid; }
     .cierre{ break-inside:avoid; }
-    .firma{ flex:1; max-width:78mm; text-align:center; } .firma .linea{ border-top:1px solid #1a1a1a; margin-bottom:4px; } .firma .fn{ font-weight:700; font-size:10px; min-height:12px; } .firma .fc{ color:#5f6b7a; font-size:9.5px; } .firma .fi{ color:#5f6b7a; font-size:8.5px; }
+    .firma{ flex:1; max-width:78mm; text-align:center; } .firma .linea{ border-top:1px solid #1a1a1a; margin-bottom:4px; } .firma .fn{ font-weight:700; font-size:10px; min-height:12px; } .firma .vacio{ display:flex; align-items:flex-end; gap:4px; border-bottom:1px dotted #8a94a3; height:20px; margin:0 6px 4px; font-weight:400; color:#5f6b7a; font-size:9px; } .firma .fi.vacio{ margin-top:6px; } .firma .fc{ color:#5f6b7a; font-size:9.5px; } .firma .fi{ color:#5f6b7a; font-size:8.5px; }
     /* resumen */
     .kpis{ display:grid; grid-template-columns:repeat(5,1fr); gap:7px; margin:4px 0 10px; }
     .kpi{ border:1px solid #d3dae3; border-top:3px solid #1f3a5f; border-radius:3px; padding:7px 8px 6px; background:#fbfcfd; break-inside:avoid; }
@@ -14446,6 +14453,9 @@ function efConstruirHtmlPDF(opc){
   </body></html>`;
   return { html, titulo:tituloDoc, landscape:land };
 }
+/* bloque de firma: con nombre lo imprime; sin nombre deja un renglón para escribirlo a mano */
+function efFirmaNombre(n){ n = String(n||'').trim(); return n ? `<div class="fn">${escapeHtml(n)}</div>` : `<div class="fn vacio"><span>Nombre:</span></div>`; }
+function efFirmaId(et, v){ v = String(v||'').trim(); return v ? `<div class="fi">${et}: ${escapeHtml(v)}</div>` : `<div class="fi vacio"><span>${et}:</span></div>`; }
 function efAbrirVentanaPDF(html, titulo){
   const win = window.open('', '_blank');
   if(!win){
