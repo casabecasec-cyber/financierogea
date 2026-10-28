@@ -13507,7 +13507,7 @@ function abxHoja(wb, nombre, o){
   o = o || {};
   const ws = wb.addWorksheet(String(nombre).replace(/[\[\]\*\?\/\\:]/g,'-').slice(0,31), {
     views:[{ showGridLines:false, state:(o.congelarFila||o.congelarCol)?'frozen':'normal', xSplit:o.congelarCol||0, ySplit:o.congelarFila||0 }],
-    properties:{ tabColor:{ argb:o.color||ABX.navy }, outlineProperties:{ summaryBelow:false, summaryRight:false } },
+    properties:{ tabColor:{ argb:o.color||ABX.navy } },   // sin outlineProperties: ExcelJS escribe <pageSetUpPr> antes de <outlinePr> y Excel lo rechaza (XML inválido)
   });
   return ws;
 }
