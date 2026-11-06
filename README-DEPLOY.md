@@ -5,32 +5,31 @@ para IA, pensada para desplegarse en Netlify con Firebase como backend.
 
 ---
 
-## 1. Consigue tu API key de Anthropic (para el módulo de IA)
+## 1. Consigue tu API key de Google Gemini (para el módulo de IA)
 
-1. Entra a **https://console.anthropic.com** y crea una cuenta (o inicia sesión).
-2. Ve a **Settings → API Keys** (o el apartado de "Billing" primero si te pide cargar saldo;
-   la API se cobra por uso, es independiente de una suscripción a Claude.ai).
-3. Crea una nueva key, ponle un nombre como `tramites-ecuador` y **cópiala** (solo se muestra una vez).
+1. Entra a **https://aistudio.google.com/apikey** con tu cuenta de Google.
+2. Dale a **"Create API key"** (puede pedirte elegir o crear un proyecto de Google Cloud; no
+   hace falta tarjeta de crédito, la capa gratuita de Gemini no la requiere).
+3. **Copia** la key generada.
 4. Guárdala en un lugar seguro. La necesitarás en el paso 4 (Netlify), **nunca la pegues dentro
    del index.html** ni la subas a un repositorio público — por eso todo el análisis de IA pasa
    por la función serverless `analizar.js`, que la lee desde una variable de entorno.
+   Ten en cuenta que la capa gratuita tiene límites de uso (peticiones por minuto/día); si los
+   superas, la IA devolverá un error temporal hasta que se libere la cuota.
 
-## 2. Firebase — proyecto compartido con CasaBecas (`casabecas-8afea`)
+## 2. Firebase — proyecto dedicado (`financierogea-ec95d`)
 
-Esta app ahora usa el mismo proyecto Firebase de tus otras apps de CasaBecas
-(`casabecas-8afea`) y su Realtime Database existente. Los datos se guardan en ramas nuevas:
-`/empresas`, `/tramites`, `/checklist_estado`, `/documentos_revision`.
+Esta app usa su propio proyecto Firebase, dedicado únicamente a ella: `financierogea-ec95d`,
+con su Realtime Database en `https://financierogea-ec95d-default-rtdb.firebaseio.com/`. Los
+datos se guardan en ramas como: `/empresas`, `/tramites`, `/checklist_estado`,
+`/documentos_revision` (ver el bloque de reglas completo más abajo).
 
-**No es necesario tocar las reglas de seguridad**: ese proyecto ya tiene una regla comodín
-`"$other"` que da acceso de lectura/escritura a cualquier ruta no listada explícitamente,
-para el UID de la cuenta principal de administrador. Como esta app usa esa misma cuenta,
-queda cubierta automáticamente.
+Completa `apiKey`, `messagingSenderId` y `appId` en el `firebaseConfig` dentro de `index.html`
+con los valores reales de tu proyecto (Consola de Firebase → Configuración del proyecto → Tus
+apps → SDK de Firebase).
 
-**Inicio de sesión**: se quitó la opción de "Crear cuenta" — esta app ahora solo permite
-iniciar sesión con la cuenta de administrador existente (mismo correo/contraseña que usas en
-las otras apps de CasaBecas). Si necesitaras dar acceso a otra persona con su propia cuenta,
-avísame: habría que agregar su UID a un bloque de reglas nuevo, ya que el comodín `$other`
-solo cubre al UID de administrador.
+**Inicio de sesión**: crea tu cuenta desde la pestaña "Crear cuenta" dentro de la app la
+primera vez que entres (ver la sección "Sobre las cuentas de usuario" más abajo).
 
 **Nota:** esta app **no usa Firebase Storage**, solo Realtime Database.
 
@@ -184,24 +183,6 @@ que exige inicio de sesión y limita a cada usuario a su propia rama de datos:
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
       }
-    },
-    "banco_pacifico_docs": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "banco_borradores_auto": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    },
-    "banco_produbanco_flujo_borrador": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
     }
   }
 }
@@ -213,9 +194,12 @@ bloque agregado aquí también.
 
 ### Sobre las cuentas de usuario
 
-Crea tu cuenta (por ejemplo `departamentofinancierogea@gmail.com`) desde la pestaña "Crear
-cuenta" dentro de la app la primera vez que entres — queda registrada en Authentication de este
-proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu `uid`.
+El usuario administrador de esta app es `departamentofinancierogea@gmail.com`, con UID
+`TfRcGWLDQ1bUxZSutB0WQUondi63` (ya configurado en `DATOS_UID` de `index.html` y en las reglas
+de Realtime Database, `rtdb-rules-geafinanciero.json`). Créalo desde la pestaña "Crear cuenta"
+dentro de la app la primera vez que entres, si aún no existe en Authentication de este proyecto.
+
+Todos los datos (empresas, trámites, etc.) se guardan bajo ese `uid`.
 
 ## 3. Sube el proyecto a Netlify
 
@@ -228,9 +212,29 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
 ## 4. Configura la variable de entorno con tu API key
 
 1. En Netlify: **Site settings → Environment variables → Add a variable**.
-2. Nombre: `ANTHROPIC_API_KEY`
+2. Nombre: `GEMINI_API_KEY`
    Valor: la key que copiaste en el paso 1.
 3. Vuelve a desplegar el sitio (Deploys → Trigger deploy) para que la función la tome.
+
+## 4b. (Opcional) Cuenta de servicio de Firebase — para "Administración de Usuarios"
+
+Solo hace falta si vas a crear usuarios adicionales (admin o solo lectura) desde la pestaña
+**Administración de Usuarios** de la app. Si no piensas usar esa función, puedes saltarte este paso.
+
+1. En la [consola de Firebase](https://console.firebase.google.com), proyecto `financierogea-ec95d`
+   → **Configuración del proyecto** (ícono de engranaje) → pestaña **Cuentas de servicio**.
+2. Dale a **"Generar nueva clave privada"** — se descarga un archivo `.json`.
+3. Abre ese JSON y copia estos 4 valores a **Netlify → Site settings → Environment variables**:
+   - `FIREBASE_PROJECT_ID` → el campo `project_id` del JSON
+   - `FIREBASE_CLIENT_EMAIL` → el campo `client_email` del JSON
+   - `FIREBASE_PRIVATE_KEY` → el campo `private_key` del JSON, **pégalo completo tal cual**
+     (incluye los `\n` y las comillas si las copias directo del JSON; la función ya se encarga de
+     interpretarlos bien)
+   - `FIREBASE_DATABASE_URL` → `https://financierogea-ec95d-default-rtdb.firebaseio.com`
+4. Vuelve a desplegar el sitio (Deploys → Trigger deploy).
+
+⚠️ Ese archivo `.json` da acceso administrativo completo a tu proyecto Firebase — no lo subas a
+ningún repositorio ni lo compartas; solo debe vivir en las variables de entorno de Netlify.
 
 ## 5. Primer uso
 
@@ -243,902 +247,102 @@ proyecto, y todos los datos que generes (empresas, trámites) se guardan bajo tu
    y la revisión de soportes.
 
 ## Notas importantes
-- **Área Bancaria: orden canónico de las cuentas en todas partes (20ma iteración).** Reporte en español del usuario (literal): "me aparecen las cuentas en desorden, deberia estar en el orden de activo, pasivo, patrimonio y el de resultados ingresos costos y gastos". Causa: el orden salía del orden de las filas del archivo o de cómo se agregaron las cuentas (el árbol, la tabla del plan, la de valores, los estados, el PDF y el Excel recorrían el plan tal como estaba guardado, y las secciones de los estados tomaban las cuentas raíz en ese mismo orden; con filas mezcladas o cuentas de otro tipo dentro de un rango de códigos, el orden y los grupos salían revueltos). Ahora hay un único orden canónico (`efConstruirArbol`, `efCmpCodigo`, `efReordenarPlan`): primero el tipo (Activo → Pasivo → Patrimonio → Ingreso → Costo → Gasto); dentro de cada tipo, orden jerárquico por código con comparación por segmentos numéricos (1.2 antes que 1.10; 101 < 10101 < 10102 < 102; cada cuenta de grupo inmediatamente antes de sus hijas); en Activo y Pasivo las cuentas corrientes antes que las marcadas «No»; las cuentas sin código al final de su tipo, en su orden original. Se aplica al importar (la vista previa ya muestra el resultado ordenado y el plan se guarda ordenado), en la tabla del Plan de Cuentas, en la de Valores, en los estados en pantalla y el comparativo, en el PDF y en todas las hojas del Excel (incluido Plan de Cuentas), al agregar una cuenta o subcuenta, al cambiar el tipo o la marca corriente y al cargar un plan guardado en otro orden (se normaliza solo). Botón «↕ Reordenar plan» en la tabla del plan. Los valores se guardan por id de cuenta, por lo que reordenar no cambia ningún monto. Orden de los estados: Situación Financiera → ACTIVO (corriente, no corriente, TOTAL ACTIVO), PASIVO (…TOTAL PASIVO), PATRIMONIO (+ utilidad del ejercicio, TOTAL PATRIMONIO, TOTAL PASIVO Y PATRIMONIO); Resultados → INGRESOS, COSTOS (utilidad bruta), GASTOS, UTILIDAD DEL EJERCICIO. Nota: el plan Supercías predefinido tenía cuentas de tipos mezclados en rango de códigos (p. ej. 54 Otros ingresos entre gastos); ahora se agrupan por tipo, sin cambiar ningún total. No se agregaron rutas de Firebase.
-- **Estados Financieros: PDF y Excel con presentación de entrega (21ra iteración).** Reporte en español del usuario (literal): "la presentacion de excel y pdf de los estados financieros esta pobre, te pedí un formato profesional tanto para pdf como excel". **PDF** (A4, vista de impresión → «Guardar como PDF»): portada nueva (monograma con las iniciales de la empresa, franja lateral, datos de firma y contenido); página de **Resumen ejecutivo e indicadores** (5 tarjetas con cifra y variación vs el periodo anterior, gráficos de barras de Situación financiera y Resultados, barra de estructura de financiamiento, «Puntos destacados» redactados automáticamente a partir de las cifras e indicadores con semáforo y referencia orientativa); estados con estilo de informe (secciones en banda azul, subtotales, total general destacado, negativos en rojo, encabezado y pie con numeración «Página X de Y», notas y firmas). **Excel** (ExcelJS): hoja **Resumen** (tarjetas enlazadas a los estados, tabla de evolución, dos gráficos incrustados como imagen y puntos destacados), estados con nuevo formato (bandas de sección, totales, filas con línea fina, total general en azul), carátula con filete dorado y la hoja Indicadores con **semáforo** (formato condicional) y referencia por indicador. Opciones nuevas en el diálogo de exportación: «Resumen ejecutivo con gráficos» y «Análisis vertical (% sobre activo / ingresos)». **ExcelJS ya viene incluido dentro de index.html** (comprimido, unos 340 KB; el archivo pasa de ~1.6 MB a ~1.97 MB), así que el Excel profesional ya no depende de internet ni del CDN; si el navegador no pudiera descomprimirlo, se intenta el CDN y, como último recurso, el Excel básico. Probado en Chromium real (PDF y Excel con el CDN bloqueado), con LibreOffice (recalculo de fórmulas sin diferencias) y con 36 combinaciones de opciones. Limitaciones: los gráficos del Excel son una imagen del momento de la exportación (ExcelJS no crea gráficos nativos); los umbrales del semáforo son referencias orientativas de uso común. No se agregaron rutas de Firebase.
-- **Estados Financieros: sumatoria («Total …») en cada grupo con detalle (22da iteración).** Reporte del usuario (literal): "por favor faltan sumatorias". Los grupos con subcuentas mostraban su importe en la línea del encabezado y no tenían una línea de total al final del detalle. Ahora, cuando el detalle está visible (nivel Intermedio/Completo), el grupo muestra un encabezado sin importe, sus cuentas y una línea «Total <grupo>» con la sumatoria, en pantalla, PDF y Excel (en el Excel es una fórmula SUM viva, con esquema plegable). En nivel Resumido, donde el detalle no se muestra, el grupo conserva su importe en una sola línea. Los totales de sección (corriente / no corriente, total activo, pasivo, patrimonio, total pasivo y patrimonio, utilidad) no cambian. Verificado con recálculo en LibreOffice (428 cifras sin diferencias) y 36 combinaciones de opciones. No se agregaron rutas de Firebase.
-- **Estados Financieros: se respeta el signo digitado en planes propios (23ra iteración).** Reporte del usuario (literal): "la cuenta 1010306 no es en negativo, no se porque esta en negativo… es mi plan propio, mas bien si es activo y es negativo que respete lo que yo ponga, si es pasivo siempre es negativo salvo si yo le pongo con signo contrario igual patrimonio". Causa: la marca «Contra (−)» forzaba el valor a negativo (`-Math.abs`) sin importar lo digitado. Ahora, en planes propios o manuales (origen distinto de NIIF/Supercías), todas las cuentas suman con el signo que el usuario digita (positivo suma, negativo resta) en cualquier tipo —activo, pasivo, patrimonio, ingresos, costos y gastos—, y la marca «Contra» no altera el signo. En los planes predefinidos NIIF y Supercías la marca «Contra» sigue restando siempre (se digita en positivo). Verificado: caja -300 en plan propio suma -300; con la marca contra y +300 suma +300; en Supercías con contra y +300 resta. No se agregaron rutas de Firebase.
-- **Estados Financieros: imprimir/exportar solo cuentas con valor (24ta iteración).** Pedido del usuario (literal): "que tambien tenga la opcion de imprimir en excel y pdf solo las cuentas con valor mayor a cero". Nueva casilla «Solo cuentas con valor (ocultar las que están en cero)» en el diálogo de exportación (Excel y PDF; `efFiltrarSoloConValor`). Oculta las cuentas y grupos cuyo importe es cero en todos los periodos seleccionados, junto con sus encabezados y totales de grupo; los totales de sección y el total general se conservan. Se ocultan solo los ceros: una cuenta con valor negativo sigue apareciendo. En el Excel las filas quedan ocultas (no eliminadas), por lo que las fórmulas siguen intactas. Verificado con recálculo en LibreOffice sin diferencias. No se agregaron rutas de Firebase.
-- **Estados Financieros: editar nombre y eliminar cuentas desde la tabla de valores (25ta iteración).** Pedido del usuario (literal): "permite que pueda editar el nombre de las cuentas o eliminarlas". La tabla de valores del periodo (donde se digitan los importes) ahora tiene el nombre de cada cuenta —de detalle y de grupo— como campo editable y un botón ✕ para eliminar la cuenta (con confirmación; si es un grupo, elimina también sus subcuentas y sus valores). Reutiliza `efEditarCampo` y `efEliminarCuenta`, así que el cambio se refleja en el plan, los estados, el PDF y el Excel y se autoguarda. (La tabla del plan de cuentas ya permitía ambas cosas.) No se agregaron rutas de Firebase.
-- **Estados Financieros: excluir cuentas de los estados — cuentas de orden 9x (26ta iteración).** Reporte del usuario (literal): "cuando imprimo esta bien hasta costo de ventas, pero de alli aparece uno que dice total activo y hay codigos con 90, eso que no vaya". Causa: el importador asigna por defecto el tipo «Activo» a las cuentas cuyo código empieza en 9 (cuentas de orden / cierre, que no pertenecen a los estados), por lo que aparecían y sumaban en el Total Activo. Ahora cada cuenta tiene la casilla **«Excl.»** en la tabla del plan: una cuenta excluida (y todas sus subcuentas) se oculta y no suma en el estado en pantalla, el PDF ni el Excel (ni en el cuadre ni en los indicadores), y deja de aparecer en la tabla de valores; los datos digitados no se pierden. Al importar un plan, las cuentas con código 9x sin tipo definido (y las llamadas «cuentas de orden») se marcan solas como excluidas. En un plan ya guardado hay que marcar la casilla «Excl.» en la cuenta raíz (p. ej. «9» o «90»): sus subcuentas la heredan. Marca nueva `excluir` dentro de cada cuenta del plan; se guarda con el plan, sin rutas de Firebase nuevas.
-- **PDF de Estados Financieros: paginación estable en estados largos (27ma iteración).** Reporte del usuario (con foto de la vista de impresión de ALTATEN): la parte final del estado (desde el Total Activo hacia abajo: Patrimonio, totales, notas, firmas y el inicio del Estado de Resultados) salía desordenada —secciones sin sus cuentas y el encabezado del siguiente estado encimado sobre las firmas—. Causa probable: los estados con cientos de filas usaban grupos `<tbody>` con `break-inside: avoid`, que el motor de impresión de Chrome no puede cumplir cuando un grupo es más alto que la página y puede encimar o perder filas al paginar. Ahora el PDF usa un único cuerpo de tabla (opción `plano` de `efTablaEstadoHTML`) y solo evita cortar filas individuales; el bloque de notas y firmas sigue sin partirse. Verificado en Chromium con un plan real de 450 cuentas (balance de ALTATEN, 16 páginas, cada sección con sus cuentas y el Estado de Resultados en página propia). La pantalla no cambia. No se agregaron rutas de Firebase.
-- **Área Bancaria: plan de cuentas propio y exportación profesional (19na iteración).** Reporte en español del usuario (literal): "en el area bancaria quiero utilizar mi plan de cuentas propio pero no se actualiza y no puedo utilizar, tambien al bajar a excel crea un formato profesional para entrega al igual que pdf". Causas confirmadas por reproducción: el encabezado «Código» con tilde no se reconocía; la importación agregaba en vez de reemplazar; el tipo quedaba en Activo por defecto (sin nivel ni corriente); solo se leía la primera hoja y los archivos sin encabezado perdían la primera fila; un CSV con «;» y comas decimales se partía mal; los totales sumaban grupo más detalle (doble conteo); Firebase rechaza claves con «.», «#», «$», «[», «]» o «/», por lo que los valores de cuentas con código tipo 1.1.01 nunca se guardaban; comillas en nombres rompían los controladores en línea; códigos duplicados se pisaban; y el autoguardado podía escribir en otra empresa. Ahora: asistente de importación (.xlsx/.xls/.csv/.txt o pegado, selector de hoja, detección de encabezado o «sin encabezados», columnas por sinónimos con ajuste manual, vista previa con Código·Nombre·Tipo·Nivel·Corriente·Padre, modo Reemplazar (por defecto, con confirmación) o Agregar, avisos de duplicados, nombres vacíos y huérfanas) con inferencia de tipo, nivel y corriente; jerarquía por código (grupo = suma de hijas, solo las hojas se editan, el valor propio antiguo de un grupo se usa solo si no hay hijas y se marca con ⚠); tabla del plan jerárquica con búsqueda, filtro, + subcuenta, eliminar rama y cambio de tipo por rama; las claves de valores se codifican con %XX al guardar y se decodifican al cargar (los datos anteriores cargan igual); «Plan activo» y `planOrigen` se guardan en el mismo documento; plantilla .xlsx descargable. Exportación: Excel con ExcelJS (carga diferida desde cdnjs; si no hay internet se genera el Excel básico con SheetJS y un aviso) con hojas Carátula, Estado de Situación Financiera, Estado de Resultados Integral, Indicadores y Plan de Cuentas, fórmulas SUM vivas, fila de verificación del cuadre, niveles de agrupación según el nivel de detalle, hasta 5 períodos con columnas de variación, firmas, notas y configuración de impresión A4; PDF profesional por ventana de impresión (portada, jerarquía, comparativo, control de saltos de página, firmas y pie con páginas). El Excel del Flujo Produbanco (`pfExportarExcel`) usa los mismos ayudantes `abx*` con los mismos datos y hojas más una carátula. Formulario «Datos de presentación» por empresa. La Conciliación SRI no se tocó. No se agregaron rutas de Firebase.
 
-- **Corrección: los puentes de las diferencias siempre se abren (18va iteración).** Reporte en español del usuario (literal): "la diferencia de 613055k no se abre el puente". En la interfaz no existe ningún formato «k»: los importes salen como 613.055,37, así que «613055k» es probablemente un error de tipeo de una cifra de ese orden. Casos concretos que estaban rotos: (1) si faltaba una fuente (p. ej. el registro de compras) la sección de liquidaciones de viaje lanzaba un error interno, se descartaban las 9 secciones sin avisar y el Panorama y el navegador quedaban vacíos (sin puente en ninguna parte); (2) tocar una fila del Panorama o una tarjeta solo cambiaba de sección: no abría ni desplazaba hasta el puente; (3) el puente solo aparecía si había partidas por documento: una diferencia sin descomponer (o de Nómina, Formularios, Mayores o Integridad) no mostraba nada; (4) el único control para expandir una partida era un enlace pequeño, sin `aria-expanded`; (5) los errores al armar las secciones se tragaban. Ahora: cada fila del Panorama, tarjeta del navegador, indicador KPI, enlace «Ver en el puente», verificación de la lista y fila del índice de puentes abre el puente correspondiente (toda la fila es el objetivo, también con teclado y toque, con flecha que rota y `aria-expanded`); cada comparación es un puente plegable cuyo estado queda guardado y sobrevive a repintados, recálculos y autoguardado; si una diferencia no se puede descomponer se muestra igualmente con las dos cifras, la diferencia con signo, «Diferencia sin explicar» por el monto completo y la guía de qué revisar o cargar; toda verificación con alerta de Formularios, Mayores, Integridad, Nómina e Importaciones tiene su puente; los importes NaN o infinitos se muestran como 0,00; y hay una frontera de errores visible (aviso con la sección y el motivo, más `console.error`) en cada puente, cada sección y el armado completo, que además conserva las 9 secciones mínimas. Los números del motor y de las verificaciones no cambian. No se agregaron rutas de Firebase.
-- **Rediseño: ⚖️ Conciliación SRI vs Mayores organizada por secciones (17ma iteración).** Pedido en español del usuario (literal):
-  "no me siento contento con la información, siento que esta desordenada. Creo que debemos ir por compras y vemos la diferencia en
-  compra, ventas y ver la diferencia en venta, retenciones y ver la diferencia en retenciones, tambien las excepciones deben ser mas
-  claras, porque no se detalla bien de que se trata la excepción, y si se suman o restan al final. La recomendaciones hay que hacer
-  igual por cada parte, compras, ventas, retenciones, etc. Que se pueda ver la información detallada de la diferencia para buscar el
-  porqué con las respectivas recomendaciones como esta ahora". Solo cambia la presentación: las verificaciones, los parsers y todos
-  sus números son los mismos (probado: KPI, checks y recomendaciones idénticos a la 16ta).
-  - **Panorama + navegador.** Arriba, una fila por parte (Compras, Ventas, Retenciones de renta, Retenciones de IVA, Importaciones, Nómina,
-    Liquidaciones de viaje, Formularios, Mayores, Integridad) con Fuente A, Fuente B, Diferencia, Por resolver, estado y %; debajo, tarjetas
-    de sección con estado y monto (las que no tienen datos muestran ⏳ y lo que hay que cargar). Cada verificación existente cuelga de
-    exactamente una sección.
-  - **Página de sección con estructura fija:** (a) encabezado con las dos cifras comparadas y su origen; (b) **puente de la diferencia**:
-    Diferencia total (A − B) → una fila por partida con ¿Qué es?, ¿Suma o resta? (frase con dirección y signo), qué hacer, nº de documentos,
-    base, IVA, efecto (±) y «queda por explicar», seguido de «explicada», «por resolver» y «sin explicar» y una línea de cierre
-    («Totalmente conciliado» cuando no queda nada); cada partida se expande a sus documentos (proveedor, fecha, bases, IVA, total, efecto y
-    causa probable); (c) recomendaciones de la sección con enlace «Ver en el puente»; (d) «Ver detalle de la comparación»: las verificaciones
-    originales (por tipo de comprobante, código, base…), el Cuadre de bases y los puentes A/B/C (dentro de Compras). Los documentos ya
-    explicados en el puente no se repiten en las verificaciones del detalle.
-  - **Convención única de signos:** Diferencia = Fuente A − Fuente B; una partida + aumenta la diferencia (A queda por encima de B) y una
-    partida − la reduce (A queda por debajo de B). Compras usa A = SRI recibidos y B = ATS de la empresa (sin viaje).
-  - **Etiquetas:** «documentos propios» → «Compras emitidas por la propia empresa» (liquidaciones de compra y reembolsos cuya clave de acceso
-    lleva el RUC de la empresa; el SRI solo lista como recibidos los emitidos por terceros); «documentos físicos» → «Documentos físicos o preimpresos
-    (no electrónicos)» (autorización de 10 dígitos). Las diferencias de conteo (cód. 332: 113 vs 119; tipo 41: 13 vs 12) salen como notas
-    «no suman ni restan importe». Sin códigos técnicos en pantalla.
-  - **Resumen y Recomendaciones:** Panorama + recomendaciones agrupadas por sección (Compras, Ventas, Retenciones de renta, Retenciones de IVA,
-    Importaciones, Nómina, Viaje, Formularios, Mayores, Integridad), ordenadas por prioridad y monto, más lo pendiente de datos.
-  - **Impresión y Excel** siguen la misma estructura: Panorama → un bloque por sección (cifras, puente con signos, notas, recomendaciones);
-    hojas Excel Panorama, Compras, Ventas, Retenciones, Importaciones, Nómina e IESS, Viaje (puente), Formularios, Mayores, Integridad y
-    Recomendaciones (por sección), además de las hojas de detalle anteriores.
-  - **Datos reales (FURCHETSA, viaje separado, cabecera sin conciliar):** Compras ATS↔SRI: A 92.200,25 − B 94.112,84 = −1.912,59 = explicadas −1.922,42
-    (propias −762,83; físicas −1.196,03; anulado con NC +36,46; redondeos −0,02) + por resolver +9,83 (PECMANOIL +10,00 con IVA, nota de débito −0,17)
-    + sin explicar 0,00. Las cinco con «dos bases» (49,54) salen como resueltas e informativas. Verificado con un cálculo independiente en Python.
+- **🔴 Nueva área: "🏛️ Auditoría Supercias"** (menú lateral, debajo de Auditoría) — concilia los
+  estados financieros internos, que son los declarados al SRI (**Formulario 101**, Impuesto a la
+  Renta Sociedades), contra los presentados a la **Superintendencia de Compañías** (Estado de
+  Situación Financiera y Estado de Resultado Integral), por empresa y por año:
+  - **Carga**: se suben los PDF oficiales (varios a la vez). La app reconoce sola qué documento es,
+    **de qué año** y de qué RUC (avisa si el RUC no coincide con la empresa o si ya había uno de ese
+    año) y **lee los valores exactos** de cada casillero/código, sin IA ni transcripción manual. Se
+    guardan por empresa y año.
+  - **Matriz de años**: qué documentos hay de cada año, qué años se pueden conciliar y qué años
+    faltan (solo se comparan SRI y Supercias del mismo año).
+  - **Informe ejecutivo**: (1) resumen por año; (2) revisión de años y cobertura; (3) conciliación
+    rubro por rubro (45 rubros de activo, pasivo, patrimonio y resultados, con su diferencia y %);
+    (4) cuadres internos de cada fuente (Activo = Pasivo + Patrimonio, utilidad del balance = la del
+    estado de resultados, participación e impuesto gasto = por pagar, etc.); (5) comparación entre
+    años: continuidad (inventario inicial = final del año anterior, capital, utilidades
+    acumuladas) y evolución de cada rubro con su variación %; (6) indicadores financieros por año
+    y fuente; (7) hallazgos, riesgos y recomendaciones redactados por la IA sobre las cifras ya
+    calculadas; (8) metodología.
+  - **Descargas**: Excel (hojas de resumen, conciliación por año, validaciones, evolución SRI y
+    Supercias, indicadores, hallazgos, mapeo de fórmulas y todos los valores leídos de cada PDF) y
+    PDF (formato ejecutivo, A4 horizontal).
+  ⚠️ **Requiere la ruta `auditoria_supercias` en las reglas de Firebase** — ya está incluida en
+  `reglas-firebase-geafinanciero.json` (permiso por el área "auditoriasupercias"). Cambian
+  `index.html` y `netlify/functions/analizar.js`.
 
-- **Cambio: la cabecera del ATS ya no se concilia (16ta iteración).** Pedido en español del usuario (literal): "considera algo
-  adicional, la cabecera en el ats es diferente que el talon y el xml porque ahora se pone facturas electronicas y ya no es
-  necesario cuadrar el encabezado". La verificación «Coherencia interna del XML: totalVentas y ventas por establecimiento» y su
-  recomendación ya no se evalúan por defecto: no cuentan en el KPI, el % de cuadre, los ❌/⚠️ ni las recomendaciones. Ajuste nuevo
-  **«Conciliar cabecera del ATS»** (por empresa, desactivado por defecto; campo `conciliarCabecera` en la ruta de configuración
-  existente) para periodos anteriores o casos sin facturación electrónica. La tarjeta del ATS muestra una línea gris: «Cabecera del
-  ATS: totalVentas X — no se concilia…». El cabecero solo alimentaba esa verificación: ventas ATS vs talón, ATS vs reporte contable,
-  casilleros de ventas del 104 y el cuadre de bases usan el detalle de ventas, nunca totalVentas/ventasEstablecimiento. Con los
-  archivos reales: 47 verificaciones (antes 48), ❌ 4 → 3 (✅ 24, ⚠️ 4, ⏳ 16), % de cuadre 75 → 77,4; nada más cambia.
+- **Nuevo: análisis por partes (lotes)** — cuando se analizan muchos documentos a la vez (carpeta
+  de Drive o ZIP), ya no se mandan todos en una sola consulta (la IA gratuita la rechazaba o no
+  alcanzaba a responder, y el aviso decía "saturados"). Ahora se reparten en lotes de ~45.000
+  caracteres / 1,5 MB de PDF, se analizan uno por uno (con una pausa para respetar el límite
+  por minuto) y los resultados se combinan en uno solo: por cada documento/punto requerido
+  queda el mejor estado encontrado en cualquier lote. Si algún lote falla se reintenta una vez
+  y, si sigue fallando, se indica qué archivos quedaron sin revisar.
+- **Mensajes de error de la IA más precisos** (`analizar.js`): distingue contenido demasiado
+  extenso, límite gratuito por minuto/día, demora excesiva y saturación real de Gemini.
 
-- **Nuevo: cuadre de bases compuestas y tabla «Cuadre de bases / puente» en ⚖️ Conciliación SRI vs Mayores (15ta iteración).**
-  Pedido en español del usuario (literal): "en la diferencia de 49.54 revisa porque tienen dos bases 15% y otro porcentaje,
-  revisalo por favor, tambien en resumen cuadralo con gastos de viaje y estas otras bases para comparar que ya este cuadrado".
-  - **Diagnóstico de los 5 comprobantes (49,54).** Eran comprobantes con **dos bases**: el archivo de recibidos del SRI trae en
-    `VALOR_SIN_IMPUESTOS` solo la base con IVA, mientras que `IMPORTE_TOTAL` incluye además un cargo **sin IVA** (servicio/propina
-    del 10 % u otro) que el ATS y el registro contable llevan en la base 0 %. Por documento (cargo sin IVA = IMPORTE_TOTAL − IVA −
-    VALOR_SIN_IMPUESTOS): 001-001-000118210 (RUC 0993372383001) 19,67; 002-002-000011489 (1716185457001) 3,15; 001-001-000024646
-    (1793181694001) 8,06; 002-002-000035054 (0993381020001) 6,83; 001-002-000071991 (1792489970001) 11,83. En los cinco, base
-    compuesta e IVA coinciden exactamente entre SRI, ATS, registro y reporte: no eran errores.
-  - **Se compara igual con igual.** Cada comprobante lleva un vector de bases (≠ 0 %, 0 %, no objeto, exenta, otros sin IVA,
-    base total = total − IVA, IVA, total). Los comparativos SRI/registro/ATS/reporte usan la **base compuesta**; las diferencias
-    de composición salen como informativas («Dos bases: el SRI muestra solo una», «Composición distinta entre fuentes») con una
-    columna **Causa probable** y una mini-tabla por fuente (base ≠ 0 % / 0 % / no objeto / exenta / otros / IVA) en la pantalla,
-    la impresión y el Excel (hojas «Excepciones» y «Composición de bases»). El centavo de redondeo del SRI se conserva (el total
-    del SRI cuadra exacto: 92.200,25).
-  - **Validación del IVA por documento.** Se calcula la tarifa implícita (IVA ÷ base ≠ 0 %); si no es la configurada se informa
-    «tarifa distinta» (p. ej. 12 %, 5 %) o «tarifas mezcladas» (p. ej. 15 % + 0 %). Nuevo ajuste **«Otras tarifas de IVA conocidas»**
-    (por empresa, en ⚙️ Ajustes; guardado en la ruta de configuración existente, campo `tarifasOtras`; predeterminado 5, 8, 12, 13, 14).
-    Solo cambia la clasificación informativa, nunca la diferencia en dólares. Hallazgo aparte: 13 comprobantes de un mismo
-    proveedor (RUC 0990005737001) salen con tarifa efectiva 12 % en el ATS: conviene revisarlos.
-  - **Corrección genuina con la separación apagada.** SRI vs registro y SRI vs ATS pasan de 391,89 a **342,35** (−49,54: antes se
-    comparaba una sola columna de base). Con la separación encendida pasan de 58,41 a **8,87** (8,70 PECMANOIL sin registrar + 0,17 nota de
-    débito). Fuera de eso, con la separación apagada el estado y la diferencia de las demás verificaciones son idénticos a la 14va;
-    se añaden 6 verificaciones nuevas del grupo 3c, por lo que el KPI pasa de 38 a 44 verificaciones.
-  - **Resumen: «🧮 Cuadre de bases / puente».** Filas: compras totales (todos los sustentos) → (−) liquidaciones de viaje (05) → (=)
-    compras a nombre de la empresa → base ≠ 0 % / 0 % / no objeto / exenta / otros sin IVA / base total / IVA / total. Columnas: ATS,
-    Talón SRI, Reportes contables, Registro de compras, SRI recibidos y Diferencia, con estado ✅ / ⚠️ / ❌ por línea. Debajo: cierre
-    (diferencia SRI − ATS = explicada por partidas + excepciones pendientes identificadas), **residuo no explicado (0,00)**, lista de
-    documentos pendientes, reembolsos (cód. 41: ATS vs reporte vs registro) e importaciones (libro de importaciones vs filas DAU del
-    registro vs formulario 104, casilleros 513+514+515 y 523+524+525). Más abajo, los puentes detallados: A (ATS ↔ SRI), B (registro ↔ ATS ↔
-    reporte) y C (retenciones renta/IVA ↔ talón ↔ sistema). Cada partida es «explicada» (propios, físicos, anulados con NC, composición,
-    redondeos, DAU) o «pendiente» (excepción real) y cada documento cae en una sola partida, por lo que la identidad aritmética es exacta al centavo.
-    Va también en el informe impreso y en el Excel (hoja «Cuadre de bases»).
-  - **Firebase:** sin rutas nuevas (solo el campo `tarifasOtras` dentro de `conciliacion_sri_config`); `reglas_firebase_completas.json` no cambia.
+- **Nuevo: se pueden analizar CARPETAS completas de Google Drive** — en cualquier campo de enlace
+  (Link general de respaldo en Soportes, links de los puntos del Equipo de trabajo, enlaces del
+  trámite, Equipo de Trabajo), además de un archivo suelto ahora se puede pegar el link de una
+  carpeta (`drive.google.com/drive/folders/...`). La app lista la carpeta (y sus subcarpetas,
+  hasta 2 niveles, máximo 30 archivos), lee cada archivo por separado y los envía juntos a la IA:
+  PDF (los que tienen texto como texto; los escaneados como PDF completo hasta ~4 MB en total),
+  Google Docs/Sheets/Slides, Word y Excel. Al terminar avisa qué archivos no se pudieron leer.
+  La carpeta y sus archivos deben estar compartidos como "Cualquiera con el enlace puede ver".
+  Cambian `index.html` y `netlify/functions/leer_enlace.js`.
 
-- **Nuevo: liquidaciones de viaje (sustento 05) aparte en ⚖️ Conciliación SRI vs Mayores (14va iteración).** Pedido en
-  español del usuario (literal): "por favor en las facturas con sustento 05 son liquidaciones de viaje y no estan a
-  nombre de la empresa no va a cuadrar con el sri, ponlas aparte como liquidaciones de viaje para que pueda cuadrar con
-  el detalle de compras del sri". Los documentos con **código de sustento 05** se separan de la comparación con los
-  comprobantes recibidos del SRI y se muestran/controlan como un bloque propio **🧳 Liquidaciones de viaje (sustento 05)**.
-  - **Interruptor** «Separar liquidaciones de viaje (sustento 05)» (activo por defecto; por empresa). Apagado, todo se
-    comporta exactamente como en la 13va iteración (probado: mismos KPI, líneas, excepciones y recomendaciones).
-  - **Cómo se reconocen** (prioridad): marca manual del documento (botón «🧳 Es viaje» / «↩ Quitar» en las excepciones y en
-    la tarjeta) > lista de proveedores/cédulas de empleados > texto del tipo de documento (p. ej. «viaje») > sustento 05
-    (el del **ATS** manda para los documentos que están en el ATS; los del registro de compras y del reporte contable se
-    cruzan por RUC + secuencial; si el documento no está en el ATS se usa la columna de sustento del propio reporte o
-    registro, que el lector ahora captura cuando existe). Las reglas están en la tarjeta (⚙️ Reglas de clasificación).
-  - **Dos vistas.** (i) Compras a nombre de la empresa (sin 05): SRI vs registro, SRI vs ATS, registro vs ATS y ATS vs
-    reporte contable por tipo de documento; los 05 no se reportan como «registrado sin comprobante en el SRI». (ii) Bloque
-    de liquidaciones de viaje: documentos, base 0%, base ≠ 0%, IVA y retenciones (ATS), con su propio grupo **3b** de 4
-    verificaciones: **puente** (compras ATS todos los sustentos − viaje 05 = compras comparables con el SRI; el total sigue
-    cuadrando con el talón, que incluye todo), ATS vs reporte contable, ATS vs registro de compras (documentos de un solo
-    lado) y coherencia de la clasificación (sustento distinto entre sistema y ATS, 05 que sí figuran en el SRI, marcas).
-    Las comparaciones de retenciones con el resumen del sistema y los formularios 103/104 siguen sobre el total de
-    compras. Recomendación nueva (con puente y texto prudente: respaldo con comprobantes de empleados, IVA solo como
-    crédito si la norma vigente lo permite; no es asesoría legal).
-  - **Pantalla/exportación.** Tarjeta en las pestañas Conciliación y Resumen (tabla por fuente, puente y listado de
-    documentos), sección en Imprimir/PDF, hoja **«Liquidaciones de viaje»** en el Excel y filas del puente en «Resumen».
-  - **Persistencia sin rutas nuevas** (misma regla de `conciliacion_sri` / `conciliacion_sri_config`; `reglas_firebase_completas.json`
-    no cambia): interruptor y reglas en la configuración por empresa; marcas manuales en la fuente `viaje` del periodo.
-  - **Hallazgo con los archivos reales de septiembre 2026:** en el ATS hay 47 de 167 líneas con sustento 05 (base 0% 261,40;
-    base ≠ 0% 182,08; IVA 27,31; 38 facturas, 9 notas de venta; 32 de PANAVIAL), todas en el registro de compras y en el
-    reporte contable y **ninguna** en los recibidos del SRI. De los 39 «registrados sin comprobante en el SRI» (333,65), 38
-    eran sustento 05 (333,48; IVA 27,31): la diferencia SRI vs registro baja de 391,89 a 58,41 (PECMANOIL 8,70 sin registrar
-    + 0,17 de una nota de débito con sustento 05 en el reporte y otro código en el ATS + 49,54 en 5 diferencias de base).
-    Reembolsos 13 vs 12 y código 332 113 vs 119 **no** dependen del 05.
-  - **Pruebas:** motor contra un cálculo independiente en Python de los mismos archivos (47 documentos clave por clave),
-    puente exacto, interruptor apagado = resultados previos, reglas/marcas con un registro sin columna de sustento,
-    pantalla (jsdom), persistencia con recarga, solo lectura, impresión y Excel. Los datos reales no están en la app.
-- **Nuevo: ⚖️ Conciliación SRI vs Mayores (13va iteración).** Pedido en español del usuario (literal): "dentro de la app
-  quiero que crees una area de conciliacion SRI mayores, aqui te voy a enviar los formularios 103 y 104 del sri y los
-  mayores del sistema contable. No siempre los mayores tienen el mismo formato. Con esto por favor crea un mecanismo
-  para revisar que los mayores cuadren con los formularios y genera un resumen detallado de lo que cuadra y no cuadra
-  y las recomendaciones". Área nueva en el menú (**⚖️ Conciliación SRI vs Mayores**, clave de permiso `conciliacion_sri`,
-  aparece sola en Administración de Usuarios), por **empresa y periodo (mes)**, con 4 sub-pestañas.
-  - **Arquitectura.** Todo el módulo vive en `index.html` (funciones con prefijo `csri*`, sin dependencias nuevas:
-    reutiliza pdf.js y SheetJS que ya estaban cargados). Capas: (1) lectores de fuentes → (2) importador de mayores
-    agnóstico al formato → (3) mapeo de cuentas a conceptos → (4) motor determinista de verificaciones (sin IA, sin
-    estimaciones) → (5) recomendaciones por reglas → (6) resumen, impresión y Excel. El estado en memoria sobrevive a
-    cambios de pestaña y re-renders; se autoguarda en Firebase con debounce de 1,5 s y se carga al abrir.
-  - **Pestaña 📥 Fuentes** (cada una muestra una tarjeta «✓ cargado» con un resumen; admite arrastrar y soltar):
-    ATS (XML) · talón resumen del ATS (PDF, con ingreso manual si no se puede leer) · reportes contables IMPUESTOS
-    (.xls/.xlsx: Detalle de Ventas/Compras y Resumen de retenciones) · importaciones (.xlsx; detecta los marcadores
-    «(CAS.504)/(CAS.524)») · comprobantes recibidos del SRI + registro de compras contable (pueden venir en dos hojas
-    del mismo Excel: se detecta cuál es cuál y se puede cambiar de hoja) · consolidado IESS (PDF, con ingreso manual) ·
-    **formularios 103/104** (cuadrícula de casilleros editable, o carga de PDF/XML/Excel donde se leen los pares
-    casillero/valor; al lado de cada casillero se muestra el valor **esperado** derivado del ATS/IESS/importaciones) ·
-    **mayores contables**.
-  - **Mayores en cualquier formato.** Se detecta automáticamente: fila de encabezado (por sinónimos, también de dos
-    niveles), columnas (fecha, asiento, detalle, debe/haber, monto con signo, columna Tipo D/H, saldo, saldo
-    inicial/final, deudor/acreedor), la cuenta (título por bloques «Cuenta: …», una columna de cuenta, o una cuenta por
-    hoja con el nombre de la hoja), formato numérico (1.234,56 / 1,234.56, negativos entre paréntesis o con signo al
-    final), fechas en texto o serie de Excel, mayores que traen solo saldo (se derivan los movimientos), convención
-    de saldo deudor/acreedor y el caso «balance de comprobación» (una fila por cuenta). Excel, CSV/TXT y PDF con texto.
-    Antes de importar hay un **asistente**: resumen del formato detectado, vista previa de la hoja y un selector por
-    campo para corregir la columna, fila del encabezado, formato de números y qué signo es débito; el resultado se
-    recalcula al instante. Los ajustes se pueden guardar como **perfil de formato por empresa** (se aplica solo
-    cuando el encabezado de un archivo futuro coincide con la firma del perfil).
-  - **Pestaña 🔗 Mapeo de cuentas.** Cada cuenta del mayor se asigna a un concepto (ventas gravadas/0%, IVA en
-    ventas, IVA en compras, importaciones, retenciones de IVA por %, retención en la fuente por código del ATS,
-    IESS, sueldos, reembolsos…). Hay sugerencias automáticas por nombre de cuenta (revisables) y se guarda por empresa
-    para los siguientes periodos. Incluye ajustes (tolerancias, tarifa de IVA) y el **catálogo de casilleros editable**.
-  - **Pestaña ⚖️ Conciliación — catálogo de 38 verificaciones** (estado ✅ cuadra / ⚠️ diferencia menor / ❌ no cuadra /
-    ⏳ sin datos; tolerancia predeterminada $0,05 por línea y $1,00 agregada; cada una con detalle de líneas y
-    excepciones desplegables): **1. ATS vs talón** (compras por tipo, ventas, retenciones de renta y de IVA,
-    retenciones recibidas, anulados, cabecera, periodo/RUC, recálculo de IVA y retenciones, fechas, duplicados) ·
-    **2. ATS vs reportes del sistema** (compras, ventas, retenciones por código, IVA) · **3. Documentos** (SRI vs
-    registro contable vs ATS, por RUC + secuencial; clasifica como informativos los propios, físicos, anulados y notas
-    de venta) · **4. Importaciones** (vs libro de compras/DAU y vs IVA) · **5. Formulario 104** (ventas, compras,
-    importaciones, retenciones, crédito tributario/factor de proporcionalidad) · **6. Formulario 103** (bases, valores,
-    totales, coherencia, nómina 302/352 contra IESS, códigos sin casillero) · **7. Mayores** (integridad,
-    duplicados, asientos descuadrados, naturaleza de saldo, movimientos fuera del periodo, mayor vs esperado, mayor vs
-    formulario).
-  - **Pestaña 📝 Resumen y Recomendaciones.** KPIs, lo que no cuadra (con las principales excepciones), lo que cuadra,
-    lo pendiente de datos y recomendaciones con severidad (alta/media/baja) y monto. **Imprimir / PDF** (usa
-    `bpAbrirVentanaImpresion` con la nueva opción `banco:'neutro'`: sin logo ni colores de banco; el resto de módulos
-    no cambia) y **Exportar Excel** real (.xlsx) con las hojas Resumen, Verificaciones, Detalle de líneas, Excepciones,
-    Recomendaciones, ATS por código, Retenciones por código y Mayores normalizados.
-  - **Rutas nuevas en Firebase (⚠️ agregar a las reglas de Realtime Database; ya están en
-    `reglas_firebase_completas.json`):** `conciliacion_sri/{DATOS_UID}/{empresaId}/{AAAA-MM}/{ats|talon|rep|imp|sri|libro|iess|form|mayores|meta}`
-    (cada fuente se guarda como **un solo texto JSON**, para evitar problemas con claves y arreglos) y
-    `conciliacion_sri_config/{DATOS_UID}/{empresaId}` (mapeo de cuentas, perfiles de formato, catálogo editable,
-    tolerancias). Misma regla que `banco_borradores_auto` pero con el permiso `areas/conciliacion_sri` (lectura si no
-    es `sin_acceso`; escritura solo con `completo`). Los usuarios de solo lectura ven pero no cargan ni guardan.
-  - **Privacidad / límites.** Del IESS se guardan solo totales (sin nombres ni cédulas). De los mayores se guardan
-    como máximo ~8.000 movimientos por periodo (prioridad a las cuentas ya mapeadas); el resto de cuentas queda con
-    sus totales del archivo y se avisa con la etiqueta «solo totales». El archivo original nunca se sube.
-  - **⚠️ Casilleros — verificar.** La numeración de casilleros del catálogo (104: 401/411/421, 500–563, 609, 721–731,
-    799…; 103: 302/352 … 343/393, 3440/3940, 349/399, 499) se armó de memoria y de los marcadores del propio
-    archivo de importaciones (504/524); **no se tuvo a la vista un formulario 103/104 real**, así que cada fila marcada
-    «verificar» (confianza media) debe compararse con el formulario vigente del SRI. El catálogo es editable desde la
-    pestaña Mapeo de cuentas y la nota aparece en el propio módulo. Tampoco se probó con un mayor real del sistema
-    contable de la empresa: los 11 formatos sintéticos de las pruebas cubren los casos descritos arriba, y el
-    asistente permite corregir cualquier formato que no se detecte bien.
-  - **Pruebas (jsdom + el script real de `index.html` + SheetJS):** lectores contra los archivos reales de un cliente
-    (ATS vs talón, retenciones vs Resumen, compras vs Detalle de Compras, importaciones, REVISION_SRI, IESS);
-    importador de mayores con 11 formatos sintéticos + balance de comprobación; recarga desde Firebase simulado
-    (mismas cifras y KPIs), aislamiento por empresa y modo solo lectura. Los datos reales del cliente solo se usaron
-    en las pruebas; **no están dentro de la aplicación**.
-- **Nuevo: enviar el Flujo de Caja Produbanco al Flujo de Caja de Banco Pacífico con una casilla (12va iteración).**
-  Pedido en español del usuario (literal): "los datos del flujo de caja que hice en produbanco si yo pongo un
-  check envialos al flujo de banco pacifico". En **📈 Flujo de Caja Proyectado Produbanco** (debajo de la
-  verificación de consistencia) hay una tarjeta verde con la casilla **"☑ Enviar estos datos al Flujo de Caja de
-  Banco Pacífico"** (id `pf-enviar-pacifico`, apagada por defecto, **por empresa**). Se guarda en el MISMO estado
-  `pfEstadoPorEmpresa` y por tanto en el borrador existente `banco_produbanco_flujo_borrador` (sin rutas nuevas;
-  `reglas_firebase_completas.json` no cambia). Al marcarla: toast "Datos enviados al flujo de Banco Pacífico" y,
-  mientras siga marcada, cada recálculo (`pfRecalcularTodo` → `pfProgramarSyncPacifico`, debounce 400 ms) escribe en el
-  **borrador de Pacífico** de la misma empresa (`abGetBorrador('pacifico', empresa)`, ruta existente
-  `banco_borradores_auto`), así sobrevive a cambio de pestaña y recarga. Regla: mientras esté activa, los campos
-  vinculados se sobrescriben con Produbanco y en Pacífico quedan **de solo lectura**, con la etiqueta
-  "🔗 vinculado a Produbanco" y un banner "Datos tomados del Flujo Produbanco — 6 años, actualizado hh:mm". Al
-  desmarcarla se deja de sincronizar y los últimos valores copiados quedan editables. Lo que el usuario escribió en
-  Pacífico fuera de los campos vinculados (premisas, tablas de préstamos, nombre del cliente) nunca se toca. El
-  vínculo vive en el borrador de Pacífico como claves planas `_pfLink`/`_pfLinkTs`/`_pfLinkNota`, por eso al abrir
-  Pacífico primero tras una recarga ya se ve el estado correcto (aplicado en `pintarDocsBancoPacifico` después de
-  `abRestaurar` y antes de `bpFlujoCajaLive`, vía `bpAplicarVinculoProdubanco()`). El envío es por empresa: aunque se
-  cambie de empresa dentro del debounce, el cálculo pendiente se escribe en la empresa editada. Las funciones `ab*`
-  (`abGetBorrador`/`abGuardarBorrador`/`abCargarBorradorSiHaceFalta`) ganaron un parámetro opcional de empresa
-  (retrocompatible). **Mapeo** (Pacífico = Año 1 mensual + Años 2-5 por % de crecimiento; Año 1 = año base Produbanco
-  con su año real vía `pfAnioReal`):
+- **🔴 Nuevo: "👥 Equipo de trabajo" dentro de cada trámite (Públicos y Privados)** — nueva
+  pestaña en el detalle del trámite, junto a Datos / Diagnóstico IA / Soportes:
+  - **Puntos automáticos**: cada vez que se analiza un oficio en "🧠 Diagnóstico IA" (pegando el
+    texto, subiendo el archivo o desde un enlace), la IA separa **cada requerimiento del oficio
+    como un punto** (respetando la numeración del oficio), con los **respaldos recomendados**
+    que hay que subir y su **prioridad** (alta/media/baja). Solo se crean si el trámite aún no
+    tiene puntos. Si luego **se reemplaza el oficio** y se vuelve a analizar, la app detecta que
+    es un oficio distinto y pregunta si reemplazar los puntos por los del nuevo (avisando cuántos
+    respaldos ya subidos se borrarían); si es el mismo oficio, no toca nada. Para oficios analizados antes de este cambio,
+    usa el botón "🧠 Generar los puntos desde el oficio". También se pueden agregar puntos a mano.
+  - **Varios responsables**: el equipo puede tener varios responsables (marcados de Miembros, más
+    nombres libres separados por coma) y una **fecha límite interna**; cada punto puede tener sus
+    propios responsables (uno o varios) — si no se marca ninguno, hereda los del equipo. Los
+    trámites guardados con el formato anterior (un solo responsable) se leen sin problema.
+  - **Enlace por punto** ("📋 Copiar link del punto" o "📲" para WhatsApp): el responsable lo abre,
+    inicia sesión con su usuario y cae directo en su punto. Ahí sube el respaldo (PDF, Word,
+    Excel) o pega un link de Google Drive/OneDrive, y **la IA lo revisa automáticamente**: dice
+    si respalda el punto (✅ / 🟡 parcial / 🔴 no), por qué, y **qué falta o hay que corregir**.
+    Los PDF de hasta 4 MB se guardan completos para que la IA vea firmas, sellos y escaneos.
+  - **Avance** del trámite (puntos respaldados, parciales, sin respaldos, cumplidos), envío de
+    todos los puntos por **WhatsApp o correo** agrupados por responsable, e **impresión**.
+  - **Permisos**: quien tiene "Acceso completo" en Trámites arma el equipo (puntos,
+    responsables, observaciones, cumplido). Un responsable con usuario **"Solo lectura"** puede
+    subir respaldos y pedir la revisión de la IA **solo en los puntos asignados a él** (si su
+    correo está registrado en Miembros como "correo de acceso"; así además ve directamente solo
+    sus puntos). Necesita al menos "Solo lectura" en Trámites Públicos/Privados.
 
-  | Campo Pacífico (Guía Flujo de Caja) | Origen Produbanco |
-  |---|---|
-  | `fc2-saldoinicial` | Saldo inicial de caja del año base (`pf-in-2025-saldoInicialCaja`) |
-  | `fc2-ing-m1..m12` Ingresos por Ventas | Total ingresos operacionales del año base mes a mes (recaudaciones + otros ingresos operacionales; base caja) |
-  | `fc2-costo-m1..m12` Costos de Ventas | Proveedores nacional + exterior, mes a mes |
-  | `fc2-gasto-m1..m12` Gastos Adm. y Ventas | Gastos administrativos + ventas + personal + otros operativos + impuestos + participación trabajadores + otros egresos operacionales, mes a mes |
-  | `fc2-ing-crec` / `fc2-costo-crec` / `fc2-gasto-crec` | Tasa compuesta equivalente entre el año base y base+4 de cada serie anual (0 si el valor inicial o final no es positivo) |
-  | `fc2-aportes-monto` / `-mes` | Aporte de accionistas (total anual del año base) / mes de mayor movimiento |
-  | `fc2-creditoing-monto` / `-mes` | Préstamos bancarios recibidos (total anual) / mes de mayor movimiento |
-  | `fc2-capex-monto` / `-mes` | Obras de infraestructura + compra de activos fijos + compra de inversiones permanentes (total anual) / mes de mayor egreso |
+  ⚠️ **Requiere 2 rutas nuevas en las reglas de Firebase Realtime Database**:
+  `tramites_respaldos` y `tramites_respaldos_pdfs`. El archivo completo, ya integrado con las
+  reglas por área existentes, está en **`reglas-firebase-geafinanciero.json`**. Estas dos rutas
+  permiten leer/escribir a quien tenga acceso (cualquier nivel distinto de "Sin acceso") a
+  Trámites Públicos o Privados, para que los responsables de solo lectura puedan subir sus
+  respaldos sin poder modificar el resto del trámite. También se agregó `flujos_caja` (Área
+  Bancaria → Flujo de Caja), que faltaba y solo era accesible para administradores.
 
-  **No mapeado (y por qué):** sexto año de Produbanco (base+5; Pacífico solo tiene 5 años — se avisa en la nota visible
-  bajo la casilla); tablas de préstamos 1-3 de Pacífico (las calcula con amortización francesa propia desde monto/tasa/plazo,
-  Produbanco solo trae capital/intereses mensuales ya calculados); venta de activos/inversiones, préstamos de accionistas,
-  dividendos, otros capital/intereses y cartas de crédito (Pacífico no tiene fila equivalente); recuperación de cartera de
-  apertura (ya está dentro de los ingresos); cliente y las 4 premisas de texto. Aproximaciones declaradas: Años 2-5 de
-  Pacífico siguen un crecimiento compuesto único (los años intermedios de Produbanco, con % propios por año, no se
-  replican exactamente; el Año 5 sí coincide con base+4), y aportes/crédito/capex se concentran en un solo mes porque
-  Pacífico admite un único monto y mes por concepto. Con esta base de caja, el flujo operacional del Año 1 de Pacífico
-  coincide con el flujo neto operacional del año base de Produbanco. Limitación: la sincronización ocurre mientras el
-  Flujo Produbanco está abierto (sus cifras se calculan desde la pantalla); si se edita en otro lado no hay recálculo.
-
-- **Corregido: Flujo de Caja Proyectado Produbanco — "pusimos la opcion de no imprimir año
-  base y si esta imprimiendo" (11va iteración).** Reporte en español del usuario (literal,
-  con captura de pantalla): "ahora quiero imprimir y pusimos la opcion de no imprimir año base
-  y si esta imprimiendo mira". Al imprimir con el checkbox "Incluir año base (AÑO) en la
-  impresión" **desmarcado**, la tabla "Estado de Resultados Proyectado — Comparativo" seguía
-  mostrando la columna del año base (ej. "2026 (Base)") en el documento impreso.
-  - **Causa raíz confirmada por reproducción (jsdom, con y sin la traducción de año base de la
-    8va iteración):** `pfContenidoCompletoHTML(emp, incluirBase)` (la función que arma el
-    contenido de "🖨 Imprimir todo") tomaba las 2 tablas-resumen de 6 años — "📊 Resumen Anual
-    Comparativo" (`#pfResumenAnualCont`) y "Estado de Resultados Proyectado — Comparativo"
-    (`#pfEstadoResultadosTodosCont`, y también la tarjeta de detalle `#pfERDetalleCont`, que
-    desde la 10ma iteración renderiza la misma tabla de 6 años) — vía `pfSnapshotHTML()`, es
-    decir copiando literalmente el `innerHTML` YA RENDERIZADO en pantalla. Ese render en
-    pantalla (`pfRecalcularTodo()` → `pfEstadoResultadosTodosHTML(erTodos)` /
-    `pfResumenAnualHTML(r)`) **siempre** itera las 6 posiciones de `PF_TODOS_ANIOS` (año base +
-    5 proyectados) sin excepción — ninguna de las 2 funciones aceptaba siquiera un parámetro
-    `incluirBase`, así que el checkbox de impresión jamás se les comunicaba: el snapshot que se
-    incrustaba en el documento impreso era el mismo sin importar si el checkbox estaba marcado o
-    no. El comentario previo en el código (que decía que estas 2 tablas "se mantienen intactos a
-    propósito, porque son tablas-resumen de los 6 años") describía el síntoma como si fuera una
-    decisión de diseño, pero en realidad nunca existió ninguna lógica de exclusión de columna
-    para estas 2 tablas — era simplemente el bug.
-  - **Fix:** `pfEstadoResultadosTodosHTML(erTodos, incluirBase)` y `pfResumenAnualHTML(r,
-    incluirBase)` ahora aceptan un 2º parámetro opcional (por defecto `true`, así que el uso en
-    pantalla —`pfRecalcularTodo()`, que nunca pasa este argumento— no cambia en nada); cuando se
-    pasa `incluirBase=false`, ambas funciones filtran `PF_TODOS_ANIOS` a solo `PF_PROJ_YEARS`
-    (excluyen la posición/año 2025=base) tanto en el encabezado de columnas como en cada fila.
-    `pfContenidoCompletoHTML()` ya no hace `pfSnapshotHTML()` de estas 2 tablas: en su lugar
-    vuelve a calcular `r = pfCalcular()` / `erTodos = pfCalcularEstadoResultadosTodos(r.anios)` y
-    llama directamente a `pfResumenAnualHTML(r, incluirBase)` / `pfEstadoResultadosTodosHTML(erTodos,
-    incluirBase)` (usada tanto para la tarjeta de detalle como para el comparativo), pasándoles el
-    valor real del checkbox. El resto del documento (tablas mensuales por año, Índices
-    Financieros) no se tocó: sigue siendo snapshot del DOM como antes, sin cambios de
-    comportamiento.
-  - **Título dinámico:** se agregó `pfRangoAniosHTML(incluirBase)`, que devuelve
-    `"<añoBase>-<añoFinal>"` cuando `incluirBase=true` o `"<primerAñoProyectado>-<añoFinal>"`
-    cuando es `false` (ej. con año base 2026: "2026-2031" vs "2027-2031") — usado en los títulos
-    `<h4>` de "Resumen Anual Comparativo" y "Estado de Resultados Proyectado (— Comparativo)"
-    dentro del documento impreso, mismo patrón que ya usaba la sección del detalle mensual del
-    año base (que se omite/incluye por completo según el checkbox).
-  - **Verificado con reproducción jsdom** (antes y después del fix, con año base = 2025
-    default y año base = 2026 escenario exacto del usuario): con `incluirBase=false` el fix
-    elimina por completo la columna "(Base)" de ambas tarjetas de Estado de Resultados en los 2
-    escenarios de año base (antes del fix la columna seguía presente en los 4 casos probados:
-    confirma que se reprodujo el bug exacto reportado); con `incluirBase=true` ambas tarjetas
-    siguen mostrando los 6 años correctamente en los 2 escenarios (sin regresión).
-
-- **Corregido: Flujo de Caja Proyectado Produbanco — "el estado de resultados solo me sale del
-  2027 me debe salir de todos los años" (10ma iteración).** Reporte en español del usuario
-  (literal, con el año base ya cambiado a 2026 en la conversación previa): "el estado de
-  resultados solo me sale del 2027 me debe salir de todos los años". Causa raíz confirmada por
-  reproducción (jsdom, con y sin la traducción de año base de la 8va iteración):
-  - Dentro de la pestaña "📅 Años Individuales" existe una tarjeta "📊 Estado de Resultados
-    Proyectado (derivado 100% del Flujo de Caja)" (`pfEstadoResultadosHTML`/`#pfERDetalleCont`),
-    **distinta** de la tabla de la pestaña "📊 Resumen Comparativo" (`#pfEstadoResultadosTodosCont`,
-    que sí usa `pfCalcularEstadoResultadosTodos`/`PF_TODOS_ANIOS` y ya mostraba los 6 años
-    correctamente — este bug NO la afectaba). Esa primera tarjeta estaba **hardcodeada a
-    exactamente 2 columnas** (año base + el PRIMER año proyectado) vía
-    `pfPintarEstadoResultados(y2025, y2026)` → `pfCalcularEstadoResultados(y2025, y2026)`
-    (firma de 2 parámetros, nunca iteraba `PF_PROJ_YEARS`/`PF_TODOS_ANIOS`). Esto es un **bug
-    preexistente, NO una regresión de la 8va/9na iteración**: ya existía con el año base en su
-    valor original 2025 (mostraba "2025 (Base)" / "2026 (Proyectado)", solo 2 de 6 años) — nadie
-    lo notó porque "2026" ahí coincidía casualmente con el primer año proyectado "de verdad". Al
-    mover el año base a 2026 (`pfAnioReal`), esa 2ª columna pasó a rotularse "2027 (Proyectado)",
-    y por eso el usuario ve literalmente "solo... 2027". La misma limitación de 2 columnas existía
-    también en la hoja de Excel `ESTADO DE RESULTADOS` (vía el mismo `pfCalcularEstadoResultados`),
-    mientras que la hoja `ESTADO RESULT. <base>-<base+5>` (comparativo) ya estaba correcta.
-  - **Fix:** se eliminó el pintado de 2 columnas fijas. `pfPintarEstadoResultados(anios)` ahora
-    recibe el objeto `anios` completo (los 6 años), calcula con
-    `pfCalcularEstadoResultadosTodos(anios)` y reusa `pfEstadoResultadosTodosHTML(erTodos)` —
-    la MISMA función que ya renderizaba correctamente el comparativo — para repintar
-    `#pfERDetalleTablaCont` (nuevo contenedor interno de la tarjeta, reemplaza los antiguos
-    spans fijos `pf-er-2025-*`/`pf-er-2026-*`). `pfRecalcularTodo()` ahora calcula `erTodos` una
-    sola vez y lo reutiliza para ambas tarjetas (detalle y comparativo) — ya no se calcula dos
-    veces. En el Excel, la hoja `ESTADO DE RESULTADOS` se regeneró con los 6 años (misma fuente
-    `erTodos`) en vez de los 2 fijos; la hoja comparativa no se tocó (ya estaba bien). No se
-    modificó la cadena de cálculo (`pfCalcularAnio`/`pfCalcularAnioAuto`) ni el motor `anios`: los
-    datos de los 5 años proyectados siempre existieron correctamente, era puramente un bug de
-    render (la tarjeta de detalle nunca pintaba más de 2 columnas).
-  - **Verificado con reproducción jsdom:** con año base = 2025 (valor original) la tarjeta de
-    detalle pasó de 2 columnas ("2025 (Base)"/"2026 (Proyectado)") a 6 columnas idénticas a las
-    del comparativo ("2025 (Base)" .. "2030 (Proy.)"); con año base = 2026 (escenario exacto del
-    usuario) pasó de 2 columnas ("2026 (Base)"/"2027 (Proyectado)") a 6 columnas ("2026 (Base)"
-    .. "2031 (Proy.)"), con valores numéricos idénticos fila por fila a la tabla comparativa —
-    confirmando que no es una regresión en los datos, solo en lo que se mostraba.
-
-- **Corregido: Área Bancaria — "también los otros campos del área bancaria se borran y no se
-  guardan" (9na iteración).** Reporte en español del usuario (literal): "tambien los otros
-  campos del area bancaria se borran y no se guardan". Se auditó, sub-sección por sub-sección,
-  el flujo guardar/cargar de las 5 partes de Área Bancaria (Bancos, Flujo de Caja simple,
-  Documentos Banco Pacífico, Informe Básico Produbanco, Flujo de Caja Proyectado Produbanco,
-  Estados Financieros) trazando el código real (no por suposición), con el siguiente resultado:
-  - **Bancos** y **Flujo de Caja simple** (pestañas "Bancos"/"Flujo de Caja"): YA guardaban y
-    cargaban correctamente — cada acción (agregar banco/línea/hipoteca, "Calcular y guardar
-    proyección") escribe de inmediato a Firebase, y la pestaña recarga desde Firebase
-    (`cargarBancos`/`cargarFlujoCaja`) cada vez que se abre. El reporte del usuario no aplica a
-    estas 2 sub-secciones.
-  - **📄 Documentos Banco Pacífico** (5 formatos) y **📋 Informe Básico Produbanco**: **bug real
-    confirmado** — `pintarDocsBancoPacifico()`/`pintarDocsBancoProdubanco()` reconstruían el
-    formulario completo (`cont.innerHTML = ...`) **cada vez que se volvía a entrar a esa pestaña**
-    (cambiar a otra pestaña de Área Bancaria y volver, cambiar de empresa y volver, o recargar la
-    página/reabrir sesión) — y, a diferencia de "Flujo de Caja Proyectado Produbanco" (que ya
-    tenía desde la 6ta iteración un mecanismo de estado en memoria, `pfEstadoPorEmpresa`), estas 2
-    secciones no tenían NINGÚN mecanismo que capturara lo tecleado antes de llegar a presionar su
-    botón "✅ Terminar y Guardar" — cualquier dato a medio llenar se perdía apenas ocurría ese
-    repintado. Causa raíz exacta: ninguna de las dos funciones leía nada de Firebase al abrirse
-    (solo cargaban el HISTORIAL de documentos ya finalizados, vía `cargarDocsBancoPacifico`/
-    `cargarDocsBancoProdubanco`, que es un registro aparte) ni conservaban nada en memoria entre
-    repintados.
-  - **📊 Estados Financieros**: **bug real confirmado**, de una naturaleza distinta y más sutil —
-    SÍ existía estado en memoria (`efPlanCuentas`/`efEstados`, mutado directamente por los
-    `oninput`/`onchange` de cada celda), por lo que cambiar entre los 5 "estados" (periodos) o
-    editar el plan de cuentas no se perdía DENTRO de esa misma pestaña. Pero
-    `pintarEstadosFinancieros()` volvía a ejecutar incondicionalmente
-    `efPlanCuentas = datos.planCuentas; efEstados = ...` (el resultado de `cargarEstadosFinancieros()`,
-    una lectura fresca de Firebase) **cada vez que se entraba a esta pestaña**, incluso si ya
-    había ediciones sin guardar en memoria de una visita anterior en la misma sesión — es decir,
-    cambiar a otra pestaña de Área Bancaria (p.ej. a "Bancos") y volver a "Estados Financieros"
-    pisaba cualquier cambio no guardado explícitamente con "💾 Guardar plan de cuentas"/"💾
-    Guardar valores" con la última versión ya guardada en Firebase (o con nada, si nunca se había
-    guardado).
-  - **📈 Flujo de Caja Proyectado Produbanco**: se confirmó el diagnóstico ya adelantado por la
-    investigación previa (ver 6ta/7ma/8va iteración abajo): `pfEstadoPorEmpresa` sobrevivía a un
-    cambio de pestaña/empresa DENTRO de la sesión, pero nunca se escribía a Firebase salvo al
-    presionar "✅ Terminar y Guardar" (que además guarda un snapshot de HISTORIAL para
-    ver/imprimir, no un borrador recuperable) — y no existía ningún código que leyera ese estado
-    de vuelta al reabrir la pestaña. Recargar la página, cerrar sesión, o simplemente no haber
-    presionado ese botón todavía, perdía absolutamente todo lo tecleado (año base incluido).
-  - **Selector de empresa de Área Bancaria** (`empresaBancariaSeleccionada`/
-    `cambiarEmpresaBancaria`): no tiene bug propio — ya estaba diseñado para aislar datos por
-    empresa (cada `cargarXXX(empresaId)` ya filtra por empresa). El riesgo real estaba en que las
-    4 sub-secciones de arriba, al no tener su propio estado por empresa, podían (en el caso de
-    Documentos Banco Pacífico/Informe Básico Produbanco) mezclar visualmente el prellenado de
-    nombre/RUC de una empresa con el formulario de otra si se cambiaba de empresa sin guardar
-    — igual se corrige con el mismo arreglo de abajo, que aísla todo por empresa.
-  - **Arreglo aplicado — autoguardado real, no solo "pedir que no se olvide guardar"**: se eligió
-    la opción (a) pedida por el reporte (autoguardado con debounce) en vez de solo mejorar la UI
-    del botón explícito, porque esta app no tenía ningún patrón de autoguardado ya establecido
-    que replicar (se buscó expresamente antes de decidir: no hay ningún `debounce`/`autosave`
-    previo en el resto de la app, fuera de Área Bancaria) — así que se diseñó uno nuevo, genérico,
-    reutilizando SIEMPRE los mismos ids de campo que ya usa cada botón "Terminar y Guardar"/
-    "Guardar" existente (no se tocó ningún id ni la lógica de cálculo de ninguna sección):
-    - **Documentos Banco Pacífico** e **Informe Básico Produbanco**: nuevo módulo genérico
-      (`abGetBorrador`/`abCapturarInput`/`abRestaurar`/`abProgramarAutoguardado`/
-      `abGuardarBorrador`/`abCargarBorradorSiHaceFalta`), con el mismo patrón ya probado de
-      `pfEstadoPorEmpresa` (un solo listener delegado de `'input'` sobre el contenedor raíz de
-      cada sección, captura por empresa+sección), pero además persistido con debounce (~1.5s tras
-      la última tecla) a la ruta nueva `banco_borradores_auto/${DATOS_UID}/${empresaId}/${areaKey}`
-      y recuperado la PRIMERA vez que se abre esa sección para esa empresa en la sesión (si ya
-      hay algo en memoria de esta sesión, eso gana — nunca se pisa un tecleo más reciente con una
-      carga de red más lenta). La restauración ocurre DESPUÉS de los prellenados de referencia
-      (`bpPrefillEmpresaEnDocs`/`pbPrefillDatos2024`), para que una edición real del usuario
-      siempre gane sobre un valor de referencia — mismo criterio que `pfRestaurarEstado()`. Se
-      agregó además un texto discreto ("Los cambios... se autoguardan automáticamente...") al
-      tope de cada sección para que quede claro que ya no depende solo de recordar presionar el
-      botón final.
-    - **Estados Financieros**: se agregó una caché en memoria por empresa (`efCachePorEmpresa`)
-      que `pintarEstadosFinancieros()` consulta PRIMERO — si ya hay algo en memoria de esta
-      sesión para la empresa actual, se usa esa referencia (viva, se sigue mutando igual que
-      antes) en vez de volver a leer de Firebase y pisarlo; además se agregó autoguardado real
-      con debounce (`efProgramarAutoguardado()`, que llama a la MISMA `guardarEstadosFinancieros()`
-      que ya usaban los botones "Guardar") enganchado a los mismos `oninput`/`onchange` que ya
-      mutan `efPlanCuentas`/`efEstados` (plan de cuentas, etiqueta de periodo, valor de cada
-      cuenta) y a las funciones que reemplazan el arreglo completo (plan predefinido NIIF/
-      Supercías, importar CSV/Excel, agregar/eliminar cuenta o periodo).
-    - **Flujo de Caja Proyectado Produbanco**: se extendió el mecanismo YA existente
-      (`pfEstadoPorEmpresa`/`pfCapturarEstadoInput`/`pfCambiarAnioBase`) con autoguardado real a
-      Firebase (`pfProgramarAutoguardado`/`pfGuardarBorrador`, debounce ~1.5s) hacia la ruta nueva
-      `banco_produbanco_flujo_borrador/${DATOS_UID}/${empresaId}`, y una carga
-      (`pfCargarBorradorSiHaceFalta`) que se ejecuta al inicio de `pintarPFFlujoProdubanco()`,
-      **ANTES** de construir el `innerHTML` de la pantalla (no después, como el resto de valores)
-      — esto es crítico: `pfGetAnioBase()`/`pfAnioReal()` se leen varias veces DENTRO de esa misma
-      plantilla (título, aviso, encabezado del año base), así que cargar el año base restaurado
-      DESPUÉS de pintar hubiera reproducido exactamente el mismo bug de desincronización ya
-      corregido en la 8va iteración. No se tocó `pfCapturarEstadoInput` en lo que respecta a la
-      exclusión de `"pf-anio-base"` de la captura genérica (sigue solo escribiéndose desde
-      `pfCambiarAnioBase`, que ahora también dispara el autoguardado).
-  - **Verificado con 5 simulaciones Node/jsdom del motor completo de la app** (cargando el
-    `<script>` real de `index.html` dentro de un `vm` con un Firebase simulado en memoria, sin
-    copiar/reescribir ninguna función): (1) el módulo genérico `ab*` — tecleo → autoguardado real
-    a Firebase tras el debounce → sobrevive un cambio de pestaña dentro de la sesión → sobrevive
-    una recarga completa simulada (estado en memoria vaciado a propósito, luego restaurado
-    exclusivamente desde el Firebase simulado); (2) el borrador de Flujo de Caja Produbanco
-    (año base + celdas mensuales) sobrevive una recarga completa simulada; (3) el render completo
-    de `pintarPFFlujoProdubanco()` tras una recarga simulada confirma que el `<input>` del año
-    base Y las etiquetas derivadas ("años proyectados...") quedan sincronizados en el mismo año
-    restaurado (2028 en la prueba, con "proyectados 2029-2033" correctamente derivado) — sin
-    reproducir el bug de la 8va iteración; (4) Estados Financieros: una cuenta agregada sin
-    presionar "Guardar" sobrevive tanto un cambio de pestaña dentro de la sesión como una recarga
-    completa simulada (tras esperar el debounce); (5) aislamiento por empresa: escribir en el
-    mismo campo para la empresa A y luego para la empresa B, cambiando de una a otra, nunca
-    mezcla ni pisa los datos de la otra (ni en memoria ni en los 2 nodos separados de Firebase).
-  **Ruta nueva en Realtime Database**: `banco_borradores_auto` (borradores de Documentos Banco
-  Pacífico e Informe Básico Produbanco) y `banco_produbanco_flujo_borrador` (borrador de Flujo de
-  Caja Proyectado Produbanco) — mismo patrón `$uid` que las demás; si tu proyecto no usa la regla
-  comodín `$other` de administrador, agrega estas 2 rutas a las reglas de Realtime Database.
-
-- **Corregido: Flujo de Caja Proyectado Produbanco — el recuadro "📅 Año Base de esta
-  proyección" quedaba desincronizado del resto de la pantalla tras cambiarlo (8va iteración).**
-  Reporte (con captura de pantalla): tras cambiar el año base, el `<input id="pf-anio-base">`
-  mostraba un año distinto al que mostraban, en la MISMA pantalla, el texto de ayuda justo debajo
-  ("...años proyectados automáticamente: **AAAA-AAAA**") y el encabezado del panel "⚙️ Supuestos /
-  Porcentajes — Año Base AAAA" — es decir, dos lecturas del mismo valor (`pfGetAnioBase()`)
-  divergiendo dentro de un mismo repintado, algo que en teoría no debería poder pasar porque TODAS
-  esas etiquetas (incluido el atributo `value` del propio input) se generan dentro de la MISMA
-  plantilla de `cont.innerHTML` en `pintarPFFlujoProdubanco()`, en una sola pasada síncrona. Se
-  reprodujo la causa exacta con una simulación Node/jsdom del motor completo de esta herramienta
-  (ver detalle abajo) ANTES de tocar nada, siguiendo el protocolo de este archivo: cambiar el año
-  base tecleando dígito por dígito (como realmente teclea un usuario) reproducía, de forma 100%
-  determinística, una desincronización real entre el input y las etiquetas derivadas — la causa
-  raíz: `pfCapturarEstadoInput()` (el listener delegado de `'input'` que guarda en vivo, tecla por
-  tecla, cada celda `pf-in-.../pf-pct-...` en el estado en memoria por empresa — ver 6ta iteración
-  abajo) incluía también, a propósito, el id `"pf-anio-base"` en esa captura genérica. Como el
-  navegador dispara el evento `'input'` en CADA tecla ANTES del evento `'change'` que finalmente
-  invoca `pfCambiarAnioBase()`, para el momento en que esa función corría, el valor NUEVO que el
-  usuario acababa de teclear ya estaba escrito en `pfEstadoActualRef()['pf-anio-base']` — el MISMO
-  lugar del que `pfCambiarAnioBase()` lee `anterior = pfGetAnioBase()` para decidir si de verdad
-  hubo un cambio. Es decir, `anterior` ya no reflejaba el año base previo realmente vigente, sino
-  el año que el usuario acababa de escribir — por lo que `if(nuevo === anterior) return;` se
-  cumplía y la función salía **sin repintar nada**, dejando en pantalla el último repintado
-  realmente exitoso (con las etiquetas del año base ANTERIOR), mientras que el propio `<input>` —
-  que nadie volvió a tocar porque el repintado nunca ocurrió — seguía mostrando en el DOM lo que el
-  usuario tecleó. Fix: `pfCapturarEstadoInput()` ya NO incluye `"pf-anio-base"` en su captura
-  genérica por tecleo (solo sigue capturando `pf-in-*`/`pf-pct-*`, las ~330 celdas de datos, igual
-  que antes); el año base sigue guardándose en el mismo estado en memoria por empresa, pero
-  EXCLUSIVAMENTE dentro de `pfCambiarAnioBase()`, en el momento correcto (ya comparado contra el
-  valor anterior real). Con eso, `anterior` vuelve a reflejar fielmente el último año base
-  repintado, la función repinta cuando corresponde, y el `<input>` y todas las etiquetas derivadas
-  (texto de años proyectados, encabezado de Supuestos, etc.) quedan siempre leyendo la misma
-  fuente de verdad. Verificado con una simulación Node/jsdom del motor completo de esta
-  herramienta: cambio de año base tecleando dígito por dígito (el escenario que de verdad
-  reproduce el bug — asignar el valor final de un solo golpe, sin disparar los eventos `'input'`
-  intermedios, NO lo reproducía), recarga completa de página simulada (reiniciando el script desde
-  cero, dado que el estado en memoria de esta herramienta nunca se persiste a Firebase — solo el
-  historial de flujos guardados vía "Terminar y Guardar" se persiste), cambio de pestaña dentro de
-  Área Bancaria y vuelta, y cambio de empresa y vuelta (cada empresa conserva su propio año base,
-  sin mezclarse con el de otra) — en todos los casos el `<input>` y las etiquetas derivadas
-  quedaron sincronizados antes y después del fix (antes del fix, solo el primer escenario —
-  cambiar el año base tecleando — fallaba, exactamente como en el reporte).
-
-- **Nuevo: Flujo de Caja Proyectado Produbanco — Año Base editable (7ma iteración).** El reporte
-  anterior ("no puedo cambiar el año base") se había diagnosticado — correctamente, ver el bullet
-  de la 6ta iteración abajo — como que el valor tecleado en una celda del año base no se conservaba
-  al repintar. Una vez corregido eso, el usuario aclaró el pedido real: no existía ningún control
-  en la UI para elegir CUÁL año es el año base — estaba fijo en 2025 (con los 5 años proyectados
-  fijos en 2026-2030) para siempre, lo cual ya no tiene sentido una vez pasado ese año. Se agregó
-  un control "📅 Año Base de esta proyección" (un `<input type="number" id="pf-anio-base">`) al
-  tope de la pestaña, justo encima del formulario de supuestos/tablas. Internamente, los ids/claves
-  de esta herramienta (`pf-in-2025-...`, `pf-pct-2026-...`, `PF_PROJ_YEARS=[2026..2030]`, etc.)
-  se mantienen como **posiciones fijas** (no fue necesario ni seguro renombrar ~330 ids ni la
-  cadena de cálculo compuesta `pfCalcular`/`pfCalcularAnioAuto`): la posición 2025 sigue siendo el
-  "año base" y 2026-2030 los "5 años proyectados", pero la función `pfAnioReal(posicion)` traduce
-  cada posición al año REAL que corresponde según el año base elegido (`pfGetAnioBase() + (posicion
-  - 2025)`), y se usa en vez del número fijo en absolutamente todas las etiquetas visibles al
-  usuario: títulos de tarjeta, encabezados de tabla (Resumen Comparativo, Estado de Resultados
-  Comparativo, Índices Financieros), encabezados/pies de impresión (todo, por año individual, y
-  resumen), nombres de hoja y encabezados de columna del Excel exportado, el reporte de
-  verificación de consistencia, y la descripción guardada en el historial. El año base elegido se
-  guarda en el MISMO estado en memoria por empresa del fix anterior (`pfEstadoPorEmpresa` bajo la
-  clave de id `"pf-anio-base"`), así que cambiar de pestaña/empresa y volver lo conserva, y se
-  guarda a Firebase automáticamente junto con el resto de los campos de este formulario (es un
-  `<input>` más dentro de `#pfDocsRoot`, así que `terminarYGuardarPF()` ya lo incluye sin cambios).
-  Si ya hay cifras digitadas para el año base actual, cambiar el año pide confirmación (no se
-  pierde nada — las cifras quedan en los mismos ids internos — pero el usuario debe saber que
-  pasarán a mostrarse bajo la etiqueta del año nuevo). Si una empresa nunca eligió un año base,
-  por defecto se usa el año real actual (`new Date().getFullYear()`), no 2025. Los valores de
-  referencia reales de la hoja de trabajo (`pfPrefillDatosReales`/`PF_DEF2025`/`PF_PCT_DEFAULTS`)
-  ahora solo se precargan cuando el año base elegido es efectivamente 2025 **y** la empresa
-  coincide con Alta Tensión Altaten S.A. — para cualquier otro año base, o cualquier otra empresa,
-  el formulario nace en blanco/cero, igual que antes. Verificado con una simulación Node/jsdom del
-  motor completo de esta herramienta (cambio de año base con y sin datos previos, cancelar/
-  confirmar el diálogo, cambio de empresa y vuelta, y el gating del prefill real 2025/ALTATEN).
-
-- **Corregido: Flujo de Caja Proyectado Produbanco — "no puedo cambiar el año base" y "si paso
-  de pestaña se pierde la información" (6ta iteración).** Se reportaron dos bugs que, tras leer
-  de punta a punta el motor completo de esta herramienta (`pfCalcularAnio`, `pfRecalcularTodo`,
-  `pfCambiarVistaAnios`, `pintarPFFlujoProdubanco`, etc.), resultaron tener **una misma raíz
-  común**: esta herramienta no tenía ninguna fuente de estado en memoria — su único "estado" era
-  el propio DOM — y `pintarPFFlujoProdubanco()` reconstruye TODO ese DOM desde cero
-  (`cont.innerHTML = ...`) cada vez que se la invoca, lo cual ocurre no solo al entrar por
-  primera vez sino **cada vez que se cambia de pestaña dentro de Área Bancaria** (Bancos / Flujo
-  de Caja / Documentos Banco Pacífico / Informe Básico Produbanco / Flujo Proyectado Produbanco /
-  Estados Financieros — incluso al volver a pulsar la pestaña YA activa) y cada vez que se
-  cambia de empresa. Lo único que sobrevivía a ese reinicio era `pfPrefillDatosReales()`, que
-  solo rellena, para UNA empresa específica, un juego de valores de REFERENCIA fijos — nunca lo
-  que el usuario tecleó. Por eso cualquier edición en el año base 2025 (o en los % de los años
-  proyectados) que no se hubiera guardado explícitamente con "Terminar y Guardar" se perdía en
-  el siguiente repintado: eso es exactamente lo que se reportaba como "no puedo cambiar el año
-  base" (la celda editable SÍ aceptaba el tecleo — no estaba deshabilitada ni de solo lectura, y
-  `pfRecalcularTodo()` no la sobrescribía en cada tecla — pero el valor desaparecía apenas algo
-  disparaba un repintado completo) y como "si paso de pestaña se pierde la información" (el
-  mismo repintado, disparado explícitamente al cambiar de pestaña). Se confirmó con una
-  simulación Node/jsdom que reproduce la app completa: escribir en una celda del año base
-  funcionaba perfecto de forma aislada, pero cambiar de pestaña y volver (o re-seleccionar la
-  misma empresa) borraba el valor recién tecleado. **Arreglo**: una única fuente de verdad en
-  memoria (`pfEstadoPorEmpresa`, separada por empresa para no mezclar datos entre empresas
-  distintas al cambiar de una a otra) que se actualiza en cada tecleo mediante delegación de
-  evento `'input'` sobre el contenedor (`pfCapturarEstadoInput`, sin tener que tocar los ~330
-  atributos `oninput=` de cada celda individual), y que `pintarPFFlujoProdubanco()` usa para
-  **restaurar** esas ediciones en vivo (`pfRestaurarEstado()`) cada vez que reconstruye su HTML
-  — con prioridad sobre los valores de referencia precargados: si el usuario ya tecleó algo
-  (incluso dejar una celda vacía a propósito), eso es lo que se restaura; los valores de
-  referencia solo rellenan lo que el usuario nunca tocó. Con esto, los cambios de pestaña dentro
-  de Área Bancaria, la navegación entre "Años Individuales"/"Resumen Comparativo"/"Índices
-  Financieros", y colapsar/expandir una tarjeta de año ya NO borran datos sin guardar; solo se
-  sigue perdiendo lo no guardado si se cambia explícitamente de empresa (se mantiene aislado por
-  empresa, por diseño) o se navega a otra sección de la app fuera de Área Bancaria por completo.
-
-- **Corregido: Flujo de Caja Proyectado Produbanco — filas de gasto en $0.00 mensual y "Imprimir
-  todo" mostrando solo un año (5ta iteración).** Dos bugs reales encontrados y corregidos tras
-  leer el motor de cálculo/impresión completo de punta a punta:
-  (1) **Gastos Administrativos, Gastos de Ventas, Gastos de Personal, Otros Gastos Operativos,
-  Impuestos, Participación Trabajadores y Otros Egresos Operacionales aparecían en $0.00 en
-  TODAS las celdas mensuales de los años proyectados (2026-2030)**, aunque el TOTAL de cada fila
-  y el resto de la cadena (TOTAL EGRESOS OPERACIONALES, FLUJO NETO OPERACIONAL, etc.) sí
-  reflejaban su aporte correctamente — comprobado a mano en Node: para 2030, Gastos
-  Administrativos calcula $51,064.21/mes (base 2025 de $43,600 compuesto por el % de
-  crecimiento propio de cada año 2026→2030), y el TOTAL anual mostrado en pantalla ($612,770.54)
-  ya reflejaba ese valor, pero la celda mensual mostraba "$0.00". Causa raíz: `pfPintarAnio()`
-  pintaba el TOTAL anual de estas 9 filas (`pfSetTxt` sobre `pf-out-{año}-{rubro}-tot`) pero
-  **nunca llamaba a `pfUpdateMonthly()`** para ellas (a diferencia del resto de filas, que sí se
-  pintan mes a mes) — quedó así desde el refactor que convirtió 2026 al mismo cálculo 100%
-  automático que 2027-2030. Arreglado agregando `pfUpdateMonthly(year,k,y[k])` a esas 9 filas,
-  igual que el resto; para el año base 2025 (donde son `<input>` editables, no celdas de
-  salida) la llamada es un no-op seguro, igual que ya ocurría con "ventas".
-  (2) El botón **"🖨 Imprimir todo"** podía terminar mostrando solo el último año impreso
-  individualmente (p.ej. 2030) en vez del documento completo de 6 años. El generador de
-  contenido (`pfContenidoCompletoHTML`) en sí mismo es correcto — se verificó con un script
-  Node/jsdom que simula la app completa con datos reales y confirma que siempre incluye los 6
-  encabezados (2025 Base + 2026-2030) con su tabla mensual completa cada uno, sin importar qué
-  tarjetas estén colapsadas en pantalla. La causa real está en `bpAbrirVentanaImpresion()`
-  (compartida por TODOS los botones de impresión de la app): no comprobaba si
-  `window.open()` tuvo éxito. Si el navegador bloquea o difiere la apertura de una ventana
-  nueva — algo común cuando se hacen varios clics de impresión seguidos, p.ej. "Imprimir 2030"
-  de una tarjeta individual y enseguida "Imprimir todo" —, `window.open()` devuelve `null` y el
-  `win.document.write(...)` siguiente lanzaba una excepción silenciosa (no visible para el
-  usuario): no se abría ninguna ventana nueva y la ÚLTIMA ventana de impresión que sí se había
-  logrado abrir (p.ej. la del año 2030) seguía siendo lo único visible en pantalla, dando la
-  falsa impresión de que "Imprimir todo" solo había impreso ese año. Arreglado con un chequeo
-  explícito (`if(!win){ toast/alert de aviso; return; }`) y un `win.focus()` tras escribir el
-  documento, para que la ventana de impresión correcta siempre quede al frente. Validado con
-  Node/jsdom: `node --check` sobre el `<script>` extraído, sin funciones duplicadas, todos los
-  `onclick/onchange/oninput` con su función definida, contenido de impresión completo con los 6
-  años presentes y con valores mensuales no-cero coincidiendo con el cálculo manual, y la cadena
-  de cascada por año (cambiar el % de 2028 no afecta 2026/2027, sí afecta 2029/2030) intacta.
-
-- **Nuevo (6ta iteración): paridad del panel 2025, verificación automática de consistencia y
-  pestaña de Índices Financieros — Flujo de Caja Proyectado Produbanco.**
-  (1) **Panel "⚙️ Supuestos / Porcentajes — Año Base 2025"** ahora muestra, además de los 4 %
-  de composición (contado, prov. nacional, prov. exterior, crédito directo), un bloque
-  informativo en vivo "% de Gastos sobre Ventas — 2025" con el total anual y el % sobre Ventas
-  de los mismos 7 rubros de gasto que 2026-2030 muestran como "% de crecimiento" (Gastos
-  Administrativos, de Ventas, de Personal, Otros Gastos Operativos, Impuestos, Participación
-  Trabajadores, Otros Egresos Operacionales). 2025 no tiene un "% de crecimiento" propiamente
-  dicho porque es el año base con montos mensuales reales digitados a mano (no existe un "2024"
-  dentro de esta herramienta del cual crecer — se revisó `pbPrefillDatos2024`, que carga datos
-  2024 para el Informe Básico de otra sub-sección, y no aporta montos mensuales de flujo de caja
-  utilizables aquí); en su lugar se calculó el ratio real de cada rubro sobre Ventas 2025, que
-  además sirve de referencia razonable al decidir el % de crecimiento de 2026. Esto resuelve el
-  reclamo "en el 2025 no aparece todos los porcentajes": ahora TODOS los años muestran el mismo
-  tipo de panel de Supuestos/Porcentajes con las mismas 7 categorías de gasto, con la única
-  diferencia lógica de que en 2025 es informativo/calculado (montos ya reales) y en 2026-2030 es
-  editable (define cuánto crece cada rubro).
-  (2) **Verificación automática de consistencia (`pfValidarFlujo()`).** Proceso 100%
-  determinístico (no es una llamada a IA — no hay backend propio para eso en esta app estática)
-  que recalcula, de forma independiente A PARTIR DE LAS CELDAS YA RENDERIZADAS EN PANTALLA (no
-  del objeto interno que las generó), cada total/subtotal del flujo de los 6 años: Recaudaciones
-  = Contado + Rec. Cartera; TOTAL INGRESOS/EGRESOS OPERACIONALES = suma de sus componentes;
-  FLUJO NETO OPERACIONAL = Ingresos − Egresos; lo mismo para Inversión, Financiamiento, FCF y
-  Flujo Neto Generado; Flujo Acumulado = Flujo Generado + Saldo Inicial, y Saldo Inicial(mes) =
-  Acumulado del mes anterior; columna TOTAL = suma de los 12 meses para 39 filas distintas
-  (detectaría de inmediato el mismo tipo de bug corregido en la iteración anterior); rangos de
-  %, incluida una advertencia de "posible error de escala" si un % de crecimiento luce como un
-  error de digitación (ej. "374" en vez de "3.74"); saldo de caja implausiblemente negativo
-  (advertencia); y la cadena de crecimiento interanual de ventas (Ventas(año) = Ventas(año-1) ×
-  (1+% propio), verificado al centavo). Se ejecuta automáticamente en cada recálculo, mostrando
-  una insignia persistente ("✅ Flujo consistente" / "⚠️ N inconsistencias detectadas"), y bajo
-  demanda con el botón **"✅ Verificar Consistencia del Flujo"**, que abre un reporte detallado
-  (esperado vs. actual, año/mes/concepto). Validado con Node/jsdom contra los datos reales por
-  defecto (0 inconsistencias, 0 advertencias) y, deliberadamente, corrompiendo celdas del DOM
-  (total mensual, columna TOTAL anual, cascada de ventas, % de crecimiento con error de escala):
-  el validador detectó las 4 corrupciones sin excepción. De paso, al construir este validador se
-  encontró y corrigió un bug real gemelo al de la iteración anterior: las 12 filas de
-  Inversión/Financiamiento (Venta de Activos Fijos, Aporte Accionistas, Préstamos Bancarios,
-  etc.) tampoco pintaban sus 12 celdas mensuales en los años proyectados (solo el TOTAL) —
-  corregido en `pfPintarAnio()` con el mismo patrón ya usado para los 9 rubros de gasto.
-  (3) **Nueva pestaña "📐 Índices Financieros"** (junto a "📅 Años Individuales" y "📊 Resumen
-  Comparativo"): tabla comparativa 2025-2030 con Liquidez/Flujo (Flujo Neto Operacional, margen
-  de caja operativa, cobertura de gastos operativos, días de cartera aproximados), Rentabilidad
-  desde el Estado de Resultados enlazado (márgenes Bruto/Operacional/Neto, Costo de Ventas/
-  Ventas), Estructura de Costos (cada rubro de gasto como % de Ventas y como % del Total de
-  Egresos Operacionales), Crecimiento interanual (Ventas, Utilidad Operacional, Utilidad Neta) y
-  Financiero (Gastos Financieros, Cobertura de Intereses) — con botón de impresión propio
-  (horizontal) e incluida como hoja "INDICES FINANCIEROS" en el Excel exportado. NO se calculan
-  índices de apalancamiento tipo Deuda/Patrimonio ni un Ciclo de Conversión de Efectivo completo
-  porque esta herramienta no registra saldos de Balance General ni plazos de pago a proveedores
-  — se documenta esa omisión en la propia pestaña en vez de inventar cifras. Verificado a mano
-  en Node contra los datos reales por defecto: Margen Bruto 2025, Margen Operacional 2026,
-  Gastos Administrativos/Ventas 2025, % Crecimiento de Ventas 2027, Días de Cartera 2025 y
-  Cobertura de Gastos Operativos 2025 coinciden al cuarto decimal con el cálculo manual
-  independiente.
-
-- **Mejorado: Flujo de Caja Proyectado Produbanco — impresión configurable por año y Resumen
-  Comparativo en pestaña propia (4ta iteración).** Tres refinamientos sobre la herramienta:
-  (1) el botón **"🖨 Imprimir todo"** ahora respeta un checkbox **"Incluir año base (2025) en
-  la impresión"** (activado por defecto) — al desmarcarlo, el documento impreso completo omite
-  la tabla mensual detallada de 2025 pero conserva el Resumen Anual Comparativo y el Estado de
-  Resultados Comparativo (que sí muestran 2025 como columna de referencia); (2) cada tarjeta de
-  año (2025 base y 2026-2030 proyectados) tiene ahora su propio botón **"🖨️ Imprimir [año]"**
-  que abre una ventana de impresión con SOLO la tabla mensual de ese año y un encabezado
-  profesional (empresa + período Enero-Diciembre del año); (3) el **"📊 Resumen Anual
-  Comparativo 2025-2030"** se movió a su propia sub-pestaña **"📊 Resumen Comparativo"**
-  (junto a "📅 Años Individuales", mismo patrón de pestañas `doc-tab`/`doc-content` que el resto
-  de la app), con su propio botón de impresión que genera un documento aparte (horizontal) con
-  solo la tabla comparativa y el Estado de Resultados Comparativo — sigue actualizándose en vivo
-  igual que antes. Ninguno de estos cambios tocó el motor de cálculo (`pfCalcular`,
-  `pfCalcularAnioAuto`, `pfCalcularAnio`): el % independiente por año y la cadena de cascada
-  hacia adelante (cambiar el % de un año solo afecta a ese año y a los posteriores) siguen
-  intactos.
-
-- **Mejorado: Flujo de Caja Proyectado Produbanco — porcentajes independientes por año y
-  secciones colapsables.** Antes, un único juego de % del panel "⚙️ Supuestos / Porcentajes" se
-  reutilizaba para componer los 5 años proyectados (2026-2030). Ahora **cada año proyectado
-  tiene su propio panel de % 100% independiente y editable** (crecimiento de ventas, mezcla
-  contado/crédito, proveedores nacional/exterior, crédito directo, y % de crecimiento de cada
-  rubro de gasto), todos precargados por defecto con los mismos valores reales de la hoja de
-  trabajo. Cambiar el % de un año recalcula **ese año y todos los años posteriores** (cadena
-  compuesta), sin tocar nunca los años anteriores — verificado con un script Node que simula
-  cambiar el % de 2028 y confirma que 2026/2027 quedan intactos mientras 2028-2030 se
-  recalculan. El año 2026 dejó de tener celdas mensuales editables a mano (ahora se calcula
-  igual que 2027-2030, 100% a partir de su propio %) para que los 5 años proyectados sean
-  consistentes entre sí. Cada año proyectado ahora se muestra en una **tarjeta colapsable**
-  (con un resumen de una línea siempre visible: ventas, egresos y flujo neto totales) — 2026
-  nace expandido y 2027-2030 nacen colapsados para no abrumar con 5 tablas mensuales a la vez —
-  y hay botones globales **"Expandir todos" / "Contraer todos"** para ver el detalle completo
-  de un vistazo. La tabla "Resumen Anual Comparativo 2025-2030" y el Estado de Resultados
-  Proyectado siguen reflejando los totales correctos sin importar qué años estén colapsados
-  (las tarjetas colapsadas siguen en el DOM, solo ocultas, así que imprimir/exportar/guardar
-  toman siempre el cálculo completo). El guardado en `banco_produbanco_flujo/${DATOS_UID}/${empresaId}`
-  ahora incluye además un campo explícito `porcentajesPorAnio` con el juego de % usado en cada
-  año (2025 base + 2026-2030), junto al resto de campos del formulario.
-
-- **Nuevo: Documentos Banco del Pacífico (dentro de Área Bancaria → pestaña "📄 Documentos
-  Banco Pacífico")** — 5 formatos oficiales adjuntos del banco, llenables e imprimibles con un
-  diagramado similar al del banco: **Guía de Flujo de Caja Proyectado v2.0** (premisas,
-  ingresos/costos/gastos mensuales del Año 1 proyectados a 5 años, hasta 3 tablas de
-  amortización de préstamos con sistema francés/cuota fija que se calculan solas, y un Flujo de
-  Caja Consolidado que se recalcula automáticamente a partir de esos datos), **Anexo de
-  Evaluación de CxC, Inventarios y CxP** (antigüedad de cartera, principales clientes,
-  inventarios y cuentas por pagar, con los porcentajes vs. el total calculados en vivo),
-  **Reporte de Información Básica (005)**, **Solicitud de Avalúo/Reavalúo (REGADMAV001)** —
-  con los check-list documentales por tipo de bien (terreno, vivienda, agrícola-acuícola,
-  maquinarias, prendas, vehículo, construcción/avance de obra, urbanización y reavalúo con
-  incremento de riesgo) — y **Solicitud Jurídica** (perfil "Conozca a su Cliente" para persona
-  jurídica). Cada documento tiene vista previa, impresión con estilo "papel del banco", y
-  guardado en un historial consultable. Como solo se contaba con extracciones de texto plano
-  del Excel/Word originales (no los archivos binarios con fórmulas), las fórmulas de Excel se
-  reimplementaron como cálculo en vivo en JavaScript (verificado a mano contra los números de
-  ejemplo de la guía original) en vez de leerse de un archivo; algunos campos repetitivos se
-  limitaron a un número fijo de filas (por ejemplo 3 a 5 registros por tabla) en vez de filas
-  ilimitadas. **Requiere agregar la ruta nueva `banco_pacifico_docs` a las reglas de Realtime
-  Database** (mismo patrón `$uid` que las demás, ver el bloque de reglas más abajo). Los
-  documentos guardados de esta sección ahora también quedan **etiquetados con el `empresaId`**
-  de la empresa seleccionada en el selector de "Área Bancaria" (los documentos guardados antes
-  de este cambio, sin `empresaId`, se siguen mostrando para cualquier empresa).
-
-- **Nuevo: Informe Básico del Cliente — Produbanco (dentro de Área Bancaria → pestaña "📋 Informe
-  Básico Produbanco")** — reproduce el formulario oficial "IBC_Corp_Emp" de Produbanco (hoja
-  "Informe_Clientes" del Excel original, 341 filas), con sus 9 secciones completas:
-  1. Generalidades; 2. Información Accionarial/Administradores/Directores/Compañías
-  Relacionadas (2.1 Accionistas Finales, 2.2 Administradores/Ejecutivos, 2.3 Directores, 2.4
-  Compañías Relacionadas del Exterior, 2.5 Gobierno Corporativo/Empresa Familiar); 3. Recursos
-  Humanos (3.1 Número de Empleados, 3.2 Políticas de SSO); 4. Datos del Negocio (4.1 Mix de
-  Ventas o Líneas de Productos/Servicios — con **% de participación en ventas y totales
-  calculados en vivo**, igual que el Excel original —, 4.1.1 Otras Variables de los Ingresos,
-  4.2 Canales de Distribución, 4.3 Participación de Mercado, 4.4 Clientes/Proveedores);
-  5. Principales Eventos Internos/Externos; 6. Aspectos Ambientales y de Calidad;
-  7. Instalaciones y Seguros; 8. Mercado de Valores y Líneas de Crédito; 9. Estrategias Futuras
-  del Cliente. Los desplegables de nacionalidad, país de domicilio y cargo se llenaron con el
-  catálogo real del Excel (hoja "Catalogo": 236 países, 7 cargos). Vista previa, impresión con
-  el mismo estilo "papel del banco" y guardado en historial (`banco_produbanco_docs`, con
-  `empresaId`). Simplificación: las tablas repetitivas (accionistas, administradores,
-  directores, compañías relacionadas, líneas de negocio) se limitaron a 5-6 filas en vez de
-  filas ilimitadas, y algunas secciones muy descriptivas del formulario original (instalaciones,
-  líneas de crédito, eventos, estrategias) se capturan como texto libre en vez de sub-tablas
-  exactas, para mantener el formulario manejable. **Requiere agregar la ruta nueva
-  `banco_produbanco_docs` a las reglas de Realtime Database.**
-
-- **Nuevo: precarga de datos de referencia 2024 en el Informe Básico Produbanco** — se cargó el
-  IBC real y ya lleno de **ALTA TENSIÓN ALTATEN S.A. (RUC 1791189159001)**, ejercicio fiscal
-  2024, como valores por defecto (`PRODUBANCO_DATOS_2024_DEFAULT`): Generalidades, los 2
-  accionistas finales, los 3 administradores/ejecutivos, empleados (12 administrativos + 4 de
-  producción + 8 comerciales = 24; 15 hombres/9 mujeres; nómina $22,300), las 6 líneas del Mix
-  de Ventas 2024 (cuadra con el total real de $8,379,231) y el resto de secciones descriptivas
-  (gobierno corporativo, SSO, canales, competidores, clientes/proveedores, eventos, ambiental,
-  instalaciones, líneas de crédito y estrategias). La precarga es **específica de esa empresa**:
-  `pbPrefillDatos2024()` solo actúa cuando la empresa seleccionada en Área Bancaria coincide por
-  RUC o por nombre con `PRODUBANCO_EMPRESA_2024_REF`; para cualquier otra empresa el formulario
-  queda completamente en blanco, igual que antes. Además solo rellena campos vacíos de un
-  formulario recién pintado (mismo patrón que `bpPrefillEmpresaEnDocs`), nunca sobrescribe lo que
-  el usuario ya haya escrito, y deja intencionalmente en blanco la columna del año en curso
-  (2025) en la sección 4.1 para que el usuario la complete. Cuando aplica, se muestra un aviso
-  amarillo en la pantalla: "Datos de referencia 2024 precargados... Verifique y actualice cada
-  campo".
-
-- **Nuevo: Flujo de Caja Proyectado Produbanco (dentro de Área Bancaria → pestaña "📈 Flujo de
-  Caja Proyectado Produbanco")** — replica fila por fila la hoja de trabajo real "FLUJO DE CAJA
-  PROYECTADO PRODUBANCO 2025" de **ALTA TENSIÓN ALTATEN S.A. (RUC 1791189159001)** (hojas "FLUJO
-  DE CAJA 2025", "FLUJO DE CAJA 2026" y "ESTADO DE RESULTADOS PROYECTADO"): año base 2025 editable
-  mes a mes, año proyectado 2026 calculado en vivo, y el Estado de Resultados Proyectado (ambos
-  años) derivado 100% de los totales del flujo, igual que las fórmulas del Excel. Todos los
-  porcentajes/ratios reales que en el Excel determinan el 2026 a partir del 2025 quedan en un
-  panel **"⚙️ Supuestos / Porcentajes" 100% editable** que recalcula todo en vivo (`oninput`): %
-  de crecimiento de ventas (3.74%), % ventas al contado/crédito (80%/20%, por año), % proveedores
-  nacionales/exterior sobre ventas (45.6525%/45.5102% y 20.6398%/19.3232%), % crédito directo
-  sobre proveedores exterior (30%), y el % de crecimiento/decrecimiento de cada rubro de gasto
-  (Gastos Administrativos, de Ventas, de Personal, Otros Gastos Operativos, Impuestos,
-  Participación Trabajadores, Otros Egresos Operacionales) — estos últimos, calculados por
-  defecto desde la razón real 2026/2025 de la propia hoja de trabajo, recalculan los 12 meses de
-  2026 de ese rubro al cambiar el %, y cada mes sigue siendo editable a mano. Verificado a mano
-  (script Node) contra los valores reales cacheados del Excel (ventas, proveedores, crédito
-  directo, egresos operacionales, utilidad operacional y utilidad del ejercicio de ambos años
-  coinciden al centavo; el saldo final de caja difiere en menos de $1 porque la hoja fuente
-  redondea a dólares enteros el saldo inicial del año siguiente). Vista previa, impresión con el
-  mismo estilo "papel del banco", exportación a Excel (SheetJS, 3 hojas: Flujo 2025, Flujo 2026,
-  Estado de Resultados) y guardado en historial **por empresa**
-  (`banco_produbanco_flujo/${DATOS_UID}/${empresaId}`). Los valores reales 2025/2026 solo se
-  precargan cuando la empresa seleccionada coincide con `PRODUBANCO_EMPRESA_2024_REF` (mismo
-  criterio que `pbPrefillDatos2024`); para cualquier otra empresa el formulario nace en blanco.
-  **Requiere agregar la ruta nueva `banco_produbanco_flujo` a las reglas de Realtime Database.**
-
-- **Corregido/Mejorado: Flujo de Caja Proyectado Produbanco — 3 ajustes.** (1) **Branding:** la
-  impresión de este flujo de caja y del Informe Básico del Cliente Produbanco reutilizaba, por
-  copiar la función `bpAbrirVentanaImpresion` del Banco del Pacífico, el mismo membrete "🏦 BANCO
-  DEL PACÍFICO S.A." — ahora esa función acepta un parámetro de banco y para todo lo de
-  Produbanco imprime "🏦 PRODUBANCO" con paleta verde propia; el resto de documentos reales del
-  Banco Pacífico (Guía de Flujo de Caja, Anexo CxC/Inventarios/CxP, Información Básica, Avalúo,
-  Solicitud Jurídica) no se tocaron y siguen mostrando el membrete del Pacífico. (2) **Proyección
-  automática a 5 años:** además de 2025 (base) y 2026 (editable, como antes), el flujo ahora
-  proyecta automáticamente **2027, 2028, 2029 y 2030**, cada año compuesto sobre el anterior con
-  los mismos % del panel de Supuestos (ventas = año anterior × (1+%crecimiento), mismos ratios de
-  proveedores/crédito directo, y cada rubro de gasto crece con su propio % de la sección "%
-  Crecimiento/Decrecimiento de Gastos") — se agregó una tabla **"Resumen Anual Comparativo
-  2025-2030"** con los totales de cada año lado a lado, pestañas para ver el detalle mensual de
-  cualquiera de los 4 años auto-proyectados (2027-2030, sin celdas editables porque son 100%
-  calculados), y el Estado de Resultados Proyectado ahora también tiene una tabla comparativa de
-  los 6 años además de la vista de detalle 2025 vs 2026 que ya existía; todo se recalcula en vivo
-  al cambiar cualquier % de Supuestos, incluidos los 5 años proyectados. La exportación a Excel
-  ganó una hoja por cada año 2025-2030, una hoja "RESUMEN ANUAL 2025-2030" y una hoja "ESTADO
-  RESULT. 2025-2030". (3) **Impresión horizontal:** tanto la impresión de este flujo de caja como
-  la reimpresión desde el historial ahora usan `@page{ size:landscape }` (antes A4 vertical), con
-  fuente más compacta para que quepan los 12 meses + columna TOTAL sin desbordarse; además se
-  corrigió que la impresión y el guardado en historial regeneraban una tabla en blanco (con
-  "$0.00" en cada celda) en vez de tomar los valores ya calculados en pantalla — ahora ambos
-  toman una "foto" del HTML ya calculado de la tabla visible, igual que el resto de documentos
-  bancarios de la app.
-
-- **Corregido: Flujo de Caja Proyectado Produbanco — "&nbsp;" visible en pantalla e impresión.**
-  Las filas "Ventas al Contado" y "Ventas a Crédito (informativo)" se indentan como sub-filas de
-  "Recaudaciones por Ventas"; esa indentación estaba codificada como el entity HTML `&nbsp;&nbsp;`
-  dentro del texto de la etiqueta, pero esa etiqueta pasa por `escapeHtml()` (para proteger contra
-  caracteres especiales), la cual convierte el `&` de `&nbsp;` en `&amp;`, y el navegador termina
-  mostrando literalmente el texto "&nbsp;&nbsp;Ventas al Contado" en vez de una sangría — tanto en
-  pantalla como en el documento impreso/guardado (que toma una foto del mismo HTML ya renderizado).
-  Se reemplazó el entity `&nbsp;` por el carácter Unicode de espacio irrompible real (U+00A0)
-  directamente en el texto de la etiqueta, el cual `escapeHtml()` no toca (solo escapa `& < > " '`)
-  y el navegador renderiza como una sangría visual normal, sin depender de que el HTML se inserte
-  sin escapar. Se revisó el archivo completo por el mismo patrón (una etiqueta con `&nbsp;` literal
-  que termine pasando por `escapeHtml`) y no se encontraron más casos: el resto de usos de
-  `&nbsp;` en la app está escrito directamente en plantillas HTML (fuera de cualquier llamada a
-  `escapeHtml`) y se inserta correctamente vía `innerHTML`.
-
-- **Nuevo: Estados Financieros (dentro de Área Bancaria → pestaña "📊 Estados Financieros")** —
-  plan de cuentas editable en tabla (código, nombre, tipo Activo/Pasivo/Patrimonio/Ingreso/
-  Costo/Gasto, corriente Sí/No, nivel para la jerarquía) que se puede escribir a mano o
-  **importar desde un CSV o Excel** (columnas código/nombre/tipo, con parser propio para CSV y
-  SheetJS para .xlsx/.xls — sin agregar ninguna librería nueva, xlsx.full.min.js ya estaba
-  cargado en la app). Sobre ese plan de cuentas se capturan valores manuales para **hasta 5
-  estados** (periodos/años/escenarios) en paralelo, y se generan automáticamente el **Estado de
-  Situación Financiera** (Activo = Pasivo + Patrimonio + Utilidad, con agrupación corriente/no
-  corriente e indicador visual de cuadre/descuadre) y el **Estado de Resultados** (Ingresos −
-  Costos − Gastos = Utilidad), con subtotales y una vista de **comparación lado a lado** de los
-  5 estados. Presentación ejecutiva reutilizando las mismas convenciones CSS del reporte de
-  Activos Fijos (`.tarjetas`, `.tarjeta`, `h2.seccion`, `tfoot`, `@page`), con **impresión a
-  PDF** vía la ventana de impresión del navegador y **exportación a un archivo .xlsx real**
-  (SheetJS, 3 hojas: Situación Financiera, Resultados y Plan de Cuentas). Datos guardados en
-  `estados_financieros/{uid}/{empresaId}` (plan de cuentas + los hasta 5 estados). **Requiere
-  agregar la ruta nueva `estados_financieros` a las reglas de Realtime Database.**
-
-- **Nuevo: Plan de Cuentas NIIF PYMES predefinido (dentro de Estados Financieros → Plan de
-  Cuentas)** — ahora, además de importar un CSV/Excel propio o crear cuentas manualmente, se
-  puede cargar con un clic un **catálogo de cuentas NIIF para PYMES completo y listo para usar**
-  (184 cuentas, siguiendo la estructura corporativa típica usada en Ecuador: Activo Corriente/No
-  Corriente, Pasivo Corriente/No Corriente, Patrimonio, Ingresos, Costos y Gastos, con
-  codificación jerárquica tipo `1.1.01.01` e IVA/retenciones/IESS/jubilación patronal/desahucio
-  ya incluidos como cuentas típicas ecuatorianas). Las tres opciones — predefinido, importar o
-  manual — conviven como botones separados en la parte superior de la sección; si ya existe un
-  plan de cuentas con datos, cargar el predefinido pide confirmación antes de reemplazarlo (no
-  sobrescribe en silencio). El catálogo usa exactamente el mismo modelo de datos que ya tenía la
-  sección (código/nombre/tipo/nivel/corriente) y no requiere ningún cambio en el cálculo de
-  totales o en las reglas de Realtime Database.
-
-- **Nuevo: segundo catálogo predefinido "🏛️ Superintendencia de Compañías" (dentro de Estados
-  Financieros → Plan de Cuentas)** — junto al catálogo NIIF PYMES genérico, ahora hay un segundo
-  botón que carga con un clic un catálogo (`PLAN_CUENTAS_SUPERCIAS_DEFAULT`, 174 cuentas)
-  estructurado para calzar con la codificación numérica que usa el portal de la Superintendencia
-  de Compañías, Valores y Seguros para la presentación anual de Estados Financieros bajo NIIF
-  (Estado de Situación Financiera + Estado de Resultado Integral): 1=Activo, 2=Pasivo,
-  3=Patrimonio, 4x=Ingresos, 42/5x=Costos y Gastos, con codificación jerárquica de 1/3/5/7
-  dígitos (ej. `1`→`101`→`10101`→`1010201`) en vez del formato con puntos del catálogo NIIF PYMES
-  genérico. Reutiliza la misma función `efUsarPlanPredefinido(catalogo)` (ahora recibe `'niif'` o
-  `'supercias'`) y el mismo flujo de confirmación antes de sobrescribir un plan existente. Incluye
-  **12 cuentas "contra"** (ej. "(-) Depreciación Acumulada de Propiedades, Planta y Equipo", "(-)
-  Provisión Cuentas Incobrables y Deterioro", "(-) Inventario Final..." en el costo de ventas,
-  "(-) Pérdidas Acumuladas") marcadas con la bandera `contra:true`: el usuario ingresa el valor
-  como magnitud positiva y el motor de cálculo (`efValorCuenta`, usado ahora por
-  `efCalcularEstados`, la vista de resultados, la impresión y la exportación a Excel) le resta el
-  valor absoluto al total de su tipo automáticamente — verificado a mano en Node (ej. PPE bruto
-  $100,000 con depreciación acumulada $20,000 neta correctamente a $80,000 en Activo No
-  Corriente, y un caso completo Activo = Pasivo + Patrimonio + Utilidad cuadrando con una cuenta
-  contra de por medio). El catálogo NIIF PYMES original no usa esta bandera y sigue funcionando
-  exactamente igual que antes (compatibilidad hacia atrás verificada). La línea oficial "92 —
-  GANANCIA (PÉRDIDA) NETA DEL PERIODO" se excluyó a propósito del catálogo importable porque ya es
-  el resultado que calcula `efCalcularEstados()` (Ingresos − Costos − Gastos), no una cuenta
-  capturable. **⚠️ Advertencia de proveniencia (best-effort, verificar antes de usar para una
-  presentación regulatoria real):** este catálogo se reconstruyó a partir de la estructura pública
-  y conocida de codificación NIIF de la Superintendencia de Compañías; **no se descargó
-  directamente del PDF oficial vigente** porque este entorno de desarrollo no tuvo acceso a
-  internet hacia supercias.gob.ec. La misma advertencia se muestra de forma visible en la interfaz
-  junto a los botones de plan de cuentas ("Basado en la estructura pública de códigos NIIF de la
-  Superintendencia de Compañías. Verifica los códigos exactos contra el plan de cuentas oficial
-  vigente (appscvsmovil.supercias.gob.ec) antes de usar para una presentación regulatoria."). No
-  requiere ningún cambio en las reglas de Realtime Database.
-
-- **Nuevo: botón "✏️ Corregir monto" en Cuentas por Pagar (Forma de Pago de una retención)** —
-  antes solo se podía SUMAR al monto acumulado ("+ Agregar"), sin forma de corregirlo si
-  quedaba mal (por ejemplo, tras recalcular una retención con la corrección del "valor neto a
-  pagar" — ver nota anterior). Este botón permite escribir directamente el monto correcto en
-  vez de tener que sumar/restar mentalmente la diferencia.
-
-- **Corregido: error "set failed: value argument contains undefined" al editar y recalcular una
-  retención ya guardada** — al editar un registro de retención guardado antes de que existiera
-  la función de "forma de pago" (pagosBanco), ese campo no existía en el registro viejo
-  (`undefined`), y al intentar preservarlo durante el recálculo, Firebase rechazaba el guardado
-  completo (Firebase no permite ningún valor `undefined` en ningún punto del árbol de datos).
-  Se corrigió con un respaldo explícito (`?? []`, `?? null`, `?? 0`) para ese caso puntual, y
-  además se agregó una **limpieza automática recursiva** antes de cada guardado de Dividendos
-  (`limpiarUndefined`) que elimina cualquier valor `undefined` en cualquier parte de la
-  estructura — una protección general, ya que esta estructura de datos es enorme y muy anidada
-  y sería fácil que apareciera un caso similar en otro campo más adelante.
-
-- **Corregido: "Valor neto a pagar" en los informes individuales de retención (Dividendos →
-  Escenarios) restaba la retención del valor registrado completo, en vez de la base imponible**
-  — con franja exenta, la retención solo se calcula sobre la base imponible (lo que supera la
-  franja), así que el valor neto a pagar debe ser **base imponible − retención**, no
-  **valor registrado − retención**. Con el ejemplo real (valor registrado $57,731.58, franja
-  exenta $1,446.00, base imponible $56,285.58, retención $6,754.27), el valor neto a pagar
-  correcto es **$49,531.31** (antes salía $50,977.31, incorrecto). Afecta el informe generado
-  por IA y el registro guardado de la retención.
+- **Nuevo: la IA ya no falla cuando Gemini está saturado** — antes, un solo error de Gemini
+  ("The model is overloaded", cuota agotada 429, 503, o tiempo agotado) detenía el análisis.
+  Ahora la función `analizar.js` reintenta sola, en cadena y dentro del límite de tiempo de
+  Netlify: modelo principal → el otro modelo de Gemini (Flash ↔ Flash-Lite; la cuota gratuita
+  es por modelo) → versiones fijas gemini-2.5-flash / gemini-2.5-flash-lite (capacidad separada,
+  suelen estar libres cuando aparece "This model is currently experiencing high demand") → de
+  nuevo el principal tras una breve espera. Si Google retira alguno de esos modelos, se salta solo. Si aun así falla por
+  saturación, el navegador reintenta una vez más automáticamente (con un aviso "⏳ reintentando").
+  Errores que no se arreglan reintentando (p. ej. clave inválida) se muestran de inmediato con
+  un mensaje claro.
+  **Respaldo opcional con Groq (gratis):** crea una clave en https://console.groq.com/keys y
+  agrégala en Netlify como `GROQ_API_KEY` (scope: Functions) y vuelve a desplegar. Si Gemini
+  falla en todos los intentos, la función usa Groq (Llama 3.3 70B). Groq no lee PDF: solo se usa
+  cuando hay texto extraído del documento; para PDF escaneados sin texto sigue dependiendo de
+  Gemini. Sin `GROQ_API_KEY` todo funciona igual, solo sin este último respaldo.
 
 - **Nuevo: "💵 Ingreso de Caja"** en Documentos Legales — comprobante profesional de ingreso de
   caja, con desglose por forma de pago: **efectivo, cheque (con N° de cheque y banco) y
@@ -1222,8 +426,8 @@ editar; con cualquiera distinta de "Sin acceso" permite ver):
 ```json
 "colaboradores": {
   "$uid": {
-    ".read": "$uid === auth.uid || auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3' || root.child('roles_control_documental').child(auth.uid).val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('rol').val() === 'admin' || (root.child('roles_control_documental').child(auth.uid).exists() && (root.child('roles_control_documental').child(auth.uid).child('areas').child('cumpleanos').val() !== 'sin_acceso' || root.child('roles_control_documental').child(auth.uid).child('areas').child('miembros').val() !== 'sin_acceso'))",
-    ".write": "$uid === auth.uid || auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3' || root.child('roles_control_documental').child(auth.uid).val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('rol').val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('areas').child('cumpleanos').val() === 'completo' || root.child('roles_control_documental').child(auth.uid).child('areas').child('miembros').val() === 'completo'"
+    ".read": "$uid === auth.uid || auth.uid === 'TfRcGWLDQ1bUxZSutB0WQUondi63' || root.child('roles_control_documental').child(auth.uid).val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('rol').val() === 'admin' || (root.child('roles_control_documental').child(auth.uid).exists() && (root.child('roles_control_documental').child(auth.uid).child('areas').child('cumpleanos').val() !== 'sin_acceso' || root.child('roles_control_documental').child(auth.uid).child('areas').child('miembros').val() !== 'sin_acceso'))",
+    ".write": "$uid === auth.uid || auth.uid === 'TfRcGWLDQ1bUxZSutB0WQUondi63' || root.child('roles_control_documental').child(auth.uid).val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('rol').val() === 'admin' || root.child('roles_control_documental').child(auth.uid).child('areas').child('cumpleanos').val() === 'completo' || root.child('roles_control_documental').child(auth.uid).child('areas').child('miembros').val() === 'completo'"
   }
 }
 ```
@@ -1391,8 +595,8 @@ editar; con cualquiera distinta de "Sin acceso" permite ver):
   ```json
   "roles_control_documental": {
     "$uid": {
-      ".read": "auth.uid === $uid || auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3'",
-      ".write": "auth.uid === 's51EqDX0m9hWmo9C4Hy00dFqD0C3'"
+      ".read": "auth.uid === $uid || auth.uid === 'TfRcGWLDQ1bUxZSutB0WQUondi63'",
+      ".write": "auth.uid === 'TfRcGWLDQ1bUxZSutB0WQUondi63'"
     }
   }
   ```
@@ -2359,11 +1563,22 @@ editar; con cualquiera distinta de "Sin acceso" permite ver):
 - Los documentos de oficios NO se suben a la nube: el texto se extrae automáticamente de PDFs
   con `pdf.js` directamente en el navegador (o se puede pegar manualmente), y solo ese texto
   se guarda en Realtime Database junto con el diagnóstico de la IA.
-- **28va iteración (importador de planes):** las filas sin código (títulos de banda como «INGRESOS» y subtotales «Total ......») ya no se importan como cuentas; se quitan los puntos iniciales de los nombres («......VENTA DE BIENES»). En planes ya guardados, una cuenta sin código cuyo nombre empieza con «Total» se trata como excluida. Esto elimina el «TOTAL ACTIVO» suelto y los ceros duplicados en el Estado de Resultados.
-- **29na iteración:** en los estados, toda cuenta SIN código (títulos de banda, subtotales «Total …», «TOTAL ACTIVO» importados desde un reporte de ERP) se excluye automáticamente, también en planes ya guardados; y se quitan los puntos iniciales de los nombres («......VENTAS»).
-- **30ma iteración:** en el Estado de Resultados, si el plan no tiene cuentas de Gasto separadas (todo el grupo 5 está como Costo), ya no se muestra «UTILIDAD BRUTA»; el resultado tras costos sale solo como «UTILIDAD (PÉRDIDA) DEL EJERCICIO». «Utilidad bruta» solo aparece cuando hay costos y gastos.
-- **31ra iteración (utilidad del ejercicio):** si los saldos de Pasivo, Patrimonio e Ingresos vienen en conjunto NEGATIVOS (convención del libro mayor: crédito −), los estados los presentan con signo natural. Así Utilidad = Ingresos − Costos − Gastos y Activo = Pasivo + Patrimonio. Una cuenta acreedora con signo contrario al normal queda en negativo. Se muestra una nota informativa en pantalla.
-- **32da iteración:** la detección de signo del libro mayor es ahora por tipo: Ingresos y Pasivos en conjunto negativos se presentan en positivo (aunque otras cuentas vengan con signo natural). Así Utilidad bruta y Utilidad del ejercicio = Ingresos − Costos − Gastos siempre, también en el PDF y el Excel.
-- **33ra iteración:** (1) Firmas del PDF/Excel: si no hay nombre del representante legal o del contador, queda un renglón «Nombre: ……» y «C.I./RUC: ……» para escribirlo a mano. (2) Verificación Activo − (Pasivo + Patrimonio): si el patrimonio ya trae el resultado del ejercicio (cuenta de ganancia/utilidad del periodo dentro del grupo 3) y así cuadra, no se suma otra vez la utilidad calculada; se oculta la fila «Utilidad (pérdida) del ejercicio» del balance y se muestra una nota.
-- **34ta iteración (Excel «recuperar»):** se reemplazan los hipervínculos internos de la Carátula (que ExcelJS escribía con una referencia externa y un «#» inválido en `location`) por fórmulas HYPERLINK nativas; el encabezado de impresión se normaliza (sin caracteres de control, máx. 90 caracteres, espacio tras el código de fuente).
-- **35ta iteración (Excel: «error de XML» en las hojas):** causa real: ExcelJS escribía `<pageSetUpPr>` antes de `<outlinePr>` en cada hoja (orden inválido para Excel). Se quita `outlineProperties` de las hojas; los niveles de agrupación (esquema) siguen funcionando. Comprobado en el XML generado.
+
+
+## Versión 2026-10-01g — Auditoría Supercias: asignación manual de casilleros
+- En "4. Conciliación rubro por rubro", cada fila con diferencia tiene **✏️ Asignar casillero**: eliges SRI (casillero F101) o Supercias (código), el código, la fila destino, si aplica solo a ese año o a todos, y el motivo del contador.
+- El valor sale de la fila donde estaba y entra en la fila destino (los totales no cambian). Se guarda en `auditoria_supercias/{uid}/{empresa}/_asignaciones` (las reglas actuales ya lo permiten).
+- Las asignaciones se listan bajo los botones del informe (con "Quitar"), en el informe/PDF por año y en el Excel (hoja "Asignaciones manuales"); la IA las recibe como criterio del contador.
+- Nuevas filas de pasivo (otros pasivos corrientes, cuentas por pagar no corrientes, otros pasivos no corrientes), filas "Reclasificación" y aviso de "valores emitidos" sin contrapartida en el F101 (versión 2026-10-01f).
+
+## Versión 2026-10-01l — Nueva área "📒 Estados Financieros Internos"
+- Plan de cuentas por empresa: cargar el plan NIIF PYMES (catálogo Superintendencia, 435 cuentas), subir el propio (Excel/CSV: código, nombre, clasificación opcional), crear, renombrar, reclasificar y eliminar cuentas.
+- Estados financieros por año: subir Excel/CSV (columnas código/nombre/valor; varias columnas con el año en la cabecera = varios años) o PDF de Supercias (ESF / ERI). Si la cuenta no existe se crea con clasificación sugerida. Todos los valores se editan en pantalla; los grupos suman sus subcuentas.
+- Informe ejecutivo (vista previa, imprimir/PDF, Excel): portada con indicadores clave, resumen ejecutivo, ESF y ERI comparativos con análisis vertical y variaciones, indicadores financieros, controles y firmas.
+- **Reglas Firebase:** agregar el nodo `ef_internos` (ya incluido en reglas-firebase-geafinanciero.json, área `estadosinternos`).
+
+## Versión 2026-10-02b — Auditoría Supercias: informe de auditoría externa
+- Nuevo campo "📑 Informe de auditoría externa": acepta PDF de cualquier firma, digital o escaneado. Si es digital, las páginas se ubican por texto; si es escaneado, la IA ve miniaturas de las páginas (hasta 40) para ubicar dictamen, ESF y ERI. Luego la IA transcribe cada estado (renglón, nota, año actual y comparativo, rubro estándar) y lee el dictamen (auditor, registro, tipo de opinión, salvedades, énfasis).
+- La app verifica la aritmética (sumas por grupo, A = P + Pat, utilidad neta) y muestra una pantalla de revisión editable antes de guardar en `auditoria_supercias/.../a{año}/auditoria`.
+- El informe agrega la sección "9. Auditoría externa vs. estados presentados" (Supercias, SRI y estados financieros internos del área 📒), hallazgos automáticos, diferencias de clasificación y la columna comparativa vs. el año anterior. Excel: hoja "Auditoría {año}".
+- **Subir también `netlify/functions/analizar.js`** (modos nuevos: auditoria_localizar, auditoria_extraer_estado, auditoria_opinion). Reglas Firebase sin cambios.

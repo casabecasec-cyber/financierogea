@@ -30,7 +30,15 @@ function extraerIdGoogleDrive(url) {
   return m ? m[1] : null;
 }
 
+function extraerIdCarpetaDrive(url) {
+  const m = url.match(/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([a-zA-Z0-9_-]+)/)
+    || url.match(/drive\.google\.com\/(?:embedded)?folderview\?(?:[^#]*&)?id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
 function detectarUrlDirecta(url) {
+  const idCarpeta = extraerIdCarpetaDrive(url);
+  if (idCarpeta) return { tipoDetectado: "google_drive_carpeta", esCarpetaDrive: true, folderId: idCarpeta };
   if (extraerIdGoogleDrive(url) && /drive\.google\.com/.test(url)) {
     return { tipoDetectado: "google_drive_archivo", esGoogleDrive: true, fileId: extraerIdGoogleDrive(url) };
   }
@@ -121,6 +129,53 @@ async function descargarDeGoogleDrive(fileId) {
   return { resp, htmlNoResuelto: html.slice(0, 300) };
 }
 
+// Lista una carpeta PÚBLICA de Google Drive ("cualquiera con el enlace") usando
+// la vista incrustada de Google (embeddedfolderview), que no requiere API key.
+// Devuelve [{ nombre, url, esCarpeta }]. Solo lista: cada archivo se lee
+// después con una llamada aparte (así no se pasa el límite de tiempo).
+function decodificarHtml(s) {
+  return String(s || "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+    .trim();
+}
+async function listarCarpetaDrive(folderId) {
+  const resp = await fetch(`https://drive.google.com/embeddedfolderview?id=${folderId}`, { redirect: "follow", headers: FETCH_HEADERS });
+  if (resp.status === 403 || resp.status === 404) return { estado: resp.status };
+  if (!resp.ok) return { estado: resp.status };
+  const html = await resp.text();
+  const archivos = [];
+  const vistos = new Set();
+  // Cada elemento viene como <div class="flip-entry" id="entry-ID"> ... <a href="..."> ... <div class="flip-entry-title">Nombre</div>
+  const bloques = html.split(/<div[^>]+class="flip-entry"/).slice(1);
+  for (const b of bloques) {
+    const href = (b.match(/<a[^>]+href="([^"]+)"/) || [])[1];
+    const titulo = (b.match(/class="flip-entry-title"[^>]*>([^<]*)</) || [])[1];
+    const idEntrada = (b.match(/id="entry-([a-zA-Z0-9_-]+)"/) || [])[1];
+    let url = href ? decodificarHtml(href) : (idEntrada ? `https://drive.google.com/file/d/${idEntrada}/view` : null);
+    if (!url) continue;
+    if (url.startsWith("/")) url = "https://drive.google.com" + url;
+    const esCarpeta = /\/folders\//.test(url) || /folderview/.test(url);
+    const clave = url.split("?")[0];
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    archivos.push({ nombre: decodificarHtml(titulo) || "(sin nombre)", url, esCarpeta });
+  }
+  // Respaldo si Google cambió el formato: buscar enlaces a archivos sueltos.
+  if (!archivos.length) {
+    const re = /https:\/\/(?:drive\.google\.com\/file\/d|docs\.google\.com\/(?:document|spreadsheets|presentation)\/d)\/([a-zA-Z0-9_-]{20,})/g;
+    let m;
+    while ((m = re.exec(html))) {
+      const url = m[0] + (m[0].includes("drive.google.com") ? "/view" : "/edit");
+      if (vistos.has(m[1])) continue;
+      vistos.add(m[1]);
+      archivos.push({ nombre: `Archivo ${archivos.length + 1}`, url, esCarpeta: false });
+    }
+  }
+  const requiereLogin = /accounts\.google\.com\/(?:ServiceLogin|signin)/i.test(html) && !archivos.length;
+  return { estado: 200, archivos, requiereLogin, muestra: archivos.length ? "" : html.slice(0, 300) };
+}
+
 function mensajeError403(tipoDetectado) {
   const servicio = tipoDetectado?.startsWith("google") ? "Google Drive/Docs" : (tipoDetectado === "onedrive" ? "OneDrive" : "el servicio");
   return `${servicio} devolvió "Acceso denegado" (HTTP 403) a esta lectura automática. Esto casi siempre pasa aunque el enlace SÍ sea público ("cualquiera con el enlace puede ver") — ${servicio.split("/")[0]} bloquea por política las solicitudes automáticas que vienen desde servidores en la nube, no desde un navegador normal. No es un error de tu configuración y, lamentablemente, no se puede forzar desde aquí. Alternativa: descarga el archivo y súbelo directamente en "Adjuntar archivo" — eso sí funciona siempre.`;
@@ -152,6 +207,20 @@ exports.handler = async function (event) {
     const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     let resp, diagnosticoExtra = "";
+    if (detectado.esCarpetaDrive) {
+      const lista = await listarCarpetaDrive(detectado.folderId);
+      clearTimeout(timeoutId);
+      if (lista.estado === 403 || lista.estado === 404 || lista.requiereLogin) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: `No se pudo abrir la carpeta de Google Drive (${lista.requiereLogin ? "pide iniciar sesión" : "HTTP " + lista.estado}). Verifica que la carpeta esté compartida como "Cualquiera con el enlace puede ver" (en Drive: clic derecho en la carpeta → Compartir → Acceso general → Cualquier persona con el enlace).` }) };
+      }
+      if (lista.estado !== 200) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: `Google Drive no respondió al listar la carpeta (HTTP ${lista.estado}). Intenta de nuevo en un momento.` }) };
+      }
+      if (!lista.archivos.length) {
+        return { statusCode: 200, headers, body: JSON.stringify({ error: "La carpeta de Google Drive está vacía, o no se pudo leer su lista de archivos. Si tiene archivos, verifica que esté compartida como \"Cualquiera con el enlace puede ver\"; si el problema sigue, comparte los archivos uno por uno o súbelos en un ZIP.", diagnostico: lista.muestra }) };
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ tipo: "carpeta", archivos: lista.archivos.slice(0, 60), total: lista.archivos.length, tipoDetectado }) };
+    }
     if (detectado.esGoogleDrive) {
       const resultado = await descargarDeGoogleDrive(detectado.fileId);
       resp = resultado.resp;
@@ -240,9 +309,25 @@ exports.handler = async function (event) {
     // Otros tipos binarios (Word, Excel, imágenes, application/octet-stream genérico
     // que a veces usan estos servicios para PDFs mal etiquetados): los devolvemos como
     // PDF solo si el nombre/URL sugiere PDF; si no, avisamos que no se soporta aún.
-    if (contentType.includes("octet-stream") || contentType === "") {
+    // Nombre del archivo según la cabecera de descarga (sirve para saber si
+    // es Word/Excel y para mostrarlo en la app).
+    const disp = resp.headers.get("content-disposition") || "";
+    const nombreArchivo = decodeURIComponent(((disp.match(/filename\*=UTF-8''([^;]+)/i) || [])[1]) || "")
+      || ((disp.match(/filename="?([^";]+)"?/i) || [])[1]) || "";
+    const esOffice = /officedocument|msword|ms-excel|opendocument/.test(contentType) || /\.(docx?|xlsx?|ods|odt)$/i.test(nombreArchivo);
+
+    if (esOffice || contentType.includes("octet-stream") || contentType === "") {
       const buffer = await resp.arrayBuffer();
       const primerosBytes = Buffer.from(buffer.slice(0, 5)).toString("utf-8");
+      // Word/Excel (o binario que empieza como ZIP "PK", típico de .docx/.xlsx):
+      // se devuelve en base64 para que el navegador extraiga el texto con las
+      // mismas librerías que usa al subir archivos (mammoth / SheetJS).
+      if (esOffice || primerosBytes.startsWith("PK") || primerosBytes.startsWith("\u00D0\u00CF")) {
+        if (buffer.byteLength > 4 * 1024 * 1024) {
+          return { statusCode: 200, headers, body: JSON.stringify({ error: `El archivo ${nombreArchivo || ""} pesa ${(buffer.byteLength/1024/1024).toFixed(1)} MB; supera el límite de 4 MB para leerlo por enlace. Descárgalo y súbelo directamente.` }) };
+        }
+        return { statusCode: 200, headers, body: JSON.stringify({ tipo: "binario", base64: Buffer.from(buffer).toString("base64"), nombre: nombreArchivo, contentType, tipoDetectado }) };
+      }
       if (primerosBytes.startsWith("%PDF")) {
         if (buffer.byteLength > 4 * 1024 * 1024) {
           return { statusCode: 200, headers, body: JSON.stringify({ error: `El PDF del enlace pesa ${(buffer.byteLength/1024/1024).toFixed(1)} MB, supera el límite de 4 MB. Descárgalo, comprímelo, o pega el texto manualmente.` }) };

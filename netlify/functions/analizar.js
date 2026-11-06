@@ -1,6 +1,6 @@
 // netlify/functions/analizar.js
-// Proxy seguro hacia la API de Anthropic. La API key vive SOLO en las
-// variables de entorno de Netlify (ANTHROPIC_API_KEY) y nunca llega al navegador.
+// Proxy seguro hacia la API de Google Gemini. La API key vive SOLO en las
+// variables de entorno de Netlify (GEMINI_API_KEY) y nunca llega al navegador.
 
 // --- Utilidades de parseo tolerante: si la respuesta de la IA se corta antes
 // de cerrar el JSON completo (por límite de tokens), rescatamos campo por
@@ -47,6 +47,97 @@ function extraerCampoObjetoArray(texto, campo) {
   return objetos;
 }
 
+const AUD_STD_ESF = `efectivo = efectivo y equivalentes (caja, bancos, inversiones temporales < 90 días)
+actfin = cuentas y documentos por cobrar corrientes: clientes, otras cuentas por cobrar, relacionadas, accionistas, (-) provisión de incobrables, otros activos financieros corrientes
+inventarios = inventarios, mercaderías en tránsito, (-) provisión de inventarios
+anticipados = gastos pagados por anticipado, anticipos a proveedores, seguros/arriendos prepagados
+impcorr = activos por impuestos corrientes, crédito tributario IVA / renta, retenciones, anticipo de impuesto a la renta
+otrosac = otros activos corrientes, activos mantenidos para la venta
+tac = TOTAL activo corriente
+ppe = propiedad, planta y equipo (neto de depreciación), y cada componente o su depreciación acumulada
+propinv = propiedades de inversión
+biologicos = activos biológicos
+intang = activos intangibles, derechos de uso (netos)
+impdif = activos por impuestos diferidos
+finnc = inversiones no corrientes (en asociadas, subsidiarias, otras), cuentas por cobrar a largo plazo, activos financieros no corrientes
+otrosanc = otros activos no corrientes, depósitos en garantía
+tanc = TOTAL activo no corriente
+ta = TOTAL ACTIVO
+cxp = cuentas y documentos por pagar corrientes: proveedores, comerciales, otras cuentas por pagar, relacionadas, accionistas (corto plazo)
+oblfin = obligaciones con instituciones financieras corrientes, préstamos bancarios, sobregiros, porción corriente de deuda a largo plazo, obligaciones/papel comercial emitidos
+irpagar = impuesto a la renta por pagar del ejercicio
+ptpagar = participación trabajadores por pagar (solo si la línea lo dice expresamente)
+antcli = anticipos de clientes, ingresos diferidos corrientes
+otrospc = otros pasivos corrientes: beneficios a empleados corrientes, IESS, obligaciones laborales, pasivos por impuestos corrientes (IVA y retenciones por pagar), provisiones, dividendos por pagar, otras obligaciones corrientes
+tpc = TOTAL pasivo corriente
+cxpnc = cuentas y documentos por pagar no corrientes (proveedores, relacionadas, accionistas, otras cuentas por pagar a largo plazo)
+oblfinnc = obligaciones financieras / préstamos bancarios / obligaciones emitidas a largo plazo
+benemp = jubilación patronal, desahucio, beneficios a empleados no corrientes
+antclinc = anticipos de clientes e ingresos diferidos a largo plazo
+otrospnc = otros pasivos no corrientes, provisiones no corrientes, pasivo por impuesto diferido
+tpnc = TOTAL pasivo no corriente
+tp = TOTAL PASIVOS
+capital = capital social / suscrito / asignado
+aportes = aportes para futuras capitalizaciones
+reservas = reserva legal, facultativa, estatutaria, otras reservas
+ori = otros resultados integrales, superávit por revaluación
+resacum = utilidades o pérdidas acumuladas de ejercicios anteriores, resultados acumulados por adopción NIIF, reserva de capital
+resej = utilidad o pérdida del ejercicio (en el patrimonio)
+tpat = TOTAL PATRIMONIO
+tpyp = TOTAL PASIVO Y PATRIMONIO`;
+const AUD_STD_ERI = `ingord = ingresos de actividades ordinarias / ventas / ingresos operacionales (netos de descuentos y devoluciones), y cada uno de sus componentes
+costo = costo de ventas, costo de producción, costo de servicios
+gastos = TODOS los gastos excepto costo, participación e impuesto: gastos de administración, de ventas, financieros, no operacionales, otros gastos, depreciaciones presentadas aparte
+otrosing = otros ingresos, ingresos financieros, ingresos no operacionales
+uai = utilidad (pérdida) antes de participación trabajadores e impuesto a la renta
+pt = participación trabajadores (15%)
+ir = impuesto a la renta (corriente y/o diferido; si el diferido es ingreso, valor negativo)
+neta = utilidad / pérdida / resultado NETO del ejercicio (o resultado integral si no hay otro resultado integral)`;
+
+
+const PARTES_INFORME = {
+  resumen: `Responde SOLO con este JSON (conciso):
+{
+  "opinion": "razonable"|"con_salvedades"|"desfavorable"|"no_concluyente",
+  "resumen_ejecutivo": "párrafo ejecutivo de 6-8 líneas: alcance (años y documentos), resultado general de la conciliación, diferencias más importantes con sus montos y conclusión",
+  "conclusion_por_anio": [{"anio": 2024, "conclusion": "2-3 líneas con cifras"}]
+}`,
+  hallazgos: `Responde SOLO con este JSON (máximo 7 hallazgos, de mayor a menor severidad; cada texto máximo 2-3 líneas):
+{
+  "hallazgos": [{"anio": 2024, "severidad": "alta"|"media"|"baja", "titulo": "título corto", "detalle": "qué se encontró, con montos, casilleros y códigos", "posible_causa": "causa probable", "recomendacion": "acción concreta (cita casillero SRI / código Supercias recomendados si es de clasificación)"}]
+}`,
+  interanual: `Responde SOLO con este JSON (conciso):
+{
+  "analisis_interanual": "6-10 líneas: evolución entre años de ventas, utilidad, endeudamiento, liquidez y patrimonio; continuidad de saldos; años faltantes",
+  "riesgos_regulatorios": ["máximo 4 riesgos concretos ante la SCVS o el SRI"],
+  "recomendaciones": ["máximo 6 recomendaciones concretas y priorizadas"]
+}`,
+};
+
+// Modelos de Groq: se consulta la lista real de la cuenta (Groq retira modelos con
+// frecuencia) y se usan en orden de preferencia; se guarda en caché unos minutos.
+let _cacheModelosGroq = null;
+async function modelosGroqDisponibles(groqKey) {
+  const preferidos = [process.env.GROQ_MODEL, "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct", "openai/gpt-oss-20b", "moonshotai/kimi-k2-instruct", "qwen/qwen3-32b"].filter(Boolean);
+  if (_cacheModelosGroq && Date.now() - _cacheModelosGroq.t < 10 * 60 * 1000) return _cacheModelosGroq.lista;
+  let lista = preferidos;
+  try {
+    const c = new AbortController(); const t = setTimeout(() => c.abort(), 3000);
+    const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${groqKey}` }, signal: c.signal });
+    clearTimeout(t);
+    if (r.ok) {
+      const d = await r.json();
+      const ids = (d.data || []).filter(m => m.active !== false).map(m => m.id);
+      const chat = ids.filter(id => !/whisper|tts|guard|embed|playai|orpheus|compound/i.test(id));
+      const ord = [...preferidos.filter(m => chat.includes(m)), ...chat.filter(m => !preferidos.includes(m) && /70b|120b|maverick|scout|kimi|qwen|llama/i.test(m))];
+      if (ord.length) lista = ord;
+    }
+  } catch (e) { /* se usan los preferidos */ }
+  _cacheModelosGroq = { t: Date.now(), lista };
+  return lista;
+}
+
 function parsearRespuestaIA(textoOriginal, modo) {
   let clean = textoOriginal.replace(/```json|```/g, "").trim();
   const inicio = clean.indexOf("{");
@@ -81,6 +172,36 @@ function parsearRespuestaIA(textoOriginal, modo) {
         faltantes: extraerCampoArray(clean, "faltantes"),
         recomendaciones: extraerCampoArray(clean, "recomendaciones"),
         resumen: extraerCampoTexto(clean, "resumen") || "(La respuesta de la IA se cortó antes de completarse; intenta de nuevo)",
+      };
+    }
+    if (modo === "auditoria_extraer_estado") {
+      return { titulo: extraerCampoTexto(clean, "titulo") || "", unidad: extraerCampoTexto(clean, "unidad") || "dolares",
+        anio_actual: +((clean.match(/"anio_actual"\s*:\s*(\d{4})/) || [])[1]) || null, anio_anterior: +((clean.match(/"anio_anterior"\s*:\s*(\d{4})/) || [])[1]) || null,
+        lineas: extraerCampoObjetoArray(clean, "lineas"), truncado: true };
+    }
+    if (modo === "informe_auditoria_externa") {
+      return { conclusion: extraerCampoTexto(clean, "conclusion") || "", hallazgos: extraerCampoObjetoArray(clean, "hallazgos"),
+        riesgos_regulatorios: extraerCampoArray(clean, "riesgos_regulatorios"), recomendaciones: extraerCampoArray(clean, "recomendaciones") };
+    }
+    if (modo === "informe_auditoria_supercias") {
+      return {
+        opinion: extraerCampoTexto(clean, "opinion") || "no_concluyente",
+        resumen_ejecutivo: extraerCampoTexto(clean, "resumen_ejecutivo") || "(La respuesta de la IA se cortó antes de completarse; vuelve a intentarlo)",
+        conclusion_por_anio: extraerCampoObjetoArray(clean, "conclusion_por_anio"),
+        hallazgos: extraerCampoObjetoArray(clean, "hallazgos"),
+        analisis_interanual: extraerCampoTexto(clean, "analisis_interanual") || "",
+        riesgos_regulatorios: extraerCampoArray(clean, "riesgos_regulatorios"),
+        recomendaciones: extraerCampoArray(clean, "recomendaciones"),
+      };
+    }
+    if (modo === "puntos_equipo_oficio") {
+      return { puntos: extraerCampoObjetoArray(clean, "puntos") };
+    }
+    if (modo === "revisar_punto_oficio") {
+      return {
+        justifica: extraerCampoTexto(clean, "justifica") || "parcial",
+        comentario: extraerCampoTexto(clean, "comentario") || "(La respuesta de la IA se cortó antes de completarse)",
+        faltantes: extraerCampoTexto(clean, "faltantes") || "",
       };
     }
     if (modo === "generar_puntos_proyecto") {
@@ -164,13 +285,13 @@ exports.handler = async function (event) {
     return { statusCode: 405, headers, body: JSON.stringify({ error: "Método no permitido" }) };
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: "ANTHROPIC_API_KEY no está configurada en Netlify (Site settings → Environment variables).",
+        error: "GEMINI_API_KEY no está configurada en Netlify (Site settings → Environment variables).",
       }),
     };
   }
@@ -182,16 +303,19 @@ exports.handler = async function (event) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: "JSON inválido" }) };
   }
 
-  const { modo, contenido: contenidoOriginal, contexto, pdfs } = payload;
+  const { modo, contenido: contenidoOriginal, contexto, pdfs, imagenes } = payload;
+  const parteInforme = String(payload.parte || "");
   const listaPdfs = Array.isArray(pdfs) ? pdfs.filter(p => p && p.data) : [];
-  if (!modo || (!contenidoOriginal && !listaPdfs.length)) {
+  // Imágenes de páginas (p. ej. informes de auditoría escaneados): [{data, mime, etiqueta}]
+  const listaImgs = Array.isArray(imagenes) ? imagenes.filter(p => p && p.data) : [];
+  if (!modo || (!contenidoOriginal && !listaPdfs.length && !listaImgs.length)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: "Faltan campos: se requiere 'modo' y, al menos, 'contenido' o 'pdfs'" }) };
   }
   // Si no hay texto extraído pero sí hay uno o más PDF adjuntos, se usa un texto
   // de reemplazo solo para armar el prompt; los PDF reales se envían aparte como
   // documentos nativos a Claude (ver más abajo), que sí puede leerlos visualmente
   // (por ejemplo, escaneos o imágenes dentro del PDF sin texto seleccionable).
-  const contenido = contenidoOriginal || (listaPdfs.length
+  const contenido = contenidoOriginal || (listaImgs.length ? "(El documento se adjunta como imágenes de sus páginas, cada una precedida de su número de página.)" : "") || (listaPdfs.length
     ? `(Los siguientes archivos no tienen texto extraíble por software: ${listaPdfs.map(p=>p.nombre||"adjunto").join(", ")}. Se adjuntan los PDF originales para que los leas y analices directamente, incluyendo cualquier imagen, tabla o escaneo que contengan.)`
     : "");
 
@@ -222,6 +346,125 @@ Documento a analizar:
 """
 ${contenido}
 """`,
+
+    puntos_equipo_oficio: `Eres un asesor experto en cumplimiento de requerimientos de instituciones públicas y privadas en Ecuador (Superintendencia de Compañías, SRI, IESS, Ministerio del Trabajo, municipios, etc.).
+IMPORTANTE: responde EXCLUSIVAMENTE con el objeto JSON. No escribas ninguna palabra antes ni después del JSON, ni marques con \`\`\`. La primera letra de tu respuesta debe ser "{" y la última "}".
+${listaPdfs.length ? `El oficio se adjunta como PDF (${listaPdfs.map(p=>p.nombre||"archivo").join(", ")}); es legible: ábrelo y léelo directamente. ` : ""}Lee el oficio y separa CADA requerimiento, observación, pedido de información o acción que la empresa debe cumplir/entregar, como un punto independiente (si el oficio numera sus observaciones o requerimientos, respeta esa numeración y ese orden; no fusiones puntos distintos ni inventes puntos que el oficio no pide). Para cada punto indica qué documentos de respaldo concretos debe preparar y subir el equipo para demostrar el cumplimiento (documentos reales y específicos del contexto ecuatoriano: ej. "Acta de Junta General certificada", "Libro de Accionistas actualizado", "Balance general firmado por representante legal y contador", "Declaración formulario 101", "Planilla de aportes IESS", etc.).
+Responde con este JSON exacto:
+{
+  "puntos": [
+    {"punto": "descripción clara y concreta de lo que pide el oficio en este punto (1-3 líneas; si el oficio lo numera, empieza con esa numeración)", "respaldos": "documento de respaldo 1; documento de respaldo 2; documento de respaldo 3", "prioridad": "alta"|"media"|"baja"}
+  ]
+}
+Reglas: "respaldos" es UN solo texto con los documentos separados por punto y coma (;). "prioridad" es "alta" si su incumplimiento puede generar sanción, multa, intervención o disolución, "media" si es información necesaria para cerrar el trámite, "baja" si es formal/complementaria.
+Contexto adicional: ${contexto || "ninguno"}
+Oficio:
+"""
+${contenido}
+"""`,
+
+    revisar_punto_oficio: `Eres un revisor experto en cumplimiento documental ante instituciones públicas y privadas en Ecuador.
+IMPORTANTE: responde EXCLUSIVAMENTE con el objeto JSON. No escribas ninguna palabra antes ni después del JSON, ni marques con \`\`\`. La primera letra de tu respuesta debe ser "{" y la última "}".
+${listaPdfs.length ? `Se adjuntan ${listaPdfs.length} archivo(s) PDF como documentos (no como texto): ${listaPdfs.map(p=>p.nombre||"archivo").join(", ")}. Son legibles: ábrelos y analiza su contenido directamente (texto, tablas, escaneos, sellos, firmas). Nunca respondas que no son legibles.` : ""}
+Punto del oficio que se debe cumplir, y respaldos que se recomendó presentar:
+"""
+${contexto || ""}
+"""
+Revisa los documentos de respaldo que subió el responsable y determina si demuestran el cumplimiento de ESE punto: verifica que sean los documentos correctos, que estén completos, vigentes, con firmas/sellos cuando corresponda, y coherentes con lo que pide el oficio (fechas, nombres, montos, RUC). Responde con este JSON exacto:
+{
+  "justifica": "si"|"no"|"parcial",
+  "comentario": "explicación concreta de 2-4 líneas: qué se verificó en los documentos y por qué sí, no o parcialmente respaldan el punto",
+  "faltantes": "qué falta o qué hay que corregir para que el punto quede completamente respaldado (1-3 líneas), o cadena vacía si no falta nada"
+}
+Contenido de los respaldos subidos (texto extraído cuando lo hay; los PDF adjuntos se revisan aparte):
+"""
+${contenido}
+"""`,
+
+    auditoria_localizar: `Eres un auditor financiero en Ecuador. Recibes las páginas de un INFORME DE AUDITORÍA EXTERNA (cada imagen va precedida de su número de página). El formato varía según la firma auditora.
+IMPORTANTE: responde EXCLUSIVAMENTE con el objeto JSON, sin texto antes ni después ni \`\`\`.
+Identifica en qué páginas está cada parte (lista de números de página; vacía si no aparece). No confundas el índice con los estados. Un estado puede ocupar dos páginas (p. ej. activos en una y pasivos/patrimonio en otra).
+{
+  "empresa": "razón social auditada",
+  "anio": 2025,
+  "paginas": { "opinion": [3,4,5], "esf": [6], "eri": [7], "patrimonio": [8], "flujos": [9,10] }
+}
+Contexto: ${contexto || ""}
+${contenido}`,
+
+    auditoria_extraer_estado: `Eres un auditor financiero experto en NIIF en Ecuador. Transcribe con EXACTITUD el ${String(contexto||"").startsWith("eri") ? "ESTADO DE RESULTADOS INTEGRAL (estado de resultados / pérdidas y ganancias)" : "ESTADO DE SITUACIÓN FINANCIERA (balance general)"} que aparece en el informe de auditoría adjunto. Cada firma auditora usa un formato distinto: lee la estructura real del documento.
+IMPORTANTE: responde EXCLUSIVAMENTE con el objeto JSON, sin texto antes ni después ni \`\`\`.
+Reglas:
+- Incluye TODOS los renglones que tienen valor, en el mismo orden, incluidos subtotales y totales. No inventes renglones ni cifras: copia los números tal como están impresos (revisa dígito por dígito).
+- Los valores van como números sin separadores de miles (1,805,923 → 1805923; 1.805.923,45 → 1805923.45). Paréntesis o signo menos = negativo. Guion "-" = 0.
+- "a" = valor del año actual (el del informe), "p" = valor del año anterior/comparativo (null si no hay columna comparativa).
+- "t": "l" renglón normal, "s" subtotal intermedio (ej. utilidad bruta, utilidad operacional), "T" total de sección (ej. total activo corriente, total activos, total pasivos, total patrimonio).
+- "n": número de nota si aparece, si no "".
+- "s": código estándar del renglón según esta lista ("" para subtotales que no estén en la lista):
+${String(contexto||"").startsWith("eri") ? AUD_STD_ERI : AUD_STD_ESF}
+- En el estado de resultados, los gastos y costos van en positivo (como gasto), salvo que el documento muestre un ingreso dentro del grupo.
+{
+  "titulo": "título del estado tal como aparece",
+  "anio_actual": 2025,
+  "anio_anterior": 2024,
+  "unidad": "dolares" | "miles",
+  "lineas": [ {"d": "Efectivo y equivalentes al efectivo", "n": "4", "a": 1777045, "p": 916511, "t": "l", "s": "efectivo"} ]
+}
+Contexto: ${contexto || ""}
+Documento:
+${contenido}`,
+
+    auditoria_opinion: `Eres un auditor financiero senior en Ecuador (NIA). Lee el DICTAMEN / INFORME DEL AUDITOR INDEPENDIENTE adjunto (el formato varía según la firma) y extrae su contenido.
+IMPORTANTE: responde EXCLUSIVAMENTE con el objeto JSON, sin texto antes ni después ni \`\`\`.
+{
+  "empresa": "razón social auditada",
+  "anio": 2025,
+  "auditor": "nombre del auditor o firma auditora",
+  "registro_scvs": "número de registro en la Superintendencia (SC-RNAE...) o ''",
+  "fecha_informe": "fecha del informe en texto",
+  "ciudad": "",
+  "tipo_opinion": "limpia" | "con_salvedades" | "adversa" | "abstencion",
+  "marco_contable": "NIIF para PYMES | NIIF completas | otro",
+  "resumen_opinion": "2-3 líneas con lo que dice el párrafo de opinión",
+  "salvedades": ["cada asunto que origina la salvedad, opinión adversa o abstención, con montos si los hay"],
+  "enfasis": ["párrafos de énfasis / incertidumbre material relacionada con empresa en marcha / otros asuntos"],
+  "empresa_en_marcha": "lo que diga sobre empresa en marcha o ''",
+  "cumplimiento_tributario": "lo que diga sobre el informe de cumplimiento tributario o ''"
+}
+Contexto: ${contexto || ""}
+Documento:
+${contenido}`,
+    informe_auditoria_externa: `Eres un auditor financiero senior en Ecuador (NIIF, NIA, Superintendencia de Compañías y SRI).
+IMPORTANTE: responde EXCLUSIVAMENTE con el objeto JSON, sin texto antes ni después ni \`\`\`.
+Recibes, por año, la comparación YA CALCULADA entre los estados financieros AUDITADOS (informe del auditor independiente) y lo presentado a la Superintendencia (Supercias), lo declarado al SRI (F101) y los estados financieros internos, además del tipo de opinión, salvedades y énfasis. Usa SOLO esas cifras. Explica qué significan las diferencias (ajustes de auditoría no registrados en los formularios, reclasificaciones, reexpresión del año anterior), su gravedad y qué hacer (corrección / reproceso ante la SCVS, declaración sustitutiva al SRI, registro contable de los ajustes).
+Responde con este JSON (conciso; cada texto máximo 3 líneas; máximo 6 hallazgos):
+{
+  "conclusion": "3-5 líneas: coherencia entre la auditoría y lo presentado, con las cifras principales",
+  "hallazgos": [{"anio": 2025, "severidad": "alta"|"media"|"baja", "titulo": "título corto", "detalle": "con montos", "posible_causa": "", "recomendacion": "acción concreta"}],
+  "riesgos_regulatorios": ["riesgo concreto"],
+  "recomendaciones": ["recomendación concreta"]
+}
+Empresa: ${contexto || ""}
+Datos (JSON):
+${contenido}`,
+
+    informe_auditoria_supercias: `Eres un auditor financiero senior en Ecuador, experto en NIIF, en el Formulario 101 del SRI (Impuesto a la Renta Sociedades) y en los estados financieros que las compañías presentan a la Superintendencia de Compañías, Valores y Seguros (SCVS).
+IMPORTANTE: responde EXCLUSIVAMENTE con el objeto JSON. No escribas nada antes ni después, ni marques con \`\`\`. La primera letra de tu respuesta debe ser "{" y la última "}".
+Recibes los RESULTADOS YA CALCULADOS de una conciliación (no recalcules ni inventes cifras: usa SOLO las que vienen en los datos). Los estados internos de la empresa son los declarados al SRI (Formulario 101) y deben cuadrar con los presentados a la Superintendencia del MISMO año. Revisa siempre los años: qué años son conciliables, cuáles están incompletos o faltan, y compara la evolución entre años (variaciones, continuidad de inventarios, capital y utilidades acumuladas, indicadores).
+Criterios: "cuadra" = diferencia ≤ USD 1; una diferencia en un subtotal con los totales cuadrados suele ser de CLASIFICACIÓN entre rubros (menos grave, pero debe documentarse); diferencias en totales de activo, pasivo, patrimonio, ingresos, utilidad o impuesto son GRAVES (posible declaración sustitutiva al SRI o reproceso/corrección ante la Superintendencia). Si un año no tiene ambos documentos, dilo como limitación, no como diferencia. La conciliación incluye rubros principales y líneas de DETALLE (ingresos por tipo, costo de ventas por componente y gastos por naturaleza); para cada diferencia vienen los casilleros del Formulario 101 (casillerosSri) y los códigos de la Superintendencia (codigosSupercias) que la forman: en cada hallazgo CITA esos casilleros y códigos con sus valores (ej. "SRI casillero 7203 Seguros 176.241,24 vs. Supercias 5020114 + 5020214 = 6.265,56"), y explica si parece una diferencia de clasificación (el total del grupo cuadra) o de cifras. Además viene "cuadrePorReclasificacion": por grupo (activo corriente, pasivo corriente, gastos, etc.), las reclasificaciones que la app propuso emparejando diferencias opuestas según afinidad contable (con razonabilidad alta/media/baja) y lo que quedó "noExplicado". Evalúa con criterio de auditor la RAZONABILIDAD de cada reclasificación importante (¿es contablemente lógico que esa cuenta esté presentada así en la Superintendencia?), señala las de baja razonabilidad que requieren revisar el auxiliar contable, y concluye por grupo si las filas cuadran tras reclasificar. Lo "noExplicado" en grupos cuyo total no cuadra es diferencia de cifras (grave). Cada reclasificación trae codigoSuperciasActual/codigoSuperciasRecomendado y casilleroSriActual/casilleroSriRecomendado: en cada hallazgo y recomendación sobre clasificación CITA SIEMPRE el número de casillero del SRI y el código de Supercias recomendados (ej.: "mover USD X del código 20205 al 20210 en Supercias, o del casillero 588 al 568 en el F101 mediante sustitutiva") e indica cuál formulario conviene corregir. Si viene "auditoriaExterna" (informe del auditor independiente leído del PDF), compárala con Supercias, el SRI y los estados internos: una utilidad, patrimonio o activo auditado distinto a lo presentado indica que los ajustes de auditoría no se registraron en los formularios (riesgo de sustitutiva al SRI y corrección ante la SCVS); considera el tipo de opinión, salvedades y énfasis en los hallazgos.
+${PARTES_INFORME[parteInforme] ? PARTES_INFORME[parteInforme] : `Responde con este JSON exacto (sé completo pero conciso: cada texto máximo 3-4 líneas; máximo 10 hallazgos, ordenados de mayor a menor severidad):
+{
+  "opinion": "razonable"|"con_salvedades"|"desfavorable"|"no_concluyente",
+  "resumen_ejecutivo": "párrafo ejecutivo de 6-10 líneas: alcance (años y documentos), resultado general de la conciliación, diferencias más importantes con sus montos, estado de los cuadres internos, continuidad entre años y conclusión",
+  "conclusion_por_anio": [{"anio": 2024, "conclusion": "conclusión de ese año en 2-3 líneas, con cifras"}],
+  "hallazgos": [{"anio": 2024, "severidad": "alta"|"media"|"baja", "titulo": "título corto", "detalle": "qué se encontró, con montos y rubros", "posible_causa": "causa probable (clasificación, ajuste posterior, error de transcripción, sustitutiva, etc.)", "recomendacion": "acción concreta"}],
+  "analisis_interanual": "análisis de la evolución entre años (8-12 líneas): tendencias de ventas, utilidad, endeudamiento, liquidez y patrimonio; continuidad de saldos entre años; años faltantes que impiden la comparación",
+  "riesgos_regulatorios": ["riesgo concreto ante la SCVS o el SRI (multas, observaciones, sustitutivas, etc.)"],
+  "recomendaciones": ["recomendación concreta y priorizada"]
+}`}
+Empresa: ${contexto || "no especificada"}
+Datos de la conciliación (JSON):
+${contenido}`,
 
     revision_soportes: `Eres un revisor experto en cumplimiento documental para trámites ante instituciones públicas y privadas en Ecuador.
 Sé conciso: cada observación o recomendación debe tener máximo 1-2 líneas.
@@ -384,6 +627,16 @@ Solicitud del usuario sobre qué memo necesita:
 ${contenido}
 """`,
 
+    generar_memo_rrhh: `Eres un asistente experto en derecho laboral y gestión de talento humano en Ecuador.
+Redacta un documento interno (memo o llamado de atención, según se indique) dirigido a un empleado específico por una falta leve, con fundamento general en el Código del Trabajo del Ecuador (régimen disciplinario, reglamento interno de trabajo, y el principio de que solo las faltas graves tipificadas expresamente habilitan la terminación por visto bueno — una falta leve NO es causal de despido, es una llamada de atención dentro del proceso disciplinario interno).
+Formato: encabezado (PARA: nombre del empleado y cargo si se indica: DE: Talento Humano; FECHA; ASUNTO), cuerpo que describe los hechos de forma objetiva y respetuosa, cita en términos generales el fundamento (régimen disciplinario interno conforme al Código del Trabajo), indica que se trata de una falta leve y su prevención de futuras reincidencias, y cierre con espacio de firma para el área de Talento Humano y para el empleado (acuse de recibido).
+IMPORTANTE: NO incluyas ninguna línea con número de documento ni un espacio en blanco/subrayado para un número — el sistema ya agrega el número oficial aparte. No cites artículos numerados específicos del Código del Trabajo salvo que el usuario los haya dado — refiérete de forma general al "régimen disciplinario interno conforme al Código del Trabajo y el Reglamento Interno de Trabajo" para evitar citar una norma incorrecta; sugiere al final, en una línea aparte tras el documento y antes de nada más, "Nota interna: se recomienda verificar la cita normativa exacta con el reglamento interno de la empresa antes de notificar." — esa nota NO debe ir dentro del cuerpo del documento, va después, en un bloque separado.
+Responde con el documento completo seguido de la nota interna en una línea aparte al final, sin explicaciones adicionales, sin comillas envolventes, sin marcado markdown.
+Datos del caso:
+"""
+${contenido}
+"""`,
+
     generar_oficio: `Eres un asistente experto en redacción de oficios formales para instituciones y empresas en Ecuador.
 Redacta un oficio completo y profesional según la siguiente solicitud del usuario. Usa el formato estándar ecuatoriano: lugar y fecha, destinatario, asunto, cuerpo formal, despedida y espacio de firma.
 IMPORTANTE: NO incluyas ninguna línea con "OFICIO N°", "OFICIO No.", numeración, o un espacio en blanco/subrayado para un número — el sistema que usa este texto ya agrega automáticamente el número oficial en un encabezado aparte, y si tú agregas otra línea de número (aunque quede en blanco) se duplica. Empieza directo con el lugar y fecha.
@@ -407,6 +660,16 @@ ${contenido}
 El usuario tiene el siguiente borrador de oficio y quiere que lo revises o corrijas según sus instrucciones. Mejora la redacción, corrige errores, y aplica los cambios solicitados, manteniendo el formato formal de oficio.
 IMPORTANTE: si el borrador trae una línea de "OFICIO N°" con un espacio en blanco/subrayado, QUÍTALA — el sistema ya agrega el número oficial en un encabezado aparte y no debe duplicarse.
 Responde EXCLUSIVAMENTE con el texto completo del oficio corregido, sin explicaciones antes o después, sin comillas envolventes, sin marcado markdown.
+Instrucciones del usuario para esta revisión: ${contexto || "revisar redacción y corregir errores generales"}
+Borrador actual:
+"""
+${contenido}
+"""`,
+
+    revisar_memo_rrhh: `Eres un asistente experto en derecho laboral y gestión de talento humano en Ecuador.
+El usuario tiene el siguiente borrador de memo/llamado de atención por falta leve y quiere que lo revises o corrijas según sus instrucciones. Mejora la redacción, corrige errores, y aplica los cambios solicitados, manteniendo el tono objetivo y respetuoso, y sin convertir la falta leve en causal de despido.
+IMPORTANTE: si el borrador trae un número de documento con espacio en blanco/subrayado, QUÍTALO — el sistema ya agrega el número oficial aparte. Conserva o repite al final, en línea aparte, la nota interna "Nota interna: se recomienda verificar la cita normativa exacta con el reglamento interno de la empresa antes de notificar."
+Responde con el documento corregido seguido de esa nota interna en una línea aparte al final, sin explicaciones adicionales, sin comillas envolventes, sin marcado markdown.
 Instrucciones del usuario para esta revisión: ${contexto || "revisar redacción y corregir errores generales"}
 Borrador actual:
 """
@@ -626,58 +889,262 @@ ${contenido}
 
   // Modelo por modo: Revisión de Documentos y la generación/revisión de
   // documentos de texto largo (actas, memos, oficios, cesión de acciones)
-  // usan Haiku — mucho más rápido, evita el límite de ~27s de Netlify para
-  // funciones síncronas, que Sonnet puede superar en documentos largos.
-  // Diagnóstico de oficios, Soportes y los cálculos de dividendos siguen en
-  // Sonnet 5 (necesitan más razonamiento).
+  // usan el modelo Flash-Lite — el de mayor cuota gratuita y evita el
+  // límite de ~27s de Netlify para funciones síncronas. Diagnóstico de
+  // oficios, Soportes y los cálculos de dividendos usan el modelo Flash
+  // completo (más razonamiento). Se usan los alias "latest" de Google
+  // (en vez de nombres fijos como "gemini-2.0-flash") para que la app no
+  // se rompa cada vez que Google retira una versión de modelo: el alias
+  // se actualiza solo al modelo Flash/Flash-Lite vigente.
   const MODOS_HAIKU = new Set([
     "revision_orden_compra", "revision_rol_pago", "revision_avaluo",
     "corregir_orden_compra", "corregir_rol_pago", "corregir_avaluo",
     "generar_puntos_proyecto", "analizar_punto_proyecto",
     "generar_memo", "generar_oficio", "revisar_memo", "revisar_oficio",
+    "generar_memo_rrhh", "revisar_memo_rrhh",
     "generar_acta_junta", "revisar_acta_junta",
     "generar_cesion_acciones", "revisar_cesion_acciones",
   ]);
-  const modelo = MODOS_HAIKU.has(modo) ? "claude-haiku-4-5-20251001" : "claude-sonnet-5";
+  const modeloPrincipal = MODOS_HAIKU.has(modo) ? "gemini-flash-lite-latest" : "gemini-flash-latest";
+  const modeloAlterno = modeloPrincipal === "gemini-flash-latest" ? "gemini-flash-lite-latest" : "gemini-flash-latest";
+
+  // ---------------------------------------------------------------------------
+  // Resiliencia ante saturación de Gemini ("The model is overloaded", 503,
+  // 429 por cuota, timeouts). En vez de fallar al primer error, se prueba en
+  // cadena, dentro de un presupuesto total de tiempo que respeta el límite de
+  // Netlify para funciones síncronas:
+  //   1) modelo principal del modo
+  //   2) el otro modelo de Gemini (la cuota gratuita es POR MODELO, así que si
+  //      Flash está agotado/saturado, Flash-Lite suele estar disponible)
+  //   3) de nuevo el modelo principal tras una breve espera
+  //   4) Groq (Llama), SOLO si existe la variable GROQ_API_KEY y hay texto
+  //      extraído — Groq no lee PDF, así que para PDF escaneados sin texto no
+  //      aplica. Es opcional: sin GROQ_API_KEY todo sigue funcionando igual.
+  // ---------------------------------------------------------------------------
+  const inicio = Date.now();
+  const PRESUPUESTO_MS = 25000;
+  const restante = () => PRESUPUESTO_MS - (Date.now() - inicio);
+  const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+  const ESTADOS_REINTENTABLES = new Set([408, 429, 500, 502, 503, 504]);
+
+  const parts = [
+    ...listaPdfs.map(p => ({ inline_data: { mime_type: "application/pdf", data: p.data } })),
+    ...listaImgs.flatMap(im => [{ text: String(im.etiqueta || "Página") + ":" }, { inline_data: { mime_type: im.mime || "image/jpeg", data: im.data } }]),
+    { text: prompt },
+  ];
+  const MODOS_EXTRACCION = new Set(["auditoria_localizar", "auditoria_extraer_estado", "auditoria_opinion"]);
+
+  // Para respuestas largas (informes y extracción) se desactiva el "razonamiento"
+  // interno del modelo, que es lo que más tiempo consume; si el modelo no acepta
+  // ese parámetro, se reintenta sin él.
+  const MODOS_SIN_RAZONAMIENTO = new Set(["informe_auditoria_supercias", "informe_auditoria_externa", "auditoria_localizar", "auditoria_extraer_estado", "auditoria_opinion"]);
+  let usarSinRazonamiento = MODOS_SIN_RAZONAMIENTO.has(modo);
+  async function llamarGemini(modelo, limiteMs) {
+    const r = await llamarGemini1(modelo, limiteMs, usarSinRazonamiento);
+    if (!r.ok && usarSinRazonamiento && r.status === 400 && /thinking|budget/i.test(r.error || "")) {
+      usarSinRazonamiento = false;
+      return llamarGemini1(modelo, limiteMs - 1000, false);
+    }
+    return r;
+  }
+  async function llamarGemini1(modelo, limiteMs, sinRazonamiento) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), limiteMs);
+    try {
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts }],
+            generationConfig: Object.assign(MODOS_EXTRACCION.has(modo)
+              ? { maxOutputTokens: 8192, temperature: 0, responseMimeType: "application/json" }
+              : { maxOutputTokens: modo === "informe_auditoria_supercias" ? (parteInforme ? 2200 : 4500) : 2800 },
+              sinRazonamiento ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          }),
+          signal: controller.signal,
+        }
+      );
+      let data = {};
+      try { data = await resp.json(); } catch (e) { /* respuesta no-JSON (p. ej. página de error) */ }
+      if (!resp.ok) {
+        const cuotaDiaria = resp.status === 429 && /PerDay|per day|daily/i.test(JSON.stringify(data.error || {}));
+        const msg = (data.error?.message || `HTTP ${resp.status}`) + (cuotaDiaria ? " [cuota diaria]" : "");
+        const reintentable = ESTADOS_REINTENTABLES.has(resp.status) || resp.status === 404 || /overload|unavailable|exhausted|quota|rate|demand|busy|capacity/i.test(msg);
+        return { ok: false, status: resp.status, error: msg, reintentable };
+      }
+      const texto = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
+      if (!texto.trim()) {
+        const motivo = data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || "respuesta vacía";
+        // Una respuesta vacía por saturación puntual vale la pena reintentarla;
+        // un bloqueo de seguridad no cambiará con otro intento del mismo tipo,
+        // pero sí puede pasar con el otro modelo, así que se deja reintentar.
+        return { ok: false, status: 200, error: `Gemini devolvió una respuesta vacía (${motivo})`, reintentable: true };
+      }
+      return { ok: true, texto };
+    } catch (err) {
+      const esTimeout = err.name === "AbortError";
+      return { ok: false, status: esTimeout ? 504 : 0, error: esTimeout ? "tiempo de espera agotado" : String(err), reintentable: true };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async function llamarGroq(limiteMs) {
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!groqKey || !contenidoOriginal) return null;
+    const modelos = (await modelosGroqDisponibles(groqKey)).slice(0, 4);
+    const notaGroq = listaPdfs.length
+      ? "\n\n[Nota técnica: en esta ocasión los PDF originales NO pudieron adjuntarse; analiza únicamente el texto extraído que aparece arriba y no menciones que faltan adjuntos salvo que el texto sea claramente insuficiente.]"
+      : "";
+    const errs = [];
+    const quiereJson = modo.startsWith("informe_");
+    for (const modeloGroq of modelos) {
+      for (const conJson of quiereJson ? [true, false] : [false]) {
+        const ms = Math.min(limiteMs, restante() - 300);
+        if (ms < 3000) return { ok: false, error: errs.join(" | ") || "sin tiempo" };
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), ms);
+        try {
+          const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${groqKey}` },
+            body: JSON.stringify({
+              model: modeloGroq,
+              messages: [{ role: "user", content: prompt + notaGroq }],
+              max_tokens: 2500,
+              temperature: 0.3,
+              ...(/gpt-oss/.test(modeloGroq) ? { reasoning_effort: "low" } : {}),
+              ...(conJson ? { response_format: { type: "json_object" } } : {}),
+            }),
+            signal: controller.signal,
+          });
+          let data = {};
+          try { data = await resp.json(); } catch (e) {}
+          if (resp.ok) {
+            const texto = data.choices?.[0]?.message?.content || "";
+            if (texto.trim()) return { ok: true, texto, modelo: modeloGroq };
+            errs.push(`${modeloGroq}: respuesta vacía`);
+            break;
+          }
+          const msg = data.error?.message || `HTTP ${resp.status}`;
+          errs.push(`${modeloGroq}: ${msg.slice(0, 140)}`);
+          if (conJson && /json|response_format/i.test(msg)) continue; // reintenta sin modo JSON
+          break;
+        } catch (err) {
+          errs.push(`${modeloGroq}: ${err.name === "AbortError" ? "tiempo de espera agotado" : String(err).slice(0, 100)}`);
+          break;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
+    }
+    return { ok: false, error: errs.join(" | ") || "sin modelos disponibles" };
+  }
+
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 27000);
-    const contenidoMensaje = listaPdfs.length
-      ? [
-          ...listaPdfs.map(p => ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: p.data } })),
-          { type: "text", text: prompt },
-        ]
-      : prompt;
+    // Los alias "latest" suelen apuntar al modelo más nuevo, que es justo el
+    // más demandado cuando hay picos ("This model is currently experiencing
+    // high demand"). Por eso, además de alternar Flash ↔ Flash-Lite, se prueban
+    // versiones fijas anteriores (gemini-2.5-*), que corren en capacidad
+    // separada y suelen estar libres en esos picos. Si alguna fue retirada
+    // por Google (404), simplemente se salta a la siguiente.
+    const esLite = modeloPrincipal.includes("lite");
+    const plan = [
+      { modelo: modeloPrincipal, esperaAntes: 0 },
+      { modelo: modeloAlterno, esperaAntes: 400 },
+      { modelo: esLite ? "gemini-2.5-flash-lite" : "gemini-2.5-flash", esperaAntes: 400 },
+      { modelo: esLite ? "gemini-2.5-flash" : "gemini-2.5-flash-lite", esperaAntes: 400 },
+      { modelo: modeloPrincipal, esperaAntes: 1500 },
+    ];
+    const hayRespaldoGroq = !!(process.env.GROQ_API_KEY && contenidoOriginal);
+    const errores = [];
+    let textoCompleto = "";
+    let proveedor = "";
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: modelo,
-        max_tokens: 2800,
-        messages: [{ role: "user", content: contenidoMensaje }],
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    // Los análisis de texto del informe (sin PDF ni imágenes) van primero a Groq si
+    // está configurado: es rápido y así la cuota de Gemini queda para leer PDF.
+    let groqIntentado = false;
+    if (hayRespaldoGroq && modo.startsWith("informe_") && !listaPdfs.length && !listaImgs.length) {
+      groqIntentado = true;
+      const g = await llamarGroq(14000);
+      if (g && g.ok) { textoCompleto = g.texto; proveedor = `groq/${g.modelo}`; }
+      else if (g) errores.push(`Groq: ${g.error}`);
+    }
+    const sinCuota = new Set(); // modelos que respondieron 429: no se vuelven a intentar
+    for (let i = 0; i < plan.length && !textoCompleto; i++) {
+      const { modelo, esperaAntes } = plan[i];
+      if (sinCuota.has(modelo)) continue;
+      if (esperaAntes) {
+        if (restante() < esperaAntes + 4000) break;
+        await esperar(esperaAntes);
+      }
+      // El primer intento se lleva la mayor parte del tiempo (los análisis
+      // largos lo necesitan), pero si hay respaldo con Groq se reservan ~7s
+      // para él; los intentos siguientes usan lo que quede.
+      const reservaGroq = hayRespaldoGroq ? 7000 : 0;
+      const primeraCorta = parteInforme || modo === "informe_auditoria_externa";
+      const limite = i === 0
+        ? (primeraCorta ? Math.min(14000, restante() - 1500) : Math.max(8000, restante() - reservaGroq - 1500))
+        : restante() - reservaGroq - 300;
+      if (limite < 4000) break;
+      const r = await llamarGemini(modelo, limite);
+      if (r.ok) { textoCompleto = r.texto; proveedor = modelo; break; }
+      if (r.status === 429) sinCuota.add(modelo);
+      errores.push(`${modelo}: ${r.error}`);
+      if (!r.reintentable) break;
+    }
 
-    const data = await resp.json();
+    if (!textoCompleto && hayRespaldoGroq && !groqIntentado) {
+      const g = await llamarGroq(restante() - 300);
+      if (g && g.ok) { textoCompleto = g.texto; proveedor = `groq/${g.modelo}`; }
+      else if (g) errores.push(`Groq: ${g.error}`);
+    }
 
-    if (!resp.ok) {
+    if (!textoCompleto) {
+      const todo = errores.join(" ");
+      const tamanioContenido = String(contenido||"").length + listaPdfs.reduce((n,p)=>n+(p.data||"").length, 0);
+      const soloTiempo = errores.length && errores.every(e => /tiempo de espera/i.test(e));
+      const porTokens = /token|input.*too long|exceeds|too large|payload/i.test(todo);
+      const porCuota = /quota|exhausted|rate.?limit|429|per minute|per day/i.test(todo);
+      const saturado = /overload|unavailable|503|demand|busy|capacity/i.test(todo);
+      let mensaje, codigo;
+      if(porTokens || (soloTiempo && tamanioContenido > 150000)){
+        codigo = 413;
+        mensaje = "El contenido enviado es demasiado extenso para una sola consulta a la IA gratuita (la IA no alcanzó a procesarlo). Analiza menos archivos a la vez (por ejemplo, una subcarpeta o un año) o divide el documento.";
+      } else if(soloTiempo){
+        codigo = 504;
+        mensaje = "La IA tardó demasiado en responder. Vuelve a intentarlo en un momento; si se repite, envía menos contenido a la vez.";
+      } else if(porCuota && !saturado && /cuota diaria/.test(todo) && !/per minute|PerMinute/i.test(todo)){
+        codigo = 429;
+        mensaje = "Se agotó la cuota DIARIA gratuita de Gemini (se reinicia cada día). Las cifras del informe están completas; el análisis redactado por IA estará disponible cuando se renueve la cuota" + (process.env.GROQ_API_KEY ? "." : ", o de inmediato si configuras la variable GROQ_API_KEY (IA gratuita de respaldo, ver README).");
+      } else if(porCuota && !saturado){
+        codigo = 429;
+        mensaje = "Se alcanzó el límite de uso gratuito de la IA por minuto (o por día). Espera 1-2 minutos y vuelve a intentarlo; si pasa seguido, analiza menos archivos a la vez.";
+      } else if(saturado || porCuota){
+        codigo = 503;
+        mensaje = "Los servidores de IA gratuitos están saturados en este momento (se intentó automáticamente con varios modelos" +
+          (hayRespaldoGroq ? " y con el respaldo Groq" : "") + "). Espera 1-2 minutos y vuelve a intentarlo.";
+      } else {
+        codigo = 500;
+        mensaje = "No se pudo obtener respuesta de la IA: " + (errores[errores.length - 1] || "error desconocido") +
+          (/api key|permission|unauthori|403|401/i.test(todo) ? " — revisa que GEMINI_API_KEY sea válida en Netlify." : "");
+      }
       return {
-        statusCode: resp.status,
+        // 503 = saturación (el navegador reintenta una vez). 413/429/504/500 no
+        // se reintentan en automático: reintentar igual no ayudaría enseguida.
+        statusCode: codigo,
         headers,
-        body: JSON.stringify({ error: data.error?.message || "Error llamando a Anthropic" }),
+        body: JSON.stringify({ error: mensaje + (process.env.GROQ_API_KEY
+            ? (errores.some(e => /^Groq/.test(e)) ? ` (Respaldo Groq también falló: ${errores.filter(e => /^Groq/.test(e)).pop().slice(0, 450)})` : "")
+            : " (Respaldo Groq: la función no recibe GROQ_API_KEY; si ya la agregaste en Netlify, haz un nuevo despliegue para que se aplique.)"), detalle: errores }),
       };
     }
 
-    const textBlock = (data.content || []).find((c) => c.type === "text");
-    const MODOS_TEXTO_PLANO = new Set(["generar_memo", "generar_oficio", "revisar_memo", "revisar_oficio", "generar_acta_junta", "revisar_acta_junta", "generar_cesion_acciones", "revisar_cesion_acciones"]);
+    const textBlock = { text: textoCompleto };
+    const MODOS_TEXTO_PLANO = new Set(["generar_memo", "generar_oficio", "revisar_memo", "revisar_oficio", "generar_memo_rrhh", "revisar_memo_rrhh", "generar_acta_junta", "revisar_acta_junta", "generar_cesion_acciones", "revisar_cesion_acciones"]);
     let parsed = null;
     if (textBlock) {
       if (MODOS_TEXTO_PLANO.has(modo)) {
@@ -694,7 +1161,7 @@ ${contenido}
       }
     }
 
-    return { statusCode: 200, headers, body: JSON.stringify({ resultado: parsed }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ resultado: parsed, proveedor }) };
   } catch (err) {
     const mensaje = err.name === "AbortError"
       ? "La IA tardó demasiado en responder (más de 25s). Intenta con un texto más corto o vuelve a intentarlo."

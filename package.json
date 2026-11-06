@@ -1,5 +1,5 @@
 {
-  "name": "tramites-app",
+  "name": "geafinanciero",
   "private": true,
   "dependencies": {
     "firebase-admin": "^12.0.0"

@@ -17,7 +17,21 @@
 // El dueño original de los datos (definido también en el frontend como
 // DATOS_UID) siempre es administrador, sin necesidad de una entrada en
 // "roles_control_documental".
-const DATOS_UID_OWNER = "s51EqDX0m9hWmo9C4Hy00dFqD0C3";
+const DATOS_UID_OWNER = "TfRcGWLDQ1bUxZSutB0WQUondi63";
+// Respaldo por correo: si por algún motivo el UID no coincide (típicamente
+// por haberlo copiado mal), esto igual reconoce al admin por su correo.
+const DATOS_EMAIL_OWNER = "departamentofinancierogea@gmail.com";
+
+// Limpia comillas envolventes y espacios de valores simples (project id,
+// client email, database URL) por si se pegaron tal cual venían del JSON
+// (con comillas incluidas) en vez de solo el contenido.
+function normalizarValorSimple(raw) {
+  let val = (raw || "").trim();
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+    val = val.slice(1, -1).trim();
+  }
+  return val;
+}
 
 // Normaliza la clave privada aceptando varios formatos comunes en los que
 // puede quedar guardada al pegarla en la UI de Netlify:
@@ -66,11 +80,11 @@ function inicializarAdmin() {
     }
     admin.initializeApp({
       credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        projectId: normalizarValorSimple(process.env.FIREBASE_PROJECT_ID),
+        clientEmail: normalizarValorSimple(process.env.FIREBASE_CLIENT_EMAIL),
         privateKey,
       }),
-      databaseURL: process.env.FIREBASE_DATABASE_URL,
+      databaseURL: normalizarValorSimple(process.env.FIREBASE_DATABASE_URL),
     });
   }
   return admin;
@@ -114,14 +128,20 @@ exports.handler = async (event) => {
     // sin esto, cualquiera podría llamar directamente a esta función.
     const decoded = await admin.auth().verifyIdToken(idToken);
     const callerUid = decoded.uid;
-    let callerEsAdmin = callerUid === DATOS_UID_OWNER;
+    let callerEsAdmin = callerUid === DATOS_UID_OWNER
+      || (decoded.email && decoded.email.toLowerCase() === DATOS_EMAIL_OWNER.toLowerCase());
     if (!callerEsAdmin) {
       const snap = await admin.database().ref(`roles_control_documental/${callerUid}`).once("value");
       const val = snap.val();
       callerEsAdmin = val === "admin" || (val && typeof val === "object" && val.rol === "admin");
     }
     if (!callerEsAdmin) {
-      return { statusCode: 403, headers, body: JSON.stringify({ error: "No tienes permisos de administrador para gestionar usuarios." }) };
+      return {
+        statusCode: 403, headers,
+        body: JSON.stringify({
+          error: `No tienes permisos de administrador para gestionar usuarios. Tu correo es "${decoded.email || "sin correo"}" y tu UID es "${callerUid}"; la función tiene guardado como administrador el correo "${DATOS_EMAIL_OWNER}" y el UID "${DATOS_UID_OWNER}". Si no coinciden, probablemente el sitio no tiene desplegada la última versión de crear_usuario.js — vuelve a desplegar el zip más reciente.`,
+        }),
+      };
     }
 
     if (accion === "crear") {
@@ -168,6 +188,13 @@ exports.handler = async (event) => {
         areas: areas || {},
         subareas: subareas || {},
       });
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (accion === "cambiarPassword") {
+      if (!uid || !password) return { statusCode: 400, headers, body: JSON.stringify({ error: "Falta el uid o la nueva contraseña." }) };
+      if (password.length < 6) return { statusCode: 400, headers, body: JSON.stringify({ error: "La contraseña debe tener al menos 6 caracteres." }) };
+      await admin.auth().updateUser(uid, { password });
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
     }
 
