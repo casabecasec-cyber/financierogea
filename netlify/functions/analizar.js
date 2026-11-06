@@ -1,6 +1,6 @@
 // netlify/functions/analizar.js
-// Proxy seguro hacia la API de Google Gemini. La API key vive SOLO en las
-// variables de entorno de Netlify (GEMINI_API_KEY) y nunca llega al navegador.
+// Proxy seguro hacia la API de Anthropic. La API key vive SOLO en las
+// variables de entorno de Netlify (ANTHROPIC_API_KEY) y nunca llega al navegador.
 
 // --- Utilidades de parseo tolerante: si la respuesta de la IA se corta antes
 // de cerrar el JSON completo (por límite de tokens), rescatamos campo por
@@ -114,29 +114,6 @@ const PARTES_INFORME = {
 }`,
 };
 
-// Modelos de Groq: se consulta la lista real de la cuenta (Groq retira modelos con
-// frecuencia) y se usan en orden de preferencia; se guarda en caché unos minutos.
-let _cacheModelosGroq = null;
-async function modelosGroqDisponibles(groqKey) {
-  const preferidos = [process.env.GROQ_MODEL, "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "meta-llama/llama-4-scout-17b-16e-instruct", "openai/gpt-oss-20b", "moonshotai/kimi-k2-instruct", "qwen/qwen3-32b"].filter(Boolean);
-  if (_cacheModelosGroq && Date.now() - _cacheModelosGroq.t < 10 * 60 * 1000) return _cacheModelosGroq.lista;
-  let lista = preferidos;
-  try {
-    const c = new AbortController(); const t = setTimeout(() => c.abort(), 3000);
-    const r = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${groqKey}` }, signal: c.signal });
-    clearTimeout(t);
-    if (r.ok) {
-      const d = await r.json();
-      const ids = (d.data || []).filter(m => m.active !== false).map(m => m.id);
-      const chat = ids.filter(id => !/whisper|tts|guard|embed|playai|orpheus|compound/i.test(id));
-      const ord = [...preferidos.filter(m => chat.includes(m)), ...chat.filter(m => !preferidos.includes(m) && /70b|120b|maverick|scout|kimi|qwen|llama/i.test(m))];
-      if (ord.length) lista = ord;
-    }
-  } catch (e) { /* se usan los preferidos */ }
-  _cacheModelosGroq = { t: Date.now(), lista };
-  return lista;
-}
 
 function parsearRespuestaIA(textoOriginal, modo) {
   let clean = textoOriginal.replace(/```json|```/g, "").trim();
@@ -285,13 +262,13 @@ exports.handler = async function (event) {
     return { statusCode: 405, headers, body: JSON.stringify({ error: "Método no permitido" }) };
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
-        error: "GEMINI_API_KEY no está configurada en Netlify (Site settings → Environment variables).",
+        error: "ANTHROPIC_API_KEY no está configurada en Netlify (Site settings → Environment variables).",
       }),
     };
   }
@@ -887,101 +864,77 @@ ${contenido}
     return { statusCode: 400, headers, body: JSON.stringify({ error: "Modo no soportado" }) };
   }
 
-  // Modelo por modo: Revisión de Documentos y la generación/revisión de
-  // documentos de texto largo (actas, memos, oficios, cesión de acciones)
-  // usan el modelo Flash-Lite — el de mayor cuota gratuita y evita el
-  // límite de ~27s de Netlify para funciones síncronas. Diagnóstico de
-  // oficios, Soportes y los cálculos de dividendos usan el modelo Flash
-  // completo (más razonamiento). Se usan los alias "latest" de Google
-  // (en vez de nombres fijos como "gemini-2.0-flash") para que la app no
-  // se rompa cada vez que Google retira una versión de modelo: el alias
-  // se actualiza solo al modelo Flash/Flash-Lite vigente.
+  // Modelo por modo: los modos de texto largo / extracción usan Haiku (rápido,
+  // evita el límite de ~26s de Netlify); el resto usa Sonnet (más razonamiento).
   const MODOS_HAIKU = new Set([
     "revision_orden_compra", "revision_rol_pago", "revision_avaluo",
     "corregir_orden_compra", "corregir_rol_pago", "corregir_avaluo",
     "generar_puntos_proyecto", "analizar_punto_proyecto",
+    "puntos_equipo_oficio", "revisar_punto_oficio",
     "generar_memo", "generar_oficio", "revisar_memo", "revisar_oficio",
     "generar_memo_rrhh", "revisar_memo_rrhh",
     "generar_acta_junta", "revisar_acta_junta",
     "generar_cesion_acciones", "revisar_cesion_acciones",
+    "auditoria_localizar", "auditoria_extraer_estado", "auditoria_opinion",
+    "informe_auditoria_supercias", "informe_auditoria_externa",
   ]);
-  const modeloPrincipal = MODOS_HAIKU.has(modo) ? "gemini-flash-lite-latest" : "gemini-flash-latest";
-  const modeloAlterno = modeloPrincipal === "gemini-flash-latest" ? "gemini-flash-lite-latest" : "gemini-flash-latest";
+  const MODELO_HAIKU = "claude-haiku-4-5-20251001";
+  const MODELO_SONNET = "claude-sonnet-5";
+  const modeloPrincipal = MODOS_HAIKU.has(modo) ? MODELO_HAIKU : MODELO_SONNET;
+  const modeloAlterno = modeloPrincipal === MODELO_SONNET ? MODELO_HAIKU : MODELO_SONNET;
 
-  // ---------------------------------------------------------------------------
-  // Resiliencia ante saturación de Gemini ("The model is overloaded", 503,
-  // 429 por cuota, timeouts). En vez de fallar al primer error, se prueba en
-  // cadena, dentro de un presupuesto total de tiempo que respeta el límite de
-  // Netlify para funciones síncronas:
-  //   1) modelo principal del modo
-  //   2) el otro modelo de Gemini (la cuota gratuita es POR MODELO, así que si
-  //      Flash está agotado/saturado, Flash-Lite suele estar disponible)
-  //   3) de nuevo el modelo principal tras una breve espera
-  //   4) Groq (Llama), SOLO si existe la variable GROQ_API_KEY y hay texto
-  //      extraído — Groq no lee PDF, así que para PDF escaneados sin texto no
-  //      aplica. Es opcional: sin GROQ_API_KEY todo sigue funcionando igual.
-  // ---------------------------------------------------------------------------
+  // Resiliencia: ante saturación (529/503), cuota (429) o timeout se reintenta
+  // dentro de un presupuesto total que respeta el límite de Netlify.
   const inicio = Date.now();
   const PRESUPUESTO_MS = 25000;
   const restante = () => PRESUPUESTO_MS - (Date.now() - inicio);
   const esperar = (ms) => new Promise(r => setTimeout(r, ms));
-  const ESTADOS_REINTENTABLES = new Set([408, 429, 500, 502, 503, 504]);
+  const ESTADOS_REINTENTABLES = new Set([408, 429, 500, 502, 503, 504, 529]);
 
-  const parts = [
-    ...listaPdfs.map(p => ({ inline_data: { mime_type: "application/pdf", data: p.data } })),
-    ...listaImgs.flatMap(im => [{ text: String(im.etiqueta || "Página") + ":" }, { inline_data: { mime_type: im.mime || "image/jpeg", data: im.data } }]),
-    { text: prompt },
-  ];
   const MODOS_EXTRACCION = new Set(["auditoria_localizar", "auditoria_extraer_estado", "auditoria_opinion"]);
+  const maxTokens = MODOS_EXTRACCION.has(modo) ? 8192
+    : (modo === "informe_auditoria_supercias" ? (parteInforme ? 2200 : 4500)
+    : (modo === "informe_auditoria_externa" ? 4500 : 2800));
 
-  // Para respuestas largas (informes y extracción) se desactiva el "razonamiento"
-  // interno del modelo, que es lo que más tiempo consume; si el modelo no acepta
-  // ese parámetro, se reintenta sin él.
-  const MODOS_SIN_RAZONAMIENTO = new Set(["informe_auditoria_supercias", "informe_auditoria_externa", "auditoria_localizar", "auditoria_extraer_estado", "auditoria_opinion"]);
-  let usarSinRazonamiento = MODOS_SIN_RAZONAMIENTO.has(modo);
-  async function llamarGemini(modelo, limiteMs) {
-    const r = await llamarGemini1(modelo, limiteMs, usarSinRazonamiento);
-    if (!r.ok && usarSinRazonamiento && r.status === 400 && /thinking|budget/i.test(r.error || "")) {
-      usarSinRazonamiento = false;
-      return llamarGemini1(modelo, limiteMs - 1000, false);
-    }
-    return r;
-  }
-  async function llamarGemini1(modelo, limiteMs, sinRazonamiento) {
+  const contenidoMensaje = (listaPdfs.length || listaImgs.length)
+    ? [
+        ...listaPdfs.map(p => ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: p.data } })),
+        ...listaImgs.flatMap(im => [
+          { type: "text", text: String(im.etiqueta || "Página") + ":" },
+          { type: "image", source: { type: "base64", media_type: im.mime || "image/jpeg", data: im.data } },
+        ]),
+        { type: "text", text: prompt },
+      ]
+    : prompt;
+
+  async function llamarClaude(modelo, limiteMs) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), limiteMs);
     try {
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts }],
-            generationConfig: Object.assign(MODOS_EXTRACCION.has(modo)
-              ? { maxOutputTokens: 8192, temperature: 0, responseMimeType: "application/json" }
-              : { maxOutputTokens: modo === "informe_auditoria_supercias" ? (parteInforme ? 2200 : 4500) : 2800 },
-              sinRazonamiento ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-          }),
-          signal: controller.signal,
-        }
-      );
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: modelo,
+          max_tokens: maxTokens,
+          ...(MODOS_EXTRACCION.has(modo) ? { temperature: 0 } : {}),
+          messages: [{ role: "user", content: contenidoMensaje }],
+        }),
+        signal: controller.signal,
+      });
       let data = {};
-      try { data = await resp.json(); } catch (e) { /* respuesta no-JSON (p. ej. página de error) */ }
+      try { data = await resp.json(); } catch (e) { /* respuesta no-JSON */ }
       if (!resp.ok) {
-        const cuotaDiaria = resp.status === 429 && /PerDay|per day|daily/i.test(JSON.stringify(data.error || {}));
-        const msg = (data.error?.message || `HTTP ${resp.status}`) + (cuotaDiaria ? " [cuota diaria]" : "");
-        const reintentable = ESTADOS_REINTENTABLES.has(resp.status) || resp.status === 404 || /overload|unavailable|exhausted|quota|rate|demand|busy|capacity/i.test(msg);
+        const msg = data.error?.message || `HTTP ${resp.status}`;
+        const reintentable = ESTADOS_REINTENTABLES.has(resp.status) || resp.status === 404 || /overload|unavailable|rate|capacity|busy/i.test(msg);
         return { ok: false, status: resp.status, error: msg, reintentable };
       }
-      const texto = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
-      if (!texto.trim()) {
-        const motivo = data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || "respuesta vacía";
-        // Una respuesta vacía por saturación puntual vale la pena reintentarla;
-        // un bloqueo de seguridad no cambiará con otro intento del mismo tipo,
-        // pero sí puede pasar con el otro modelo, así que se deja reintentar.
-        return { ok: false, status: 200, error: `Gemini devolvió una respuesta vacía (${motivo})`, reintentable: true };
-      }
+      const texto = (data.content || []).filter(c => c.type === "text").map(c => c.text || "").join("");
+      if (!texto.trim()) return { ok: false, status: 200, error: "Claude devolvió una respuesta vacía", reintentable: true };
       return { ok: true, texto };
     } catch (err) {
       const esTimeout = err.name === "AbortError";
@@ -991,89 +944,16 @@ ${contenido}
     }
   }
 
-  async function llamarGroq(limiteMs) {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey || !contenidoOriginal) return null;
-    const modelos = (await modelosGroqDisponibles(groqKey)).slice(0, 4);
-    const notaGroq = listaPdfs.length
-      ? "\n\n[Nota técnica: en esta ocasión los PDF originales NO pudieron adjuntarse; analiza únicamente el texto extraído que aparece arriba y no menciones que faltan adjuntos salvo que el texto sea claramente insuficiente.]"
-      : "";
-    const errs = [];
-    const quiereJson = modo.startsWith("informe_");
-    for (const modeloGroq of modelos) {
-      for (const conJson of quiereJson ? [true, false] : [false]) {
-        const ms = Math.min(limiteMs, restante() - 300);
-        if (ms < 3000) return { ok: false, error: errs.join(" | ") || "sin tiempo" };
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), ms);
-        try {
-          const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${groqKey}` },
-            body: JSON.stringify({
-              model: modeloGroq,
-              messages: [{ role: "user", content: prompt + notaGroq }],
-              max_tokens: 2500,
-              temperature: 0.3,
-              ...(/gpt-oss/.test(modeloGroq) ? { reasoning_effort: "low" } : {}),
-              ...(conJson ? { response_format: { type: "json_object" } } : {}),
-            }),
-            signal: controller.signal,
-          });
-          let data = {};
-          try { data = await resp.json(); } catch (e) {}
-          if (resp.ok) {
-            const texto = data.choices?.[0]?.message?.content || "";
-            if (texto.trim()) return { ok: true, texto, modelo: modeloGroq };
-            errs.push(`${modeloGroq}: respuesta vacía`);
-            break;
-          }
-          const msg = data.error?.message || `HTTP ${resp.status}`;
-          errs.push(`${modeloGroq}: ${msg.slice(0, 140)}`);
-          if (conJson && /json|response_format/i.test(msg)) continue; // reintenta sin modo JSON
-          break;
-        } catch (err) {
-          errs.push(`${modeloGroq}: ${err.name === "AbortError" ? "tiempo de espera agotado" : String(err).slice(0, 100)}`);
-          break;
-        } finally {
-          clearTimeout(timeoutId);
-        }
-      }
-    }
-    return { ok: false, error: errs.join(" | ") || "sin modelos disponibles" };
-  }
-
-
   try {
-    // Los alias "latest" suelen apuntar al modelo más nuevo, que es justo el
-    // más demandado cuando hay picos ("This model is currently experiencing
-    // high demand"). Por eso, además de alternar Flash ↔ Flash-Lite, se prueban
-    // versiones fijas anteriores (gemini-2.5-*), que corren en capacidad
-    // separada y suelen estar libres en esos picos. Si alguna fue retirada
-    // por Google (404), simplemente se salta a la siguiente.
-    const esLite = modeloPrincipal.includes("lite");
     const plan = [
       { modelo: modeloPrincipal, esperaAntes: 0 },
       { modelo: modeloAlterno, esperaAntes: 400 },
-      { modelo: esLite ? "gemini-2.5-flash-lite" : "gemini-2.5-flash", esperaAntes: 400 },
-      { modelo: esLite ? "gemini-2.5-flash" : "gemini-2.5-flash-lite", esperaAntes: 400 },
       { modelo: modeloPrincipal, esperaAntes: 1500 },
     ];
-    const hayRespaldoGroq = !!(process.env.GROQ_API_KEY && contenidoOriginal);
     const errores = [];
     let textoCompleto = "";
     let proveedor = "";
-
-    // Los análisis de texto del informe (sin PDF ni imágenes) van primero a Groq si
-    // está configurado: es rápido y así la cuota de Gemini queda para leer PDF.
-    let groqIntentado = false;
-    if (hayRespaldoGroq && modo.startsWith("informe_") && !listaPdfs.length && !listaImgs.length) {
-      groqIntentado = true;
-      const g = await llamarGroq(14000);
-      if (g && g.ok) { textoCompleto = g.texto; proveedor = `groq/${g.modelo}`; }
-      else if (g) errores.push(`Groq: ${g.error}`);
-    }
-    const sinCuota = new Set(); // modelos que respondieron 429: no se vuelven a intentar
+    const sinCuota = new Set();
     for (let i = 0; i < plan.length && !textoCompleto; i++) {
       const { modelo, esperaAntes } = plan[i];
       if (sinCuota.has(modelo)) continue;
@@ -1081,86 +961,58 @@ ${contenido}
         if (restante() < esperaAntes + 4000) break;
         await esperar(esperaAntes);
       }
-      // El primer intento se lleva la mayor parte del tiempo (los análisis
-      // largos lo necesitan), pero si hay respaldo con Groq se reservan ~7s
-      // para él; los intentos siguientes usan lo que quede.
-      const reservaGroq = hayRespaldoGroq ? 7000 : 0;
       const primeraCorta = parteInforme || modo === "informe_auditoria_externa";
       const limite = i === 0
-        ? (primeraCorta ? Math.min(14000, restante() - 1500) : Math.max(8000, restante() - reservaGroq - 1500))
-        : restante() - reservaGroq - 300;
+        ? (primeraCorta ? Math.min(16000, restante() - 1500) : Math.max(8000, restante() - 1500))
+        : restante() - 300;
       if (limite < 4000) break;
-      const r = await llamarGemini(modelo, limite);
+      const r = await llamarClaude(modelo, limite);
       if (r.ok) { textoCompleto = r.texto; proveedor = modelo; break; }
       if (r.status === 429) sinCuota.add(modelo);
       errores.push(`${modelo}: ${r.error}`);
       if (!r.reintentable) break;
     }
 
-    if (!textoCompleto && hayRespaldoGroq && !groqIntentado) {
-      const g = await llamarGroq(restante() - 300);
-      if (g && g.ok) { textoCompleto = g.texto; proveedor = `groq/${g.modelo}`; }
-      else if (g) errores.push(`Groq: ${g.error}`);
-    }
-
     if (!textoCompleto) {
       const todo = errores.join(" ");
-      const tamanioContenido = String(contenido||"").length + listaPdfs.reduce((n,p)=>n+(p.data||"").length, 0);
       const soloTiempo = errores.length && errores.every(e => /tiempo de espera/i.test(e));
-      const porTokens = /token|input.*too long|exceeds|too large|payload/i.test(todo);
-      const porCuota = /quota|exhausted|rate.?limit|429|per minute|per day/i.test(todo);
-      const saturado = /overload|unavailable|503|demand|busy|capacity/i.test(todo);
+      const porTokens = /token|too long|exceeds|too large|payload|request_too_large/i.test(todo);
+      const porCuota = /rate.?limit|429|quota|credit|balance/i.test(todo);
+      const saturado = /overload|unavailable|503|529|capacity|busy/i.test(todo);
       let mensaje, codigo;
-      if(porTokens || (soloTiempo && tamanioContenido > 150000)){
+      if (porTokens) {
         codigo = 413;
-        mensaje = "El contenido enviado es demasiado extenso para una sola consulta a la IA gratuita (la IA no alcanzó a procesarlo). Analiza menos archivos a la vez (por ejemplo, una subcarpeta o un año) o divide el documento.";
-      } else if(soloTiempo){
+        mensaje = "El contenido enviado es demasiado extenso para una sola consulta a la IA. Analiza menos archivos a la vez (por ejemplo, una subcarpeta o un documento).";
+      } else if (soloTiempo) {
         codigo = 504;
         mensaje = "La IA tardó demasiado en responder. Vuelve a intentarlo en un momento; si se repite, envía menos contenido a la vez.";
-      } else if(porCuota && !saturado && /cuota diaria/.test(todo) && !/per minute|PerMinute/i.test(todo)){
+      } else if (porCuota && !saturado) {
         codigo = 429;
-        mensaje = "Se agotó la cuota DIARIA gratuita de Gemini (se reinicia cada día). Las cifras del informe están completas; el análisis redactado por IA estará disponible cuando se renueve la cuota" + (process.env.GROQ_API_KEY ? "." : ", o de inmediato si configuras la variable GROQ_API_KEY (IA gratuita de respaldo, ver README).");
-      } else if(porCuota && !saturado){
-        codigo = 429;
-        mensaje = "Se alcanzó el límite de uso gratuito de la IA por minuto (o por día). Espera 1-2 minutos y vuelve a intentarlo; si pasa seguido, analiza menos archivos a la vez.";
-      } else if(saturado || porCuota){
+        mensaje = "Se alcanzó el límite de uso de la IA (o no hay saldo en la cuenta de Anthropic). Espera 1-2 minutos y vuelve a intentarlo; si persiste, revisa el saldo/límites en console.anthropic.com.";
+      } else if (saturado || porCuota) {
         codigo = 503;
-        mensaje = "Los servidores de IA gratuitos están saturados en este momento (se intentó automáticamente con varios modelos" +
-          (hayRespaldoGroq ? " y con el respaldo Groq" : "") + "). Espera 1-2 minutos y vuelve a intentarlo.";
+        mensaje = "Los servidores de IA están saturados en este momento. Espera 1-2 minutos y vuelve a intentarlo.";
       } else {
         codigo = 500;
         mensaje = "No se pudo obtener respuesta de la IA: " + (errores[errores.length - 1] || "error desconocido") +
-          (/api key|permission|unauthori|403|401/i.test(todo) ? " — revisa que GEMINI_API_KEY sea válida en Netlify." : "");
+          (/api key|permission|unauthori|403|401|invalid x-api-key/i.test(todo) ? " — revisa que ANTHROPIC_API_KEY sea válida en Netlify." : "");
       }
-      return {
-        // 503 = saturación (el navegador reintenta una vez). 413/429/504/500 no
-        // se reintentan en automático: reintentar igual no ayudaría enseguida.
-        statusCode: codigo,
-        headers,
-        body: JSON.stringify({ error: mensaje + (process.env.GROQ_API_KEY
-            ? (errores.some(e => /^Groq/.test(e)) ? ` (Respaldo Groq también falló: ${errores.filter(e => /^Groq/.test(e)).pop().slice(0, 450)})` : "")
-            : " (Respaldo Groq: la función no recibe GROQ_API_KEY; si ya la agregaste en Netlify, haz un nuevo despliegue para que se aplique.)"), detalle: errores }),
-      };
+      return { statusCode: codigo, headers, body: JSON.stringify({ error: mensaje, detalle: errores }) };
     }
 
     const textBlock = { text: textoCompleto };
     const MODOS_TEXTO_PLANO = new Set(["generar_memo", "generar_oficio", "revisar_memo", "revisar_oficio", "generar_memo_rrhh", "revisar_memo_rrhh", "generar_acta_junta", "revisar_acta_junta", "generar_cesion_acciones", "revisar_cesion_acciones"]);
     let parsed = null;
-    if (textBlock) {
-      if (MODOS_TEXTO_PLANO.has(modo)) {
-        // Estos modos devuelven el documento tal cual, sin JSON.
-        let texto = textBlock.text.trim();
-        // Por si el modelo igual lo envuelve en comillas o backticks, los quitamos.
-        texto = texto.replace(/^```[a-z]*\n?/i, "").replace(/```$/, "").trim();
-        if ((texto.startsWith('"') && texto.endsWith('"')) || (texto.startsWith("'") && texto.endsWith("'"))) {
-          texto = texto.slice(1, -1);
-        }
-        parsed = { texto };
-      } else {
-        parsed = parsearRespuestaIA(textBlock.text, modo);
+    if (MODOS_TEXTO_PLANO.has(modo)) {
+      let texto = textBlock.text.trim();
+      texto = texto.replace(/^```[a-z]*\n?/i, "").replace(/```$/, "").trim();
+      if ((texto.startsWith('"') && texto.endsWith('"')) || (texto.startsWith("'") && texto.endsWith("'"))) {
+        texto = texto.slice(1, -1);
       }
+      parsed = { texto };
+    } else {
+      parsed = parsearRespuestaIA(textBlock.text, modo);
     }
-
     return { statusCode: 200, headers, body: JSON.stringify({ resultado: parsed, proveedor }) };
   } catch (err) {
     const mensaje = err.name === "AbortError"

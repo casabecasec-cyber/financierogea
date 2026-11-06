@@ -17,14 +17,13 @@
 // El dueño original de los datos (definido también en el frontend como
 // DATOS_UID) siempre es administrador, sin necesidad de una entrada en
 // "roles_control_documental".
-const DATOS_UID_OWNER = "TfRcGWLDQ1bUxZSutB0WQUondi63";
-// Respaldo por correo: si por algún motivo el UID no coincide (típicamente
-// por haberlo copiado mal), esto igual reconoce al admin por su correo.
-const DATOS_EMAIL_OWNER = "departamentofinancierogea@gmail.com";
+const DATOS_UID_OWNER = "s51EqDX0m9hWmo9C4Hy00dFqD0C3";
+// Respaldo por correo: si por algún motivo el UID no coincide, esto igual
+// reconoce al admin por su correo.
+const DATOS_EMAIL_OWNER = "eberrezueta@gmail.com";
 
 // Limpia comillas envolventes y espacios de valores simples (project id,
-// client email, database URL) por si se pegaron tal cual venían del JSON
-// (con comillas incluidas) en vez de solo el contenido.
+// client email, database URL) por si se pegaron tal cual venían del JSON.
 function normalizarValorSimple(raw) {
   let val = (raw || "").trim();
   if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
