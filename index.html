@@ -12749,7 +12749,7 @@ function bpAbrirVentanaImpresion(contentHtml, titulo, opciones){
   </style></head><body>
     <div class="bp-header"><div class="bp-logo">${logoTxt}</div><div class="bp-sub">${escapeHtml(titulo||'')}</div></div>
     ${contentHtml}
-    <div class="bp-footer">${escapeHtml(pieTxt)}</div>
+    ${opts.sinPie?'':`<div class="bp-footer">${escapeHtml(pieTxt)}</div>`}
     <script>window.onload=()=>setTimeout(()=>window.print(),300);<\/script>
   </body></html>`);
   win.document.close();
@@ -14732,7 +14732,7 @@ function pfImprimirIndices(){
     <h4>📐 Índices Financieros Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfIndicesCont')}
     <div class="doc-footer">Documento generado a partir del Flujo de Caja Proyectado y su Estado de Resultados enlazado — Produbanco.</div>
   `;
-  bpAbrirVentanaImpresion(contenido, 'Índices Financieros — Produbanco', {banco:'produbanco', landscape:true});
+  pfImprimirDoc(contenido, 'Índices Financieros — Produbanco');
 }
 function pfRecalcularTodo(){
   const r = pfCalcular();
@@ -15621,6 +15621,10 @@ function pfFlujoFormHTML(){
         <input type="checkbox" id="pf-incluir-base-impresion" checked style="width:16px;height:16px;">
         Incluir año base (${pfAnioReal(2025)}) en la impresión
       </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="pf-incluir-leyendas-impresion" style="width:16px;height:16px;">
+        Incluir leyendas y notas aclaratorias en la impresión (p. ej. «sin detalle del año base», «no se calculan índices de apalancamiento», pie del documento)
+      </label>
       <div class="doc-btn-row">
         <button class="btn-secondary" onclick="pfImprimir()">🖨 Imprimir todo</button>
         <button class="btn-secondary" onclick="pfExportarExcel()">⬇ Exportar Excel</button>
@@ -15669,13 +15673,31 @@ function pfRangoAniosHTML(incluirBase){
    incluirBase=false, que ahora sí filtran la columna 2025 (ver más
    arriba). El resto del documento (tablas mensuales por año, Índices
    Financieros) no cambia: siguen siendo snapshot del DOM como antes. */
+/* Leyendas / notas aclaratorias de las impresiones del flujo Produbanco:
+   son opcionales (casilla «Incluir leyendas y notas aclaratorias»).
+   Si está desmarcada se quitan las notas (helpNote) de las tablas, el
+   pie del documento (doc-footer) y el pie general de la ventana. */
+function pfConLeyendas(){
+  const c = document.getElementById('pf-incluir-leyendas-impresion');
+  return c ? !!c.checked : false;
+}
+function pfQuitarLeyendas(html){
+  return String(html||'')
+    .replace(/<p class="helpNote"[^>]*>[\s\S]*?<\/p>/g,'')
+    .replace(/<div class="helpNote"[^>]*>[\s\S]*?<\/div>/g,'')
+    .replace(/<div class="doc-footer">[\s\S]*?<\/div>/g,'');
+}
+function pfImprimirDoc(contenido, titulo){
+  const con = pfConLeyendas();
+  bpAbrirVentanaImpresion(con ? contenido : pfQuitarLeyendas(contenido), titulo, {banco:'produbanco', landscape:true, sinPie:!con});
+}
 function pfContenidoCompletoHTML(emp, incluirBase){
   incluirBase = incluirBase !== false;
   const r = pfCalcular();
   const erTodos = pfCalcularEstadoResultadosTodos(r.anios);
   const rango = pfRangoAniosHTML(incluirBase);
   return `
-    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado ${pfAnioReal(2025)}-${pfAnioReal(2030)}</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado${incluirBase?'':' · (sin detalle del año base '+pfAnioReal(2025)+')'}</div></div>
+    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado ${pfAnioReal(2025)}-${pfAnioReal(2030)}</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado${(incluirBase || !pfConLeyendas())?'':' · (sin detalle del año base '+pfAnioReal(2025)+')'}</div></div>
     <h4>📊 Resumen Anual Comparativo ${rango}</h4>${pfResumenAnualHTML(r, incluirBase)}
     ${incluirBase ? `<h4>Flujo de Caja ${pfAnioReal(2025)} (Base)</h4>${pfSnapshotHTML('pfTabla2025')}` : ''}
     ${PF_PROJ_YEARS.map(y=>`<h4>Flujo de Caja ${y} (Proyectado)</h4>${pfSnapshotHTML('pfTabla'+y)}`).join('\n    ')}
@@ -15691,7 +15713,7 @@ function pfImprimir(){
   const chk = document.getElementById('pf-incluir-base-impresion');
   const incluirBase = chk ? !!chk.checked : true;
   const contenido = pfContenidoCompletoHTML(emp, incluirBase);
-  bpAbrirVentanaImpresion(contenido, 'Flujo de Caja Proyectado Produbanco', {banco:'produbanco', landscape:true});
+  pfImprimirDoc(contenido, 'Flujo de Caja Proyectado Produbanco');
 }
 /* Impresión de UN solo año (base o proyectado): tabla mensual completa
    de ese año, con encabezado profesional (empresa + período), en
@@ -15707,7 +15729,7 @@ function pfImprimirAnio(year){
     ${pfSnapshotHTML('pfTabla'+year)}
     <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco — detalle individual del año ${anioMostrado}.</div>
   `;
-  bpAbrirVentanaImpresion(contenido, `Flujo de Caja Proyectado ${anioMostrado} — Produbanco`, {banco:'produbanco', landscape:true});
+  pfImprimirDoc(contenido, `Flujo de Caja Proyectado ${anioMostrado} — Produbanco`);
 }
 /* Impresión del Resumen Anual Comparativo 2025-2030 por separado
    (pestaña propia), sin el detalle mensual de ningún año. */
@@ -15720,7 +15742,7 @@ function pfImprimirResumen(){
     <h4>Estado de Resultados Proyectado — Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfEstadoResultadosTodosCont')}
     <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco — resumen comparativo de los 6 años (base + 5 proyectados).</div>
   `;
-  bpAbrirVentanaImpresion(contenido, 'Resumen Comparativo — Flujo de Caja Produbanco', {banco:'produbanco', landscape:true});
+  pfImprimirDoc(contenido, 'Resumen Comparativo — Flujo de Caja Produbanco');
 }
 
 /* --- Hojas del Excel de Flujo Produbanco (datos) — las usan el Excel profesional (ExcelJS) y el básico (SheetJS) --- */
