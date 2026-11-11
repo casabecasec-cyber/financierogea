@@ -428,6 +428,7 @@ table.efEst .r-blank td{height:6px;border:0;padding:0;}
     <button class="navBtn" data-view="arqueoscaja" onclick="goTo('arqueoscaja')">💵 Arqueos de Caja</button>
     <button class="navBtn" data-view="tomafisica" onclick="goTo('tomafisica')">📦 Toma Física</button>
     <button class="navBtn" data-view="cajachica" onclick="goTo('cajachica')">🧾 Liquidación Caja Chica</button>
+    <button class="navBtn" data-view="desgloseterceros" onclick="goTo('desgloseterceros')">🧮 Desglose Proveedores y Clientes</button>
     <button class="navBtn" data-view="reuniones" onclick="goTo('reuniones')">📅 Reuniones y Eventos</button>
     <button class="navBtn" data-view="actasjunta" onclick="goTo('actasjunta')">🏛️ Actas de Junta</button>
     <button class="navBtn" data-view="cesiones" onclick="goTo('cesiones')">📜 Cesión de Acciones</button>
@@ -575,6 +576,7 @@ const AREAS_APP = {
   arqueoscaja:  { label:"💵 Arqueos de Caja" },
   tomafisica:   { label:"📦 Toma Física" },
   cajachica:    { label:"🧾 Liquidación Caja Chica" },
+  desgloseterceros: { label:"🧮 Desglose Proveedores y Clientes" },
   reuniones:    { label:"📅 Reuniones y Eventos" },
   actasjunta:   { label:"🏛️ Actas de Junta" },
   cesiones:     { label:"📜 Cesión de Acciones" },
@@ -795,6 +797,7 @@ function goTo(view){
     arqueoscaja: renderArqueosCaja,
     tomafisica: renderTomaFisica,
     cajachica: renderCajaChica,
+    desgloseterceros: renderDesgloseTerceros,
     reuniones: renderReunionesEventos,
     actasjunta: renderActasJuntas,
     cesiones: renderCesiones,
@@ -15622,6 +15625,10 @@ function pfFlujoFormHTML(){
         Incluir año base (${pfAnioReal(2025)}) en la impresión
       </label>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="pf-incluir-eeff-base-impresion" style="width:16px;height:16px;">
+        Aunque no se imprima el detalle mensual del año base, incluir sus estados financieros proyectados (columna ${pfAnioReal(2025)} del Resumen Anual y del Estado de Resultados)
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:10px;">
         <input type="checkbox" id="pf-incluir-leyendas-impresion" style="width:16px;height:16px;">
         Incluir leyendas y notas aclaratorias en la impresión (p. ej. «sin detalle del año base», «no se calculan índices de apalancamiento», pie del documento)
       </label>
@@ -15691,18 +15698,22 @@ function pfImprimirDoc(contenido, titulo){
   const con = pfConLeyendas();
   bpAbrirVentanaImpresion(con ? contenido : pfQuitarLeyendas(contenido), titulo, {banco:'produbanco', landscape:true, sinPie:!con});
 }
-function pfContenidoCompletoHTML(emp, incluirBase){
+function pfContenidoCompletoHTML(emp, incluirBase, incluirEEFFBase){
   incluirBase = incluirBase !== false;
+  /* incluirEEFFBase: opcional — con el detalle mensual del año base omitido,
+     mantiene igualmente la columna del año base en las tablas de Resumen
+     Anual y Estado de Resultados (estados financieros proyectados). */
+  const verBaseEEFF = incluirBase || !!incluirEEFFBase;
   const r = pfCalcular();
   const erTodos = pfCalcularEstadoResultadosTodos(r.anios);
-  const rango = pfRangoAniosHTML(incluirBase);
+  const rango = pfRangoAniosHTML(verBaseEEFF);
   return `
-    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado ${pfAnioReal(2025)}-${pfAnioReal(2030)}</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado${(incluirBase || !pfConLeyendas())?'':' · (sin detalle del año base '+pfAnioReal(2025)+')'}</div></div>
-    <h4>📊 Resumen Anual Comparativo ${rango}</h4>${pfResumenAnualHTML(r, incluirBase)}
+    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado ${pfAnioReal(2025)}-${pfAnioReal(2030)}</div><div class="doc-subtitle">${escapeHtml(emp?emp.nombre:'')} · Estado de Resultados Proyectado Enlazado${(incluirBase || !pfConLeyendas())?'':(verBaseEEFF?' · (sin detalle mensual del año base '+pfAnioReal(2025)+')':' · (sin detalle del año base '+pfAnioReal(2025)+')')}</div></div>
+    <h4>📊 Resumen Anual Comparativo ${rango}</h4>${pfResumenAnualHTML(r, verBaseEEFF)}
     ${incluirBase ? `<h4>Flujo de Caja ${pfAnioReal(2025)} (Base)</h4>${pfSnapshotHTML('pfTabla2025')}` : ''}
     ${PF_PROJ_YEARS.map(y=>`<h4>Flujo de Caja ${y} (Proyectado)</h4>${pfSnapshotHTML('pfTabla'+y)}`).join('\n    ')}
-    <h4>Estado de Resultados Proyectado (${rango})</h4>${pfEstadoResultadosTodosHTML(erTodos, incluirBase)}
-    <h4>Estado de Resultados Proyectado — Comparativo ${rango}</h4>${pfEstadoResultadosTodosHTML(erTodos, incluirBase)}
+    <h4>Estado de Resultados Proyectado (${rango})</h4>${pfEstadoResultadosTodosHTML(erTodos, verBaseEEFF)}
+    <h4>Estado de Resultados Proyectado — Comparativo ${rango}</h4>${pfEstadoResultadosTodosHTML(erTodos, verBaseEEFF)}
     <h4>📐 Índices Financieros Comparativo ${pfAnioReal(2025)}-${pfAnioReal(2030)}</h4>${pfSnapshotHTML('pfIndicesCont')}
     <div class="doc-footer">Documento generado a partir de la hoja de trabajo real de Flujo de Caja Proyectado Produbanco. Cada año proyectado (${pfAnioReal(2026)}-${pfAnioReal(2030)}) tiene su propio juego de porcentajes de crecimiento/decrecimiento y de composición (ventas, proveedores, gastos), 100% editable de forma independiente; un cambio en el % de un año se propaga solo hacia adelante (años posteriores), nunca hacia atrás.</div>
   `;
@@ -15712,7 +15723,8 @@ function pfImprimir(){
   pfRecalcularTodo();
   const chk = document.getElementById('pf-incluir-base-impresion');
   const incluirBase = chk ? !!chk.checked : true;
-  const contenido = pfContenidoCompletoHTML(emp, incluirBase);
+  const chkE = document.getElementById('pf-incluir-eeff-base-impresion');
+  const contenido = pfContenidoCompletoHTML(emp, incluirBase, chkE ? !!chkE.checked : false);
   pfImprimirDoc(contenido, 'Flujo de Caja Proyectado Produbanco');
 }
 /* Impresión de UN solo año (base o proyectado): tabla mensual completa
@@ -21658,6 +21670,466 @@ function imprimirLiquidacionCajaChica(id){
   `;
   abrirImpresionEjecutiva(`Liquidación de ${TIPOS_FONDO_CAJA_CHICA[l.tipoFondo]||'Caja Chica / Fondo Rotativo'} — ${escapeHtml(l.numeroFondo||'')}`, emp, meta, cuerpo, firmas);
 }
+
+/* =========================================================================
+   MÓDULO: DESGLOSE DE PROVEEDORES Y CLIENTES
+   Por empresa: carga desde Excel (RUC/código, nombre y valor) del saldo
+   por pagar a proveedores y por cobrar a clientes, con ANTIGÜEDAD de cartera
+   (por columnas de antigüedad del Excel o calculada desde la fecha de
+   vencimiento/emisión). Se guarda en desglose_terceros/{DATOS_UID}/{empresaId}.
+   ========================================================================= */
+let desgloseEmpresaId = null;
+let desgloseTab = "proveedores";
+let desgloseDatos = { proveedores:{items:[],edadLabels:[]}, clientes:{items:[],edadLabels:[]} };
+let desgloseBusqueda = "";
+let desgloseOrden = "valor"; // valor | nombre | ruc
+let desglosePreview = null;
+const DESGLOSE_LIM = [0,30,60,90,180,360]; // límites en días de los tramos estándar
+function desgloseEtiquetasEstandar(tipoFecha){
+  return tipoFecha==="emision"
+    ? ["0-30 días","31-60 días","61-90 días","91-180 días","181-360 días","Más de 360 días"]
+    : ["Por vencer","1-30 días","31-60 días","61-90 días","91-180 días","181-360 días","Más de 360 días"];
+}  // {tipo, items, archivo, filasLeidas, omitidas}
+
+const DESGLOSE_TIPOS = {
+  proveedores: { titulo:"Proveedores", valorLabel:"Por pagar", colorVar:"var(--warning, #d98a00)", plural:"proveedores" },
+  clientes:    { titulo:"Clientes",    valorLabel:"Por cobrar", colorVar:"var(--ok, #1e7e34)",       plural:"clientes" },
+};
+
+async function renderDesgloseTerceros(){
+  const main = document.getElementById("main");
+  main.innerHTML = `
+    <div class="pageTitle"><div><h2>Desglose de Proveedores y Clientes</h2><p>Carga desde Excel el detalle de cuentas por pagar (proveedores) y por cobrar (clientes) por empresa</p></div></div>
+    <div class="card">
+      <div class="field"><label>Empresa</label>
+        <select id="selEmpresaDesglose" onchange="cambiarEmpresaDesglose(this.value)">
+          <option value="">-- selecciona una empresa --</option>
+          ${empresasCache.map(e=>`<option value="${e.id}" ${desgloseEmpresaId===e.id?'selected':''}>${escapeHtml(e.nombre)}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div id="desgloseContenido"></div>
+  `;
+  if(desgloseEmpresaId) await pintarDesglose(true);
+  else document.getElementById("desgloseContenido").innerHTML = `<div class="card emptyState">Selecciona una empresa para cargar o ver su desglose.</div>`;
+}
+
+async function cambiarEmpresaDesglose(id){
+  desgloseEmpresaId = id || null;
+  desglosePreview = null; desgloseBusqueda = "";
+  if(desgloseEmpresaId) await pintarDesglose(true);
+  else document.getElementById("desgloseContenido").innerHTML = `<div class="card emptyState">Selecciona una empresa para cargar o ver su desglose.</div>`;
+}
+
+async function cargarDesgloseTerceros(empresaId){
+  const snap = await db.ref(`desglose_terceros/${DATOS_UID}/${empresaId}`).once("value");
+  const v = snap.val() || {};
+  const norm = t => ({ ...(v[t]||{}), items: Array.isArray(v[t]?.items) ? v[t].items : Object.values(v[t]?.items||{}),
+    edadLabels: Array.isArray(v[t]?.edadLabels) ? v[t].edadLabels : Object.values(v[t]?.edadLabels||{}) });
+  return { proveedores: norm("proveedores"), clientes: norm("clientes") };
+}
+
+async function pintarDesglose(recargar){
+  const cont = document.getElementById("desgloseContenido");
+  if(recargar){
+    cont.innerHTML = `<div class="card">Cargando...</div>`;
+    try{ desgloseDatos = await cargarDesgloseTerceros(desgloseEmpresaId); }
+    catch(e){
+      cont.innerHTML = `<div class="card emptyState" style="color:var(--danger);">No se pudo cargar. Error: ${escapeHtml(e.message||String(e))}<br><span style="font-size:12px;">Si dice "permission_denied", agrega la ruta "desglose_terceros" a las reglas de Realtime Database (archivo reglas_firebase_completas.json).</span></div>`;
+      return;
+    }
+  }
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  const d = desgloseDatos[desgloseTab] || { items:[] };
+  const items = d.items || [];
+  const total = items.reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const q = desgloseBusqueda.trim().toLowerCase();
+  let vis = items.map((x,i)=>({...x,_i:i})).filter(x=>!q || String(x.nombre||'').toLowerCase().includes(q) || String(x.ruc||'').toLowerCase().includes(q));
+  vis.sort((a,b)=> desgloseOrden==='nombre' ? String(a.nombre||'').localeCompare(String(b.nombre||''),'es') : desgloseOrden==='ruc' ? String(a.ruc||'').localeCompare(String(b.ruc||'')) : (Number(b.valor)||0)-(Number(a.valor)||0));
+  const top10 = [...items].sort((a,b)=>(Number(b.valor)||0)-(Number(a.valor)||0)).slice(0,10).reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const tabBtn = (k)=>`<button class="btn ${desgloseTab===k?'primary':''}" onclick="cambiarTabDesglose('${k}')">${k==='proveedores'?'🏭':'🧑‍💼'} ${DESGLOSE_TIPOS[k].titulo} (${(desgloseDatos[k]?.items||[]).length})</button>`;
+  cont.innerHTML = `
+    <div class="card">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${tabBtn('proveedores')}${tabBtn('clientes')}</div>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0;">📥 Cargar Excel de ${t.plural} (${t.valorLabel})</h4>
+      <p class="helpNote">El Excel debe tener al menos 3 columnas: <b>RUC / código</b>, <b>nombre</b> y <b>${t.valorLabel.toLowerCase()}</b> (valor). Para la <b>antigüedad de cartera</b> agrega columnas de tramos (por vencer, 1-30, 31-60, 61-90, …; se usan tal como vienen en el encabezado) <i>o</i> una columna de <b>fecha de vencimiento</b> / <b>fecha de emisión</b> (se calcula al corte). Se detectan automáticamente por el encabezado; si no hay encabezado se toman las columnas A, B y C. Las filas de «TOTAL» y las vacías se omiten.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div class="field" style="margin:0;"><label>Archivo (.xlsx, .xls, .csv)</label><input type="file" id="desgloseArchivo" accept=".xlsx,.xls,.csv" onchange="leerExcelDesglose(this)"></div>
+        <div class="field" style="margin:0;"><label>Fecha de corte</label><input type="date" id="desgloseCorte" value="${escapeHtml(d.corte||'')}"></div>
+        <div class="field" style="margin:0;"><label>Al cargar</label>
+          <select id="desgloseModo"><option value="reemplazar">Reemplazar el listado actual</option><option value="agregar">Agregar al listado actual (suma por RUC)</option></select></div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="desgloseAgrupar" checked> Sumar filas repetidas del mismo RUC</label>
+        <button class="btn small" onclick="descargarPlantillaDesglose()">⬇ Plantilla Excel</button>
+      </div>
+      <div id="desglosePreviewHost"></div>
+    </div>
+    <div id="desgloseEdades"></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center;">
+        <div>
+          <div style="font-size:12px;color:var(--muted);">Total ${t.valorLabel.toLowerCase()} — ${t.titulo}${d.corte?` · corte ${escapeHtml(fmtFecha(d.corte))}`:''}${d.archivo?` · ${escapeHtml(d.archivo)}`:''}</div>
+          <div style="font-size:26px;font-weight:800;">${bpUSD(total)}</div>
+          <div style="font-size:12px;color:var(--muted);">${items.length} ${t.plural}${items.length>10&&total? ` · los 10 mayores concentran ${(top10/total*100).toFixed(1)}%`:''}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn small" onclick="agregarFilaDesglose()">+ Agregar manual</button>
+          <button class="btn small" onclick="exportarDesgloseExcel()">⬇ Exportar Excel</button>
+          <button class="btn small" onclick="imprimirDesglose()">🖨️ Imprimir</button>
+          <button class="btn small danger" onclick="eliminarListadoDesglose()">Vaciar listado</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap;">
+        <input type="search" placeholder="Buscar por RUC o nombre..." value="${escapeHtml(desgloseBusqueda)}" oninput="desgloseBusqueda=this.value;pintarTablaDesglose()" style="flex:1;min-width:200px;">
+        <select onchange="desgloseOrden=this.value;pintarTablaDesglose()">
+          <option value="valor" ${desgloseOrden==='valor'?'selected':''}>Ordenar: mayor valor</option>
+          <option value="nombre" ${desgloseOrden==='nombre'?'selected':''}>Ordenar: nombre</option>
+          <option value="ruc" ${desgloseOrden==='ruc'?'selected':''}>Ordenar: RUC</option>
+        </select>
+      </div>
+      <div id="desgloseTabla"></div>
+    </div>`;
+  pintarEdadesDesglose();
+  pintarTablaDesglose();
+}
+
+/* ---------- Antigüedad de cartera ---------- */
+function desgloseResumenEdades(d){
+  const labels = d.edadLabels||[]; const items = d.items||[];
+  const tot = labels.map(()=>0); let clasificado = 0;
+  items.forEach(x=>{ if(Array.isArray(x.edades)){ x.edades.forEach((v,k)=>{ if(k<tot.length){ tot[k]+=Number(v)||0; clasificado+=Number(v)||0; } }); } });
+  const total = items.reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const sinClas = Math.round((total-clasificado)*100)/100;
+  return { labels, tot, total, sinClas };
+}
+function pintarEdadesDesglose(){
+  const host = document.getElementById("desgloseEdades"); if(!host) return;
+  const t = DESGLOSE_TIPOS[desgloseTab]; const d = desgloseDatos[desgloseTab]||{items:[],edadLabels:[]};
+  if(!(d.edadLabels||[]).length){
+    host.innerHTML = (d.items||[]).length ? `<div class="card"><h4 style="margin-top:0;">⏳ Antigüedad de cartera</h4><div class="helpNote">Este listado no trae antigüedad. Vuelve a cargar un Excel que incluya <b>columnas de antigüedad</b> (por vencer, 1-30, 31-60, 61-90, …) o una columna de <b>fecha de vencimiento</b> / <b>fecha de emisión</b> para calcularla al corte.</div></div>` : "";
+    return;
+  }
+  const r = desgloseResumenEdades(d);
+  const filas = r.labels.map((l,k)=>({l, v:r.tot[k]}));
+  if(Math.abs(r.sinClas)>=0.01) filas.push({l:"Sin clasificar", v:r.sinClas});
+  const base = r.total || 1;
+  const noVenc = filas.length && /vencer|vigente|corriente/i.test(filas[0].l) ? filas[0].v : null;
+  host.innerHTML = `<div class="card"><h4 style="margin-top:0;">⏳ Antigüedad de cartera — ${t.titulo}${d.corte?` · al ${escapeHtml(fmtFecha(d.corte))}`:''}</h4>
+    <div style="overflow-x:auto;"><table><thead><tr><th>Tramo</th><th style="text-align:right;">Valor</th><th style="text-align:right;">%</th><th style="width:40%;"></th></tr></thead><tbody>
+    ${filas.map(f=>`<tr><td>${escapeHtml(f.l)}</td><td class="num" style="text-align:right;">${bpUSD(f.v)}</td><td class="num" style="text-align:right;">${(f.v/base*100).toFixed(1)}%</td><td><div style="height:10px;border-radius:5px;background:${t.colorVar};opacity:.75;width:${Math.max(0,Math.min(100,f.v/base*100)).toFixed(1)}%;"></div></td></tr>`).join("")}
+    <tr class="tot"><td><b>TOTAL</b></td><td class="num" style="text-align:right;"><b>${bpUSD(r.total)}</b></td><td class="num" style="text-align:right;">100%</td><td></td></tr></tbody></table></div>
+    ${noVenc!==null?`<div class="helpNote" style="margin-top:8px;">Vencido: <b>${bpUSD(r.total-noVenc-(r.sinClas>0?r.sinClas:0))}</b> (${((r.total-noVenc-(r.sinClas>0?r.sinClas:0))/base*100).toFixed(1)}% del total) · Por vencer: <b>${bpUSD(noVenc)}</b></div>`:''}</div>`;
+}
+
+function pintarTablaDesglose(){
+  const host = document.getElementById("desgloseTabla"); if(!host) return;
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  const items = (desgloseDatos[desgloseTab]?.items)||[];
+  const total = items.reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const q = desgloseBusqueda.trim().toLowerCase();
+  let vis = items.map((x,i)=>({...x,_i:i})).filter(x=>!q || String(x.nombre||'').toLowerCase().includes(q) || String(x.ruc||'').toLowerCase().includes(q));
+  vis.sort((a,b)=> desgloseOrden==='nombre' ? String(a.nombre||'').localeCompare(String(b.nombre||''),'es') : desgloseOrden==='ruc' ? String(a.ruc||'').localeCompare(String(b.ruc||'')) : (Number(b.valor)||0)-(Number(a.valor)||0));
+  if(!vis.length){ host.innerHTML = `<div class="emptyState">${items.length?'Sin resultados para la búsqueda.':`Aún no hay ${t.plural} cargados. Sube un Excel arriba.`}</div>`; return; }
+  const sub = vis.reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const labels = desgloseDatos[desgloseTab]?.edadLabels || [];
+  const subE = labels.map((_,k)=>vis.reduce((s,x)=>s+(Array.isArray(x.edades)?(Number(x.edades[k])||0):0),0));
+  host.innerHTML = `<div style="overflow-x:auto;"><table><thead><tr><th>#</th><th>RUC / Código</th><th>Nombre</th><th class="num" style="text-align:right;">${t.valorLabel}</th><th class="num" style="text-align:right;">%</th>${labels.map(l=>`<th class="num" style="text-align:right;font-size:11px;">${escapeHtml(l)}</th>`).join("")}<th></th></tr></thead><tbody>
+    ${vis.map((x,n)=>`<tr>
+      <td>${n+1}</td><td>${escapeHtml(x.ruc||'')}</td><td>${escapeHtml(x.nombre||'')}</td>
+      <td class="num" style="text-align:right;">${bpUSD(x.valor)}</td>
+      <td class="num" style="text-align:right;">${total?((Number(x.valor)||0)/total*100).toFixed(2):'0.00'}%</td>
+      ${labels.map((_,k)=>`<td class="num" style="text-align:right;font-size:12px;">${Array.isArray(x.edades)&&Number(x.edades[k])?bpUSD(x.edades[k]):'<span style="color:var(--muted);">—</span>'}</td>`).join("")}
+      <td style="white-space:nowrap;"><button class="btn small" onclick="editarFilaDesglose(${x._i})">Editar</button> <button class="btn small danger" onclick="eliminarFilaDesglose(${x._i})">✕</button></td></tr>`).join("")}
+    <tr class="tot"><td colspan="3"><b>${q?'Subtotal de la búsqueda':'TOTAL'}</b></td><td class="num" style="text-align:right;"><b>${bpUSD(sub)}</b></td><td></td>${subE.map(v=>`<td class="num" style="text-align:right;font-size:12px;"><b>${bpUSD(v)}</b></td>`).join("")}<td></td></tr>
+  </tbody></table></div>`;
+}
+
+function cambiarTabDesglose(k){ desgloseTab = k; desglosePreview = null; desgloseBusqueda = ""; pintarDesglose(false); }
+
+/* ---------- Lectura del Excel ---------- */
+function desgloseNumero(v){
+  if(typeof v === "number") return isFinite(v) ? v : 0;
+  let s = String(v==null?"":v).trim();
+  if(!s) return 0;
+  let neg = /^\(.*\)$/.test(s) || /^-/.test(s) || /-$/.test(s);
+  s = s.replace(/[()$\s]/g,"").replace(/^-|-$/g,"");
+  // formato 1.234,56 vs 1,234.56
+  if(/,\d{1,2}$/.test(s) && /\./.test(s)) s = s.replace(/\./g,"").replace(",",".");
+  else if(/,\d{1,2}$/.test(s) && !/\./.test(s)) s = s.replace(",",".");
+  else s = s.replace(/,/g,"");
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : (neg ? -n : n);
+}
+function desgloseRuc(v){
+  if(v==null) return "";
+  let s = typeof v === "number" ? String(Math.round(v)) : String(v).trim();
+  s = s.replace(/\s+/g,"");
+  if(/^\d+$/.test(s) && (s.length===9 || s.length===12)) s = "0"+s; // cédula/RUC que Excel dejó sin el cero inicial
+  return s;
+}
+function desgloseFecha(v){
+  if(v==null || v==="") return null;
+  if(v instanceof Date) return isNaN(v) ? null : v;
+  if(typeof v === "number"){ if(v>20000 && v<80000) return new Date(Math.round((v-25569)*86400000)+12*3600000); return null; }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){ let y = +m[3]; if(y<100) y += 2000; const d = new Date(y, +m[2]-1, +m[1], 12); return isNaN(d) ? null : d; }
+  m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if(m){ const d = new Date(+m[1], +m[2]-1, +m[3], 12); return isNaN(d) ? null : d; }
+  return null;
+}
+function desgloseTramoEstandar(dias, tipoFecha){
+  // dias = corte - fecha (positivo = ya transcurrido / vencido)
+  if(tipoFecha==="vencimiento"){
+    if(dias<=0) return 0;
+    for(let k=1;k<DESGLOSE_LIM.length;k++){ if(dias<=DESGLOSE_LIM[k]) return k; }
+    return DESGLOSE_LIM.length;
+  }
+  const d = Math.max(0,dias);
+  for(let k=1;k<DESGLOSE_LIM.length;k++){ if(d<=DESGLOSE_LIM[k]) return k-1; }
+  return DESGLOSE_LIM.length-1;
+}
+function desgloseParsearFilas(filas){
+  // filas: array de arrays
+  const reRuc = /ruc|c[eé]dula|identific|c[oó]digo|codigo|^id$|nit/i;
+  const reNom = /nombre|raz[oó]n|proveedor|cliente|detalle|descrip|tercero/i;
+  const reVal = /pagar|cobrar|saldo|valor|total|monto|importe|deuda|adeudado/i;
+  const reEdad = /por\s*vencer|vigente|corriente|\b\d+\s*(?:-|–|a|al|hasta)\s*\d+\b|m[aá]s\s*de\s*\d+|mayor(?:es)?\s*(?:a|de|que)\s*\d+|>\s*=?\s*\d+|\d+\s*\+|vencid[oa]s?\s*\d+/i;
+  const reFVenc = /vencim|vence\b|f\.?\s*venc/i;
+  const reFEmi = /emisi|f\.?\s*emis|fecha(?!.*venc)/i;
+  let h = -1, cR = 0, cN = 1, cV = 2, cEdades = [], cFecha = -1, tipoFecha = null;
+  for(let i=0;i<Math.min(filas.length,20);i++){
+    const f = filas[i]||[];
+    const txt = c => String(c==null?"":c).trim();
+    const edades = f.map((c,k)=>k).filter(k=>txt(f[k]) && reEdad.test(txt(f[k])) && !reNom.test(txt(f[k])));
+    const iN = f.findIndex((c,k)=>reNom.test(txt(c)) && !edades.includes(k));
+    const iV = f.findIndex((c,k)=>k!==iN && !edades.includes(k) && reVal.test(txt(c)));
+    if(iN>=0 && (iV>=0 || edades.length>=2)){
+      h = i; cN = iN; cV = iV; cEdades = edades;
+      const iR = f.findIndex((c,k)=>k!==iN && k!==iV && !edades.includes(k) && reRuc.test(txt(c)));
+      cR = iR>=0 ? iR : (iN>0 ? 0 : -1);
+      let iF = f.findIndex((c,k)=>reFVenc.test(txt(c)));
+      if(iF>=0) tipoFecha = "vencimiento"; else { iF = f.findIndex((c,k)=>!edades.includes(k) && k!==iN && k!==iV && reFEmi.test(txt(c))); if(iF>=0) tipoFecha = "emision"; }
+      cFecha = iF;
+      break;
+    }
+  }
+  const etiquetas = cEdades.map(k=>String(filas[h][k]).replace(/\s+/g," ").trim());
+  const items = []; let omitidas = 0;
+  for(let i=h+1;i<filas.length;i++){
+    const f = filas[i]||[];
+    const nombre = String(f[cN]==null?"":f[cN]).trim();
+    const ruc = cR>=0 ? desgloseRuc(f[cR]) : "";
+    const edades = cEdades.map(k=>Math.round(desgloseNumero(f[k])*100)/100);
+    let valor = cV>=0 ? Math.round(desgloseNumero(f[cV])*100)/100 : 0;
+    if(cV<0 || (!valor && edades.some(v=>v))) valor = Math.round(edades.reduce((s,v)=>s+v,0)*100)/100;
+    if(!nombre && !ruc && !valor) continue;
+    if(/^(gran\s+)?total(es)?\b/i.test(nombre) || /^total/i.test(ruc)) { omitidas++; continue; }
+    if(!nombre && !ruc){ omitidas++; continue; }
+    if(!valor && !nombre){ omitidas++; continue; }
+    const it = { ruc, nombre, valor };
+    if(cEdades.length) it.edades = edades;
+    if(cFecha>=0){ const fe = desgloseFecha(f[cFecha]); if(fe) it.fecha = fe.toISOString().slice(0,10); }
+    items.push(it);
+  }
+  return { items, omitidas, encabezado: h>=0, edadLabels: etiquetas, tipoFecha: cEdades.length ? null : (items.some(x=>x.fecha) ? tipoFecha : null) };
+}
+/* Si el Excel no trae columnas de antigüedad pero sí fechas, se calcula
+   la antigüedad al corte; devuelve {items, labels}. */
+function desgloseAplicarAntiguedad(p, corteISO){
+  if(p.edadLabels && p.edadLabels.length) return { items:p.items, labels:p.edadLabels };
+  if(!p.tipoFecha) return { items:p.items, labels:[] };
+  const corte = desgloseFecha(corteISO) || new Date();
+  const labels = desgloseEtiquetasEstandar(p.tipoFecha);
+  const items = p.items.map(x=>{
+    const fe = x.fecha ? desgloseFecha(x.fecha) : null;
+    if(!fe) return { ...x };
+    const dias = Math.floor((corte - fe)/86400000);
+    const k = desgloseTramoEstandar(dias, p.tipoFecha);
+    const e = labels.map(()=>0); e[k] = x.valor;
+    return { ...x, edades:e };
+  });
+  return { items, labels };
+}
+function desgloseAgruparPorRuc(items){
+  const m = new Map();
+  items.forEach(x=>{
+    const k = x.ruc ? "r:"+x.ruc : "n:"+String(x.nombre||"").toLowerCase();
+    if(m.has(k)){
+      const o = m.get(k); o.valor = Math.round((o.valor + x.valor)*100)/100; if(!o.nombre) o.nombre = x.nombre;
+      if(Array.isArray(x.edades)){ o.edades = (o.edades||x.edades.map(()=>0)).map((v,i)=>Math.round((v+(Number(x.edades[i])||0))*100)/100); }
+    } else m.set(k, { ...x, edades: Array.isArray(x.edades) ? [...x.edades] : undefined });
+  });
+  return [...m.values()].map(o=>{ if(o.edades===undefined) delete o.edades; delete o.fecha; return o; });
+}
+
+async function leerExcelDesglose(input){
+  const file = input.files && input.files[0]; if(!file) return;
+  const host = document.getElementById("desglosePreviewHost");
+  host.innerHTML = `<div class="helpNote">Leyendo ${escapeHtml(file.name)}...</div>`;
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = /\.(csv|txt)$/i.test(file.name) ? XLSX.read(new TextDecoder("utf-8").decode(buf), {type:"string", raw:true}) : XLSX.read(buf, {type:"array"});
+    let mejor = null;
+    for(const nombreHoja of wb.SheetNames){
+      const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], {header:1, raw:true, defval:""});
+      const r = desgloseParsearFilas(filas);
+      if(!mejor || r.items.length > mejor.items.length) mejor = { ...r, hoja:nombreHoja, filasLeidas:filas.length };
+    }
+    if(!mejor || !mejor.items.length){ host.innerHTML = `<div class="helpNote" style="color:var(--danger);">No se encontraron filas válidas. Revisa que el Excel tenga RUC/código, nombre y valor.</div>`; desglosePreview = null; return; }
+    desglosePreview = { tipo: desgloseTab, archivo: file.name, ...mejor };
+    pintarPreviewDesglose();
+  }catch(e){
+    host.innerHTML = `<div class="helpNote" style="color:var(--danger);">No se pudo leer el archivo: ${escapeHtml(e.message||String(e))}</div>`;
+    desglosePreview = null;
+  }
+}
+
+function pintarPreviewDesglose(){
+  const host = document.getElementById("desglosePreviewHost"); if(!host || !desglosePreview) return;
+  const p = desglosePreview, t = DESGLOSE_TIPOS[p.tipo];
+  const agrupar = document.getElementById("desgloseAgrupar")?.checked !== false;
+  const corte = document.getElementById("desgloseCorte")?.value || "";
+  const ap = desgloseAplicarAntiguedad(p, corte);
+  const items = agrupar ? desgloseAgruparPorRuc(ap.items) : ap.items;
+  const total = items.reduce((s,x)=>s+x.valor,0);
+  const totE = ap.labels.map((_,k)=>items.reduce((s,x)=>s+(Array.isArray(x.edades)?(Number(x.edades[k])||0):0),0));
+  host.innerHTML = `<div class="card" style="margin-top:10px;background:rgba(59,167,255,.08);">
+    <b>Vista previa:</b> ${escapeHtml(p.archivo)} (hoja «${escapeHtml(p.hoja)}») — ${p.items.length} filas leídas${agrupar&&items.length!==p.items.length?` → ${items.length} terceros tras sumar repetidos`:''}${p.omitidas?`, ${p.omitidas} omitidas (totales/vacías)`:''}${p.encabezado?'':' · <span style="color:var(--danger);">no se detectó encabezado: se usaron columnas A, B y C</span>'}.<br>
+    Total ${t.valorLabel.toLowerCase()}: <b>${bpUSD(total)}</b><br>
+    ${ap.labels.length ? `⏳ Antigüedad ${p.edadLabels&&p.edadLabels.length?'tomada de las columnas del Excel':`calculada desde la fecha de ${p.tipoFecha==='vencimiento'?'vencimiento':'emisión'} al corte ${corte?escapeHtml(fmtFecha(corte)):'(hoy; indica la fecha de corte para fijarla)'}`}: ${ap.labels.map((l,k)=>`${escapeHtml(l)} <b>${bpUSD(totE[k])}</b>`).join(" · ")}` : `<span style="color:var(--muted);">Sin antigüedad: el Excel no trae columnas de antigüedad ni fechas (se guardará solo el saldo).</span>`}
+    <div style="overflow-x:auto;max-height:220px;margin-top:6px;"><table><thead><tr><th>RUC / Código</th><th>Nombre</th><th style="text-align:right;">${t.valorLabel}</th></tr></thead><tbody>
+      ${items.slice(0,8).map(x=>`<tr><td>${escapeHtml(x.ruc)}</td><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${bpUSD(x.valor)}</td></tr>`).join("")}
+      ${items.length>8?`<tr><td colspan="3" style="color:var(--muted);">… y ${items.length-8} más</td></tr>`:''}
+    </tbody></table></div>
+    <div style="margin-top:8px;display:flex;gap:8px;"><button class="btn primary" onclick="guardarDesgloseTerceros()">💾 Guardar listado</button><button class="btn" onclick="desglosePreview=null;document.getElementById('desglosePreviewHost').innerHTML='';document.getElementById('desgloseArchivo').value='';">Cancelar</button></div>
+  </div>`;
+  const chk = document.getElementById("desgloseAgrupar");
+  if(chk) chk.onchange = pintarPreviewDesglose;
+  const cc = document.getElementById("desgloseCorte");
+  if(cc) cc.onchange = pintarPreviewDesglose;
+}
+
+async function persistirDesgloseTipo(tipo){
+  const payload = limpiarUndefined({ ...desgloseDatos[tipo], items: desgloseDatos[tipo].items||[], edadLabels: desgloseDatos[tipo].edadLabels||[], actualizado: Date.now() });
+  await db.ref(`desglose_terceros/${DATOS_UID}/${desgloseEmpresaId}/${tipo}`).set(payload);
+}
+function desgloseNombreEmpresa(){ return (empresasCache.find(e=>e.id===desgloseEmpresaId)||{}).nombre || ""; }
+
+async function guardarDesgloseTerceros(){
+  if(!desglosePreview || !desgloseEmpresaId) return;
+  const tipo = desglosePreview.tipo;
+  const agrupar = document.getElementById("desgloseAgrupar")?.checked !== false;
+  const modo = document.getElementById("desgloseModo")?.value || "reemplazar";
+  const corte = document.getElementById("desgloseCorte")?.value || "";
+  const ap = desgloseAplicarAntiguedad(desglosePreview, corte);
+  let nuevos = agrupar ? desgloseAgruparPorRuc(ap.items) : ap.items.map(x=>{ const o={...x}; delete o.fecha; return o; });
+  let labels = ap.labels;
+  if(modo === "agregar"){
+    const prev = desgloseDatos[tipo];
+    const mismas = JSON.stringify(prev.edadLabels||[]) === JSON.stringify(labels);
+    let previos = prev.items||[];
+    if(!mismas){
+      if(!(prev.edadLabels||[]).length){ /* el listado previo no tenía antigüedad: queda "sin clasificar" */ }
+      else if(!labels.length){ labels = prev.edadLabels; }
+      else { previos = previos.map(x=>{ const o={...x}; delete o.edades; return o; }); toast("Los tramos de antigüedad del archivo difieren de los guardados: lo anterior queda «sin clasificar».", "warning", 6000); }
+    }
+    nuevos = desgloseAgruparPorRuc([...previos, ...nuevos]);
+  }
+  desgloseDatos[tipo] = { ...desgloseDatos[tipo], items: nuevos, corte, archivo: desglosePreview.archivo, edadLabels: labels };
+  try{
+    await persistirDesgloseTipo(tipo);
+    registrarCambio("Desglose Proveedores y Clientes", modo==="agregar"?"agregar":"cargar", `${desgloseNombreEmpresa()} — ${DESGLOSE_TIPOS[tipo].titulo}: ${nuevos.length} registros (${desglosePreview.archivo})`);
+    toast(`Listado de ${DESGLOSE_TIPOS[tipo].plural} guardado (${nuevos.length} registros)`, "success");
+    desglosePreview = null;
+    pintarDesglose(false);
+  }catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
+}
+
+function agregarFilaDesglose(){ abrirEditorFilaDesglose(-1); }
+function editarFilaDesglose(i){ abrirEditorFilaDesglose(i); }
+function abrirEditorFilaDesglose(i){
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  const x = i>=0 ? desgloseDatos[desgloseTab].items[i] : { ruc:"", nombre:"", valor:"" };
+  const ruc = prompt("RUC / código:", x.ruc||""); if(ruc===null) return;
+  const nombre = prompt("Nombre:", x.nombre||""); if(nombre===null) return;
+  const v = prompt(`${t.valorLabel} (USD):`, x.valor===""?"":String(x.valor)); if(v===null) return;
+  const fila = { ruc: desgloseRuc(ruc), nombre: nombre.trim(), valor: Math.round(desgloseNumero(v)*100)/100 };
+  if(i>=0 && Array.isArray(x.edades) && Math.abs((Number(x.valor)||0)-fila.valor)<0.005) fila.edades = x.edades; // si cambió el valor, la antigüedad de esa fila queda «sin clasificar»
+  guardarFilaDesglose(i, fila);
+}
+async function guardarFilaDesglose(i, fila){
+  if(!fila.nombre && !fila.ruc){ toast("Escribe al menos el nombre o el RUC", "warning"); return; }
+  const lista = desgloseDatos[desgloseTab].items;
+  if(i>=0) lista[i] = fila; else lista.push(fila);
+  try{
+    await persistirDesgloseTipo(desgloseTab);
+    registrarCambio("Desglose Proveedores y Clientes", i>=0?"editar":"agregar", `${desgloseNombreEmpresa()} — ${fila.nombre||fila.ruc}: ${bpUSD(fila.valor)}`);
+    pintarDesglose(false);
+  }catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
+}
+async function eliminarFilaDesglose(i){
+  const x = desgloseDatos[desgloseTab].items[i]; if(!x) return;
+  if(!confirm(`¿Eliminar a «${x.nombre||x.ruc}» del listado?`)) return;
+  desgloseDatos[desgloseTab].items.splice(i,1);
+  try{ await persistirDesgloseTipo(desgloseTab); registrarCambio("Desglose Proveedores y Clientes","eliminar",`${desgloseNombreEmpresa()} — ${x.nombre||x.ruc}`); pintarDesglose(false); }
+  catch(e){ toast("No se pudo eliminar: "+(e.message||e), "error"); }
+}
+async function eliminarListadoDesglose(){
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  if(!(desgloseDatos[desgloseTab].items||[]).length) return;
+  if(!confirm(`¿Vaciar TODO el listado de ${t.plural} de esta empresa? No se puede deshacer.`)) return;
+  desgloseDatos[desgloseTab] = { items: [], edadLabels: [] };
+  try{ await db.ref(`desglose_terceros/${DATOS_UID}/${desgloseEmpresaId}/${desgloseTab}`).remove(); registrarCambio("Desglose Proveedores y Clientes","eliminar",`${desgloseNombreEmpresa()} — listado completo de ${t.plural}`); pintarDesglose(false); }
+  catch(e){ toast("No se pudo vaciar: "+(e.message||e), "error"); }
+}
+
+function descargarPlantillaDesglose(){
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  const ws = XLSX.utils.aoa_to_sheet([["RUC","Nombre", t.valorLabel,"Por vencer","1-30 días","31-60 días","61-90 días","91-180 días","181-360 días","Más de 360 días"],["1790000000001","PROVEEDOR / CLIENTE EJEMPLO S.A.",1234.56,500,300,200,100,134.56,0,0],[],["(La antigüedad es opcional: puedes quitar las columnas de tramos, o en su lugar poner una columna «Fecha de vencimiento» o «Fecha de emisión» y la antigüedad se calcula al corte.)"]]);
+  ws["!cols"] = [{wch:16},{wch:48},{wch:16},{wch:12},{wch:12},{wch:12},{wch:12},{wch:13},{wch:14},{wch:16}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, t.titulo);
+  XLSX.writeFile(wb, `Plantilla_${t.titulo}.xlsx`);
+}
+function exportarDesgloseExcel(){
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  const items = (desgloseDatos[desgloseTab]?.items)||[];
+  if(!items.length){ toast("No hay datos para exportar", "warning"); return; }
+  const total = items.reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const labels = desgloseDatos[desgloseTab].edadLabels || [];
+  const totE = labels.map((_,k)=>items.reduce((s,x)=>s+(Array.isArray(x.edades)?(Number(x.edades[k])||0):0),0));
+  const aoa = [[`${t.titulo} — ${desgloseNombreEmpresa()}`],[desgloseDatos[desgloseTab].corte?`Corte: ${desgloseDatos[desgloseTab].corte}`:""],["RUC","Nombre",t.valorLabel,"% del total",...labels],
+    ...[...items].sort((a,b)=>(Number(b.valor)||0)-(Number(a.valor)||0)).map(x=>[x.ruc,x.nombre,Number(x.valor)||0,total?(Number(x.valor)||0)/total:0,...labels.map((_,k)=>Array.isArray(x.edades)?(Number(x.edades[k])||0):0)]),
+    ["","TOTAL",total,1,...totE]];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{wch:16},{wch:50},{wch:16},{wch:12},...labels.map(()=>({wch:15}))];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, t.titulo);
+  XLSX.writeFile(wb, `Desglose_${t.titulo}_${desgloseNombreEmpresa().replace(/[^\w]+/g,"_")}.xlsx`);
+}
+function imprimirDesglose(){
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  const d = desgloseDatos[desgloseTab] || {items:[]};
+  const items = [...(d.items||[])].sort((a,b)=>(Number(b.valor)||0)-(Number(a.valor)||0));
+  if(!items.length){ toast("No hay datos para imprimir", "warning"); return; }
+  const total = items.reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const labels = d.edadLabels || [];
+  const r = desgloseResumenEdades(d);
+  const resumen = labels.length ? `<h4>Antigüedad de cartera</h4><table style="width:60% !important;"><thead><tr><th>Tramo</th><th class="num">Valor</th><th class="num">%</th></tr></thead><tbody>
+      ${labels.map((l,k)=>`<tr><td>${escapeHtml(l)}</td><td class="num">${bpUSD(r.tot[k])}</td><td class="num">${total?(r.tot[k]/total*100).toFixed(1):'0.0'}%</td></tr>`).join("")}
+      ${Math.abs(r.sinClas)>=0.01?`<tr><td>Sin clasificar</td><td class="num">${bpUSD(r.sinClas)}</td><td class="num">${total?(r.sinClas/total*100).toFixed(1):'0.0'}%</td></tr>`:''}
+      <tr class="tot"><td>TOTAL</td><td class="num">${bpUSD(total)}</td><td class="num">100.0%</td></tr></tbody></table><h4>Detalle por ${t.plural.slice(0,-1)}</h4>` : '';
+  const totE = labels.map((_,k)=>r.tot[k]);
+  const cont = `
+    <div class="doc-header"><div class="doc-title">Desglose de ${t.titulo} — ${t.valorLabel}</div><div class="doc-subtitle">${escapeHtml(desgloseNombreEmpresa())}${d.corte?` · Corte: ${escapeHtml(fmtFecha(d.corte))}`:''}</div></div>
+    ${resumen}
+    <table><thead><tr><th>#</th><th>RUC / Código</th><th>Nombre</th><th class="num">${t.valorLabel}</th><th class="num">%</th>${labels.map(l=>`<th class="num">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>
+      ${items.map((x,n)=>`<tr><td>${n+1}</td><td>${escapeHtml(x.ruc||'')}</td><td>${escapeHtml(x.nombre||'')}</td><td class="num">${bpUSD(x.valor)}</td><td class="num">${total?((Number(x.valor)||0)/total*100).toFixed(2):'0.00'}%</td>${labels.map((_,k)=>`<td class="num">${Array.isArray(x.edades)&&Number(x.edades[k])?bpUSD(x.edades[k]):''}</td>`).join("")}</tr>`).join("")}
+      <tr class="tot"><td colspan="3">TOTAL (${items.length} ${t.plural})</td><td class="num">${bpUSD(total)}</td><td class="num">100.00%</td>${totE.map(v=>`<td class="num">${bpUSD(v)}</td>`).join("")}</tr>
+    </tbody></table>`;
+  bpAbrirVentanaImpresion(cont, `Desglose de ${t.titulo} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape:labels.length>2, logo:'📄 DESGLOSE '+t.titulo.toUpperCase(), pie:'Documento generado a partir del Excel cargado en Control Documental.'});
+}
+
 
 /* =========================================================================
    MÓDULO: HISTORIAL DE CAMBIOS (auditoría de quién hizo qué)
