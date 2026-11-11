@@ -21683,7 +21683,8 @@ let desgloseTab = "proveedores";
 let desgloseDatos = { proveedores:{items:[],edadLabels:[]}, clientes:{items:[],edadLabels:[]} };
 let desgloseBusqueda = "";
 let desgloseOrden = "valor"; // valor | nombre | ruc
-let desglosePreview = null;
+let desglosePreview = null;   // {archivo, partes:[{tipo,hoja,items,...}]}
+let desgloseRepPreview = null; // reporte de antigüedad del ERP
 const DESGLOSE_LIM = [0,30,60,90,180,360]; // límites en días de los tramos estándar
 function desgloseEtiquetasEstandar(tipoFecha){
   return tipoFecha==="emision"
@@ -21716,7 +21717,7 @@ async function renderDesgloseTerceros(){
 
 async function cambiarEmpresaDesglose(id){
   desgloseEmpresaId = id || null;
-  desglosePreview = null; desgloseBusqueda = "";
+  desglosePreview = null; desgloseRepPreview = null; desgloseBusqueda = "";
   if(desgloseEmpresaId) await pintarDesglose(true);
   else document.getElementById("desgloseContenido").innerHTML = `<div class="card emptyState">Selecciona una empresa para cargar o ver su desglose.</div>`;
 }
@@ -21761,15 +21762,22 @@ async function pintarDesglose(recargar){
         <div class="field" style="margin:0;"><label>Al cargar</label>
           <select id="desgloseModo"><option value="reemplazar">Reemplazar el listado actual</option><option value="agregar">Agregar al listado actual (suma por RUC)</option></select></div>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="desgloseAgrupar" checked> Sumar filas repetidas del mismo RUC</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="desgloseOmitirCeros" checked> Omitir terceros con saldo en cero</label>
         <button class="btn small" onclick="descargarPlantillaDesglose()">⬇ Plantilla Excel</button>
       </div>
       <div id="desglosePreviewHost"></div>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0;">⏳ Cargar reporte de antigüedad (sistema contable)</h4>
+      <p class="helpNote">Sube el «Análisis de antigüedad» tal como sale del sistema (.xls/.xlsx). Se <b>cruza con el listado ya cargado</b> por código/RUC (o nombre) y agrega los tramos 0 D / 30 D / 60 D / 90 D / +120 D; el saldo del listado no se toca. Reconoce si es de clientes o de proveedores.</p>
+      <div class="field" style="margin:0;"><input type="file" id="desgloseRepArchivo" accept=".xlsx,.xls,.csv" onchange="leerReporteAntiguedad(this)"></div>
+      <div id="desgloseRepHost"></div>
     </div>
     <div id="desgloseEdades"></div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center;">
         <div>
-          <div style="font-size:12px;color:var(--muted);">Total ${t.valorLabel.toLowerCase()} — ${t.titulo}${d.corte?` · corte ${escapeHtml(fmtFecha(d.corte))}`:''}${d.archivo?` · ${escapeHtml(d.archivo)}`:''}</div>
+          <div style="font-size:12px;color:var(--muted);">Total ${t.valorLabel.toLowerCase()} — ${t.titulo}${d.corte?` · corte ${escapeHtml(desgloseFmtCorte(d.corte))}`:''}${d.archivo?` · ${escapeHtml(d.archivo)}`:''}</div>
           <div style="font-size:26px;font-weight:800;">${bpUSD(total)}</div>
           <div style="font-size:12px;color:var(--muted);">${items.length} ${t.plural}${items.length>10&&total? ` · los 10 mayores concentran ${(top10/total*100).toFixed(1)}%`:''}</div>
         </div>
@@ -21815,7 +21823,7 @@ function pintarEdadesDesglose(){
   if(Math.abs(r.sinClas)>=0.01) filas.push({l:"Sin clasificar", v:r.sinClas});
   const base = r.total || 1;
   const noVenc = filas.length && /vencer|vigente|corriente/i.test(filas[0].l) ? filas[0].v : null;
-  host.innerHTML = `<div class="card"><h4 style="margin-top:0;">⏳ Antigüedad de cartera — ${t.titulo}${d.corte?` · al ${escapeHtml(fmtFecha(d.corte))}`:''}</h4>
+  host.innerHTML = `<div class="card"><h4 style="margin-top:0;">⏳ Antigüedad de cartera — ${t.titulo}${d.corte?` · al ${escapeHtml(desgloseFmtCorte(d.corte))}`:''}</h4>
     <div style="overflow-x:auto;"><table><thead><tr><th>Tramo</th><th style="text-align:right;">Valor</th><th style="text-align:right;">%</th><th style="width:40%;"></th></tr></thead><tbody>
     ${filas.map(f=>`<tr><td>${escapeHtml(f.l)}</td><td class="num" style="text-align:right;">${bpUSD(f.v)}</td><td class="num" style="text-align:right;">${(f.v/base*100).toFixed(1)}%</td><td><div style="height:10px;border-radius:5px;background:${t.colorVar};opacity:.75;width:${Math.max(0,Math.min(100,f.v/base*100)).toFixed(1)}%;"></div></td></tr>`).join("")}
     <tr class="tot"><td><b>TOTAL</b></td><td class="num" style="text-align:right;"><b>${bpUSD(r.total)}</b></td><td class="num" style="text-align:right;">100%</td><td></td></tr></tbody></table></div>
@@ -21924,10 +21932,9 @@ function desgloseParsearFilas(filas){
     const edades = cEdades.map(k=>Math.round(desgloseNumero(f[k])*100)/100);
     let valor = cV>=0 ? Math.round(desgloseNumero(f[cV])*100)/100 : 0;
     if(cV<0 || (!valor && edades.some(v=>v))) valor = Math.round(edades.reduce((s,v)=>s+v,0)*100)/100;
-    if(!nombre && !ruc && !valor) continue;
+    if(!nombre && !valor){ if(ruc) omitidas++; continue; } // vacías o de sección («PROVEEDORES NACIONALES»)
     if(/^(gran\s+)?total(es)?\b/i.test(nombre) || /^total/i.test(ruc)) { omitidas++; continue; }
     if(!nombre && !ruc){ omitidas++; continue; }
-    if(!valor && !nombre){ omitidas++; continue; }
     const it = { ruc, nombre, valor };
     if(cEdades.length) it.edades = edades;
     if(cFecha>=0){ const fe = desgloseFecha(f[cFecha]); if(fe) it.fecha = fe.toISOString().slice(0,10); }
@@ -21964,6 +21971,26 @@ function desgloseAgruparPorRuc(items){
   return [...m.values()].map(o=>{ if(o.edades===undefined) delete o.edades; delete o.fecha; return o; });
 }
 
+/* Fecha de corte detectada en el encabezado del archivo («Al: 31/Aug/2026», «Al:31/08/2026», …) */
+function desgloseDetectarCorte(filas){
+  const MES = {jan:1,ene:1,feb:2,mar:3,apr:4,abr:4,may:5,jun:6,jul:7,aug:8,ago:8,sep:9,set:9,oct:10,nov:11,dec:12,dic:12};
+  for(let i=0;i<Math.min(filas.length,12);i++){
+    for(const c of (filas[i]||[])){
+      const s = String(c==null?"":c);
+      let m = s.match(/\bal\s*:?\s*(\d{1,2})[\/\-.]([A-Za-z]{3})[A-Za-z]*[\/\-.](\d{4})/i);
+      if(m && MES[m[2].toLowerCase()]) return `${m[3]}-${String(MES[m[2].toLowerCase()]).padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+      m = s.match(/\bal\s*:?\s*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/i);
+      if(m) return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+    }
+  }
+  return "";
+}
+function desgloseFiltrarCeros(items){
+  const omitir = document.getElementById("desgloseOmitirCeros")?.checked !== false;
+  if(!omitir) return items;
+  return items.filter(x=>Math.abs(Number(x.valor)||0)>=0.005 || (Array.isArray(x.edades) && x.edades.some(v=>Math.abs(Number(v)||0)>=0.005)));
+}
+
 async function leerExcelDesglose(input){
   const file = input.files && input.files[0]; if(!file) return;
   const host = document.getElementById("desglosePreviewHost");
@@ -21971,14 +21998,29 @@ async function leerExcelDesglose(input){
   try{
     const buf = await file.arrayBuffer();
     const wb = /\.(csv|txt)$/i.test(file.name) ? XLSX.read(new TextDecoder("utf-8").decode(buf), {type:"string", raw:true}) : XLSX.read(buf, {type:"array"});
-    let mejor = null;
-    for(const nombreHoja of wb.SheetNames){
-      const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], {header:1, raw:true, defval:""});
-      const r = desgloseParsearFilas(filas);
-      if(!mejor || r.items.length > mejor.items.length) mejor = { ...r, hoja:nombreHoja, filasLeidas:filas.length };
+    const hojas = wb.SheetNames.map(n=>{
+      const filas = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, defval:""});
+      return { nombre:n, filas, r: desgloseParsearFilas(filas) };
+    });
+    const hP = hojas.find(h=>/proveed|cxp|por\s*pagar|^pagar/i.test(h.nombre) && h.r.items.length);
+    const hC = hojas.find(h=>/client|cxc|por\s*cobrar|^cobrar/i.test(h.nombre) && h.r.items.length);
+    const partes = [];
+    if(hP && hC){
+      partes.push({ tipo:"proveedores", hoja:hP.nombre, ...hP.r, filasHoja:hP.filas });
+      partes.push({ tipo:"clientes", hoja:hC.nombre, ...hC.r, filasHoja:hC.filas });
+    }else{
+      // una sola lista: prefiere la hoja cuyo nombre coincide con la pestaña actual; si no, la que más filas válidas tenga
+      const reTab = desgloseTab==="proveedores" ? /proveed|cxp|pagar/i : /client|cxc|cobrar/i;
+      let mejor = hojas.filter(h=>reTab.test(h.nombre) && h.r.items.length)[0];
+      if(!mejor) mejor = hojas.slice().sort((a,b)=>b.r.items.length-a.r.items.length)[0];
+      if(mejor && mejor.r.items.length) partes.push({ tipo:desgloseTab, hoja:mejor.nombre, ...mejor.r, filasHoja:mejor.filas });
     }
-    if(!mejor || !mejor.items.length){ host.innerHTML = `<div class="helpNote" style="color:var(--danger);">No se encontraron filas válidas. Revisa que el Excel tenga RUC/código, nombre y valor.</div>`; desglosePreview = null; return; }
-    desglosePreview = { tipo: desgloseTab, archivo: file.name, ...mejor };
+    if(!partes.length){ host.innerHTML = `<div class="helpNote" style="color:var(--danger);">No se encontraron filas válidas. Revisa que el Excel tenga RUC/código, nombre y valor.</div>`; desglosePreview = null; return; }
+    const corte = desgloseDetectarCorte(partes[0].filasHoja);
+    partes.forEach(p=>delete p.filasHoja);
+    const cc = document.getElementById("desgloseCorte");
+    if(corte && cc && !cc.value) cc.value = corte;
+    desglosePreview = { archivo:file.name, partes };
     pintarPreviewDesglose();
   }catch(e){
     host.innerHTML = `<div class="helpNote" style="color:var(--danger);">No se pudo leer el archivo: ${escapeHtml(e.message||String(e))}</div>`;
@@ -21986,27 +22028,35 @@ async function leerExcelDesglose(input){
   }
 }
 
+function desglosePrepararParte(p, corte){
+  const agrupar = document.getElementById("desgloseAgrupar")?.checked !== false;
+  const ap = desgloseAplicarAntiguedad(p, corte);
+  let items = agrupar ? desgloseAgruparPorRuc(ap.items) : ap.items.map(x=>{ const o={...x}; delete o.fecha; return o; });
+  items = desgloseFiltrarCeros(items);
+  return { items, labels: ap.labels };
+}
+
 function pintarPreviewDesglose(){
   const host = document.getElementById("desglosePreviewHost"); if(!host || !desglosePreview) return;
-  const p = desglosePreview, t = DESGLOSE_TIPOS[p.tipo];
-  const agrupar = document.getElementById("desgloseAgrupar")?.checked !== false;
   const corte = document.getElementById("desgloseCorte")?.value || "";
-  const ap = desgloseAplicarAntiguedad(p, corte);
-  const items = agrupar ? desgloseAgruparPorRuc(ap.items) : ap.items;
-  const total = items.reduce((s,x)=>s+x.valor,0);
-  const totE = ap.labels.map((_,k)=>items.reduce((s,x)=>s+(Array.isArray(x.edades)?(Number(x.edades[k])||0):0),0));
+  const bloques = desglosePreview.partes.map(p=>{
+    const t = DESGLOSE_TIPOS[p.tipo];
+    const pr = desglosePrepararParte(p, corte);
+    const total = pr.items.reduce((s,x)=>s+x.valor,0);
+    const totE = pr.labels.map((_,k)=>pr.items.reduce((s,x)=>s+(Array.isArray(x.edades)?(Number(x.edades[k])||0):0),0));
+    return `<div style="margin-top:8px;"><b>${t.titulo}</b> — hoja «${escapeHtml(p.hoja)}»: ${p.items.length} filas leídas → <b>${pr.items.length}</b> terceros${p.omitidas?`, ${p.omitidas} omitidas (totales/secciones)`:''}${p.encabezado?'':' · <span style="color:var(--danger);">sin encabezado: columnas A, B y C</span>'}. Total ${t.valorLabel.toLowerCase()}: <b>${bpUSD(total)}</b>
+      ${pr.labels.length ? `<br>⏳ Antigüedad ${p.edadLabels&&p.edadLabels.length?'de las columnas del Excel':`calculada desde la fecha de ${p.tipoFecha==='vencimiento'?'vencimiento':'emisión'} al corte ${corte?escapeHtml(desgloseFmtCorte(corte)):'(hoy)'}`}: ${pr.labels.map((l,k)=>`${escapeHtml(l)} <b>${bpUSD(totE[k])}</b>`).join(" · ")}` : ''}
+      <div style="overflow-x:auto;max-height:200px;margin-top:4px;"><table><thead><tr><th>RUC / Código</th><th>Nombre</th><th style="text-align:right;">${t.valorLabel}</th></tr></thead><tbody>
+        ${pr.items.slice(0,6).map(x=>`<tr><td>${escapeHtml(x.ruc)}</td><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${bpUSD(x.valor)}</td></tr>`).join("")}
+        ${pr.items.length>6?`<tr><td colspan="3" style="color:var(--muted);">… y ${pr.items.length-6} más</td></tr>`:''}
+      </tbody></table></div></div>`;
+  }).join("");
   host.innerHTML = `<div class="card" style="margin-top:10px;background:rgba(59,167,255,.08);">
-    <b>Vista previa:</b> ${escapeHtml(p.archivo)} (hoja «${escapeHtml(p.hoja)}») — ${p.items.length} filas leídas${agrupar&&items.length!==p.items.length?` → ${items.length} terceros tras sumar repetidos`:''}${p.omitidas?`, ${p.omitidas} omitidas (totales/vacías)`:''}${p.encabezado?'':' · <span style="color:var(--danger);">no se detectó encabezado: se usaron columnas A, B y C</span>'}.<br>
-    Total ${t.valorLabel.toLowerCase()}: <b>${bpUSD(total)}</b><br>
-    ${ap.labels.length ? `⏳ Antigüedad ${p.edadLabels&&p.edadLabels.length?'tomada de las columnas del Excel':`calculada desde la fecha de ${p.tipoFecha==='vencimiento'?'vencimiento':'emisión'} al corte ${corte?escapeHtml(fmtFecha(corte)):'(hoy; indica la fecha de corte para fijarla)'}`}: ${ap.labels.map((l,k)=>`${escapeHtml(l)} <b>${bpUSD(totE[k])}</b>`).join(" · ")}` : `<span style="color:var(--muted);">Sin antigüedad: el Excel no trae columnas de antigüedad ni fechas (se guardará solo el saldo).</span>`}
-    <div style="overflow-x:auto;max-height:220px;margin-top:6px;"><table><thead><tr><th>RUC / Código</th><th>Nombre</th><th style="text-align:right;">${t.valorLabel}</th></tr></thead><tbody>
-      ${items.slice(0,8).map(x=>`<tr><td>${escapeHtml(x.ruc)}</td><td>${escapeHtml(x.nombre)}</td><td style="text-align:right;">${bpUSD(x.valor)}</td></tr>`).join("")}
-      ${items.length>8?`<tr><td colspan="3" style="color:var(--muted);">… y ${items.length-8} más</td></tr>`:''}
-    </tbody></table></div>
-    <div style="margin-top:8px;display:flex;gap:8px;"><button class="btn primary" onclick="guardarDesgloseTerceros()">💾 Guardar listado</button><button class="btn" onclick="desglosePreview=null;document.getElementById('desglosePreviewHost').innerHTML='';document.getElementById('desgloseArchivo').value='';">Cancelar</button></div>
+    <b>Vista previa:</b> ${escapeHtml(desglosePreview.archivo)}${desglosePreview.partes.length>1?' — se detectaron las hojas de <b>Proveedores y Clientes</b> y se guardarán las dos':''}.
+    ${bloques}
+    <div style="margin-top:10px;display:flex;gap:8px;"><button class="btn primary" onclick="guardarDesgloseTerceros()">💾 Guardar ${desglosePreview.partes.length>1?'proveedores y clientes':'listado'}</button><button class="btn" onclick="desglosePreview=null;document.getElementById('desglosePreviewHost').innerHTML='';document.getElementById('desgloseArchivo').value='';">Cancelar</button></div>
   </div>`;
-  const chk = document.getElementById("desgloseAgrupar");
-  if(chk) chk.onchange = pintarPreviewDesglose;
+  ["desgloseAgrupar","desgloseOmitirCeros"].forEach(id=>{ const e=document.getElementById(id); if(e) e.onchange = pintarPreviewDesglose; });
   const cc = document.getElementById("desgloseCorte");
   if(cc) cc.onchange = pintarPreviewDesglose;
 }
@@ -22019,30 +22069,141 @@ function desgloseNombreEmpresa(){ return (empresasCache.find(e=>e.id===desgloseE
 
 async function guardarDesgloseTerceros(){
   if(!desglosePreview || !desgloseEmpresaId) return;
-  const tipo = desglosePreview.tipo;
-  const agrupar = document.getElementById("desgloseAgrupar")?.checked !== false;
   const modo = document.getElementById("desgloseModo")?.value || "reemplazar";
   const corte = document.getElementById("desgloseCorte")?.value || "";
-  const ap = desgloseAplicarAntiguedad(desglosePreview, corte);
-  let nuevos = agrupar ? desgloseAgruparPorRuc(ap.items) : ap.items.map(x=>{ const o={...x}; delete o.fecha; return o; });
-  let labels = ap.labels;
-  if(modo === "agregar"){
-    const prev = desgloseDatos[tipo];
-    const mismas = JSON.stringify(prev.edadLabels||[]) === JSON.stringify(labels);
-    let previos = prev.items||[];
-    if(!mismas){
-      if(!(prev.edadLabels||[]).length){ /* el listado previo no tenía antigüedad: queda "sin clasificar" */ }
-      else if(!labels.length){ labels = prev.edadLabels; }
-      else { previos = previos.map(x=>{ const o={...x}; delete o.edades; return o; }); toast("Los tramos de antigüedad del archivo difieren de los guardados: lo anterior queda «sin clasificar».", "warning", 6000); }
+  const resumen = [];
+  try{
+    for(const p of desglosePreview.partes){
+      const tipo = p.tipo;
+      const pr = desglosePrepararParte(p, corte);
+      let nuevos = pr.items, labels = pr.labels;
+      if(modo === "agregar"){
+        const prev = desgloseDatos[tipo];
+        const mismas = JSON.stringify(prev.edadLabels||[]) === JSON.stringify(labels);
+        let previos = prev.items||[];
+        if(!mismas){
+          if(!(prev.edadLabels||[]).length){ /* lo previo no tenía antigüedad: queda «sin clasificar» */ }
+          else if(!labels.length){ labels = prev.edadLabels; }
+          else { previos = previos.map(x=>{ const o={...x}; delete o.edades; return o; }); toast("Los tramos de antigüedad del archivo difieren de los guardados: lo anterior queda «sin clasificar».", "warning", 6000); }
+        }
+        nuevos = desgloseAgruparPorRuc([...previos, ...nuevos]);
+      } else if(!labels.length && (desgloseDatos[tipo].edadLabels||[]).length){
+        // al reemplazar con un archivo SIN antigüedad se conserva la antigüedad ya guardada para los terceros que coinciden (si luego se carga el reporte de antigüedad)
+        labels = [];
+      }
+      desgloseDatos[tipo] = { ...desgloseDatos[tipo], items: nuevos, corte, archivo: desglosePreview.archivo, edadLabels: labels };
+      await persistirDesgloseTipo(tipo);
+      registrarCambio("Desglose Proveedores y Clientes", modo==="agregar"?"agregar":"cargar", `${desgloseNombreEmpresa()} — ${DESGLOSE_TIPOS[tipo].titulo}: ${nuevos.length} registros (${desglosePreview.archivo})`);
+      resumen.push(`${DESGLOSE_TIPOS[tipo].plural}: ${nuevos.length}`);
     }
-    nuevos = desgloseAgruparPorRuc([...previos, ...nuevos]);
+    toast(`Guardado — ${resumen.join(" · ")}`, "success");
+    desglosePreview = null;
+    pintarDesglose(false);
+  }catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
+}
+
+/* =====================  Reporte de antigüedad del ERP  =====================
+   Formato por bloques: fila de encabezado «TIPO … DIAS V … 0 D 30 D 60 D 90 D +120 D»,
+   fila del tercero (nombre, RUC, código, saldo), sus documentos y la fila
+   «TOTAL CLIENTE/PROVEEDOR por ANTIGÜEDAD» con el saldo por tramo.
+   Se cruza con el listado ya cargado por código/RUC (o por nombre). */
+function desgloseFmtCorte(c){ const m=String(c||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString("es-EC",{year:"numeric",month:"short",day:"2-digit"}) : (c?fmtFecha(c):"-"); }
+function desgloseNorm(v){ return String(v==null?"":v).toUpperCase().replace(/\s+/g," ").trim(); }
+function desgloseParsearReporteAntiguedad(filas){
+  const cel = c => String(c==null?"":c).trim();
+  const idxHead = filas.findIndex(f=>/^TIPO/i.test(cel(f[0])) && /D[IÍ]AS/i.test(cel(f[7])));
+  if(idxHead<0) return null;
+  const hdr = filas[idxHead].slice(8,13).map(cel);
+  const estandar = hdr.length===5 && /^0\s*D$/i.test(hdr[0]) && /^30\s*D$/i.test(hdr[1]) && /^60\s*D$/i.test(hdr[2]) && /^90\s*D$/i.test(hdr[3]) && /^\+?\s*120\s*D$/i.test(hdr[4]);
+  const labels = estandar ? ["Por vencer","1-30 días","31-60 días","61-90 días","Más de 90 días"] : hdr.map(h=>h.replace(/\s+/g," "));
+  const terceros = []; let cur = null, esperaTercero = false, tipo = null;
+  for(const f of filas){
+    const c0 = cel(f[0]);
+    if(/^TIPO/i.test(c0) && /D[IÍ]AS/i.test(cel(f[7]))){ esperaTercero = true; cur = null; continue; }
+    if(/^TOTAL\s+(CLIENTE|PROVEEDOR)/i.test(c0)){
+      if(/CLIENTE/i.test(c0)) tipo = "clientes"; else tipo = "proveedores";
+      if(cur) cur.edades = f.slice(8,13).map(v=>Math.round(desgloseNumero(v)*100)/100);
+      continue;
+    }
+    if(/^TOTAL/i.test(c0)){ cur = null; continue; }
+    if(esperaTercero && c0){
+      cur = { nombre:c0, ruc:desgloseRuc(f[5]), codigo:cel(f[10]), saldo:Math.round(desgloseNumero(f[12])*100)/100, edades:null };
+      terceros.push(cur); esperaTercero = false; continue;
+    }
   }
-  desgloseDatos[tipo] = { ...desgloseDatos[tipo], items: nuevos, corte, archivo: desglosePreview.archivo, edadLabels: labels };
+  const validos = terceros.filter(t=>t.edades);
+  if(!validos.length) return null;
+  return { tipo, labels, terceros: validos, corte: desgloseDetectarCorte(filas), nombreReporte: cel((filas[0]||[])[0]) };
+}
+async function leerReporteAntiguedad(input){
+  const file = input.files && input.files[0]; if(!file) return;
+  const host = document.getElementById("desgloseRepHost");
+  host.innerHTML = `<div class="helpNote">Leyendo ${escapeHtml(file.name)}...</div>`;
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:"array"});
+    let rep = null;
+    for(const n of wb.SheetNames){
+      const filas = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, defval:""});
+      rep = desgloseParsearReporteAntiguedad(filas); if(rep) break;
+    }
+    if(!rep){ host.innerHTML = `<div class="helpNote" style="color:var(--danger);">No reconocí el formato. Debe ser el «Análisis de antigüedad» del sistema contable (bloques por cliente/proveedor con tramos 0 D, 30 D, 60 D, 90 D, +120 D).</div>`; desgloseRepPreview = null; return; }
+    rep.archivo = file.name;
+    if(rep.tipo && rep.tipo !== desgloseTab){ desgloseTab = rep.tipo; await pintarDesglose(false); }
+    desgloseRepPreview = rep;
+    pintarPreviewReporteAntiguedad();
+  }catch(e){
+    host.innerHTML = `<div class="helpNote" style="color:var(--danger);">No se pudo leer el archivo: ${escapeHtml(e.message||String(e))}</div>`; desgloseRepPreview = null;
+  }
+}
+function desgloseCruzarAntiguedad(items, rep){
+  const idx = new Map();
+  const reg = (k,i)=>{ k = desgloseNorm(k); if(k && !idx.has(k)) idx.set(k,i); };
+  items.forEach((x,i)=>{ reg(x.ruc,i); });
+  const porNombre = new Map(); items.forEach((x,i)=>{ const k=desgloseNorm(x.nombre); if(k && !porNombre.has(k)) porNombre.set(k,i); });
+  const res = { casados:[], nuevos:[], diferencias:[] };
+  rep.terceros.forEach(t=>{
+    let i = [t.codigo, t.ruc].map(desgloseNorm).filter(Boolean).map(k=>idx.get(k)).find(v=>v!==undefined);
+    if(i===undefined) i = porNombre.get(desgloseNorm(t.nombre));
+    if(i===undefined) res.nuevos.push(t); else { res.casados.push({ i, t }); if(Math.abs((Number(items[i].valor)||0)-t.saldo)>0.01) res.diferencias.push({ nombre:items[i].nombre, listado:Number(items[i].valor)||0, reporte:t.saldo }); }
+  });
+  return res;
+}
+function pintarPreviewReporteAntiguedad(){
+  const host = document.getElementById("desgloseRepHost"); const rep = desgloseRepPreview; if(!host || !rep) return;
+  const t = DESGLOSE_TIPOS[desgloseTab];
+  const items = desgloseDatos[desgloseTab].items || [];
+  const x = desgloseCruzarAntiguedad(items, rep);
+  const tot = rep.labels.map((_,k)=>rep.terceros.reduce((s,y)=>s+(y.edades[k]||0),0));
+  const totalRep = rep.terceros.reduce((s,y)=>s+y.saldo,0);
+  const sinAntig = items.length - x.casados.length;
+  host.innerHTML = `<div class="card" style="margin-top:10px;background:rgba(59,167,255,.08);">
+    <b>Reporte de antigüedad:</b> ${escapeHtml(rep.archivo)}${rep.nombreReporte?` — ${escapeHtml(rep.nombreReporte)}`:''}${rep.corte?` · corte ${escapeHtml(desgloseFmtCorte(rep.corte))}`:''}<br>
+    ${rep.terceros.length} ${t.plural} con saldo por ${t.valorLabel.toLowerCase()} de <b>${bpUSD(totalRep)}</b>: ${rep.labels.map((l,k)=>`${escapeHtml(l)} <b>${bpUSD(tot[k])}</b>`).join(" · ")}<br>
+    ✅ <b>${x.casados.length}</b> coinciden con el listado cargado (por código/RUC o nombre).
+    ${x.nuevos.length?`<br>➕ <b>${x.nuevos.length}</b> no están en el listado: ${x.nuevos.slice(0,6).map(n=>escapeHtml(n.nombre)).join("; ")}${x.nuevos.length>6?'…':''} <label style="margin-left:6px;"><input type="checkbox" id="desgloseRepAgregarNuevos" checked> agregarlos al listado</label>`:''}
+    ${x.diferencias.length?`<br>⚠️ <b>${x.diferencias.length}</b> con saldo distinto entre listado y reporte: ${x.diferencias.slice(0,4).map(d=>`${escapeHtml(d.nombre)} (${bpUSD(d.listado)} vs ${bpUSD(d.reporte)})`).join("; ")}${x.diferencias.length>4?'…':''} <span style="color:var(--muted);">(se conserva el saldo del listado; la antigüedad queda como viene en el reporte)</span>`:''}
+    ${sinAntig>0?`<br>ℹ️ ${sinAntig} del listado no aparecen en el reporte: quedarán «sin clasificar» en la antigüedad.`:''}
+    <div style="margin-top:10px;display:flex;gap:8px;"><button class="btn primary" onclick="guardarAntiguedadDesglose()">💾 Guardar antigüedad en ${t.titulo}</button><button class="btn" onclick="desgloseRepPreview=null;document.getElementById('desgloseRepHost').innerHTML='';document.getElementById('desgloseRepArchivo').value='';">Cancelar</button></div>
+  </div>`;
+}
+async function guardarAntiguedadDesglose(){
+  const rep = desgloseRepPreview; if(!rep || !desgloseEmpresaId) return;
+  const tipo = desgloseTab;
+  const d = desgloseDatos[tipo];
+  const items = (d.items||[]).map(x=>({ ...x }));
+  const x = desgloseCruzarAntiguedad(items, rep);
+  items.forEach(it=>{ delete it.edades; });
+  x.casados.forEach(({i,t})=>{ items[i].edades = [...t.edades]; });
+  if(x.nuevos.length && document.getElementById("desgloseRepAgregarNuevos")?.checked){
+    x.nuevos.forEach(n=>items.push({ ruc:n.codigo||n.ruc, nombre:n.nombre, valor:n.saldo, edades:[...n.edades] }));
+  }
+  desgloseDatos[tipo] = { ...d, items, edadLabels: rep.labels, corte: d.corte || rep.corte || "", archivoAntiguedad: rep.archivo };
   try{
     await persistirDesgloseTipo(tipo);
-    registrarCambio("Desglose Proveedores y Clientes", modo==="agregar"?"agregar":"cargar", `${desgloseNombreEmpresa()} — ${DESGLOSE_TIPOS[tipo].titulo}: ${nuevos.length} registros (${desglosePreview.archivo})`);
-    toast(`Listado de ${DESGLOSE_TIPOS[tipo].plural} guardado (${nuevos.length} registros)`, "success");
-    desglosePreview = null;
+    registrarCambio("Desglose Proveedores y Clientes", "cargar", `${desgloseNombreEmpresa()} — antigüedad de ${DESGLOSE_TIPOS[tipo].plural}: ${x.casados.length} cruzados, ${x.nuevos.length} nuevos (${rep.archivo})`);
+    toast(`Antigüedad guardada (${x.casados.length} cruzados)`, "success");
+    desgloseRepPreview = null;
     pintarDesglose(false);
   }catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
 }
@@ -22121,7 +22282,7 @@ function imprimirDesglose(){
       <tr class="tot"><td>TOTAL</td><td class="num">${bpUSD(total)}</td><td class="num">100.0%</td></tr></tbody></table><h4>Detalle por ${t.plural.slice(0,-1)}</h4>` : '';
   const totE = labels.map((_,k)=>r.tot[k]);
   const cont = `
-    <div class="doc-header"><div class="doc-title">Desglose de ${t.titulo} — ${t.valorLabel}</div><div class="doc-subtitle">${escapeHtml(desgloseNombreEmpresa())}${d.corte?` · Corte: ${escapeHtml(fmtFecha(d.corte))}`:''}</div></div>
+    <div class="doc-header"><div class="doc-title">Desglose de ${t.titulo} — ${t.valorLabel}</div><div class="doc-subtitle">${escapeHtml(desgloseNombreEmpresa())}${d.corte?` · Corte: ${escapeHtml(desgloseFmtCorte(d.corte))}`:''}</div></div>
     ${resumen}
     <table><thead><tr><th>#</th><th>RUC / Código</th><th>Nombre</th><th class="num">${t.valorLabel}</th><th class="num">%</th>${labels.map(l=>`<th class="num">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>
       ${items.map((x,n)=>`<tr><td>${n+1}</td><td>${escapeHtml(x.ruc||'')}</td><td>${escapeHtml(x.nombre||'')}</td><td class="num">${bpUSD(x.valor)}</td><td class="num">${total?((Number(x.valor)||0)/total*100).toFixed(2):'0.00'}%</td>${labels.map((_,k)=>`<td class="num">${Array.isArray(x.edades)&&Number(x.edades[k])?bpUSD(x.edades[k]):''}</td>`).join("")}</tr>`).join("")}
@@ -22129,7 +22290,6 @@ function imprimirDesglose(){
     </tbody></table>`;
   bpAbrirVentanaImpresion(cont, `Desglose de ${t.titulo} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape:labels.length>2, logo:'📄 DESGLOSE '+t.titulo.toUpperCase(), pie:'Documento generado a partir del Excel cargado en Control Documental.'});
 }
-
 
 /* =========================================================================
    MÓDULO: HISTORIAL DE CAMBIOS (auditoría de quién hizo qué)
