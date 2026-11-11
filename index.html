@@ -21774,6 +21774,7 @@ async function pintarDesglose(recargar){
       <div id="desgloseRepHost"></div>
     </div>
     <div id="desgloseEdades"></div>
+    ${desgloseHtmlPanelInformes()}
     <div class="card">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center;">
         <div>
@@ -21827,7 +21828,8 @@ function pintarEdadesDesglose(){
     <div style="overflow-x:auto;"><table><thead><tr><th>Tramo</th><th style="text-align:right;">Valor</th><th style="text-align:right;">%</th><th style="width:40%;"></th></tr></thead><tbody>
     ${filas.map(f=>`<tr><td>${escapeHtml(f.l)}</td><td class="num" style="text-align:right;">${bpUSD(f.v)}</td><td class="num" style="text-align:right;">${(f.v/base*100).toFixed(1)}%</td><td><div style="height:10px;border-radius:5px;background:${t.colorVar};opacity:.75;width:${Math.max(0,Math.min(100,f.v/base*100)).toFixed(1)}%;"></div></td></tr>`).join("")}
     <tr class="tot"><td><b>TOTAL</b></td><td class="num" style="text-align:right;"><b>${bpUSD(r.total)}</b></td><td class="num" style="text-align:right;">100%</td><td></td></tr></tbody></table></div>
-    ${noVenc!==null?`<div class="helpNote" style="margin-top:8px;">Vencido: <b>${bpUSD(r.total-noVenc-(r.sinClas>0?r.sinClas:0))}</b> (${((r.total-noVenc-(r.sinClas>0?r.sinClas:0))/base*100).toFixed(1)}% del total) · Por vencer: <b>${bpUSD(noVenc)}</b></div>`:''}</div>`;
+    ${noVenc!==null?`<div class="helpNote" style="margin-top:8px;">Vencido: <b>${bpUSD(r.total-noVenc-(r.sinClas>0?r.sinClas:0))}</b> (${((r.total-noVenc-(r.sinClas>0?r.sinClas:0))/base*100).toFixed(1)}% del total) · Por vencer: <b>${bpUSD(noVenc)}</b></div>`:''}
+    ${desgloseHtmlTramos(d)}</div>`;
 }
 
 function pintarTablaDesglose(){
@@ -21966,6 +21968,7 @@ function desgloseAgruparPorRuc(items){
     if(m.has(k)){
       const o = m.get(k); o.valor = Math.round((o.valor + x.valor)*100)/100; if(!o.nombre) o.nombre = x.nombre;
       if(Array.isArray(x.edades)){ o.edades = (o.edades||x.edades.map(()=>0)).map((v,i)=>Math.round((v+(Number(x.edades[i])||0))*100)/100); }
+      if(Array.isArray(x.docs)) o.docs = [...(o.docs||[]), ...x.docs];
     } else m.set(k, { ...x, edades: Array.isArray(x.edades) ? [...x.edades] : undefined });
   });
   return [...m.values()].map(o=>{ if(o.edades===undefined) delete o.edades; delete o.fecha; return o; });
@@ -22088,8 +22091,12 @@ async function guardarDesgloseTerceros(){
         }
         nuevos = desgloseAgruparPorRuc([...previos, ...nuevos]);
       } else if(!labels.length && (desgloseDatos[tipo].edadLabels||[]).length){
-        // al reemplazar con un archivo SIN antigüedad se conserva la antigüedad ya guardada para los terceros que coinciden (si luego se carga el reporte de antigüedad)
-        labels = [];
+        // al reemplazar con un archivo SIN antigüedad se conserva la antigüedad ya guardada de los terceros cuyo saldo no cambió
+        const prevD = desgloseDatos[tipo];
+        const kx = z => z.ruc ? "r:"+z.ruc : "n:"+String(z.nombre||"").toLowerCase();
+        const pm = new Map(); (prevD.items||[]).forEach(z=>{ if(Array.isArray(z.edades)) pm.set(kx(z), z); });
+        nuevos = nuevos.map(z=>{ const p = pm.get(kx(z)); if(p && Math.abs((Number(p.valor)||0)-(Number(z.valor)||0))<0.01){ const o = { ...z, edades:p.edades }; if(p.docs) o.docs = p.docs; return o; } return z; });
+        labels = prevD.edadLabels;
       }
       desgloseDatos[tipo] = { ...desgloseDatos[tipo], items: nuevos, corte, archivo: desglosePreview.archivo, edadLabels: labels };
       await persistirDesgloseTipo(tipo);
@@ -22109,32 +22116,141 @@ async function guardarDesgloseTerceros(){
    Se cruza con el listado ya cargado por código/RUC (o por nombre). */
 function desgloseFmtCorte(c){ const m=String(c||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString("es-EC",{year:"numeric",month:"short",day:"2-digit"}) : (c?fmtFecha(c):"-"); }
 function desgloseNorm(v){ return String(v==null?"":v).toUpperCase().replace(/\s+/g," ").trim(); }
+const DESGLOSE_MES = {jan:1,ene:1,feb:2,mar:3,apr:4,abr:4,may:5,jun:6,jul:7,aug:8,ago:8,sep:9,set:9,oct:10,nov:11,dec:12,dic:12};
+const DESGLOSE_TRAMOS_DEF = [0,30,60,90]; // límites (días vencidos) de los tramos estándar del sistema contable
+function desgloseR2(n){ return Math.round((Number(n)||0)*100)/100; }
+/* Fecha → "AAAA-MM-DD" (acepta «13/Dec/2024», «13/12/2024», serial de Excel, Date) */
+function desgloseFechaISO(v){
+  if(v==null || v==="") return "";
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/\-. ]([A-Za-z]{3})[A-Za-z]*[\/\-. ](\d{4})/);
+  if(m && DESGLOSE_MES[m[2].toLowerCase()]) return `${m[3]}-${String(DESGLOSE_MES[m[2].toLowerCase()]).padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+  const d = desgloseFecha(v); if(!d) return "";
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+/* Reporte «Análisis de antigüedad» del ERP (clientes o proveedores). Detecta las columnas
+   por su encabezado (DIAS V + 5 tramos, FEC VENC, CI/RUC, CODIGO), de modo que sirve
+   para el de clientes y el de proveedores aunque las columnas estén corridas.
+   Guarda además cada documento [vencimiento, valor] para poder redefinir los tramos. */
 function desgloseParsearReporteAntiguedad(filas){
   const cel = c => String(c==null?"":c).trim();
-  const idxHead = filas.findIndex(f=>/^TIPO/i.test(cel(f[0])) && /D[IÍ]AS/i.test(cel(f[7])));
+  const esHead = f => /^TIPO/i.test(cel(f[0])) && (f||[]).some(c=>/D[IÍ]AS\s*V/i.test(cel(c)));
+  const idxHead = filas.findIndex(esHead);
   if(idxHead<0) return null;
-  const hdr = filas[idxHead].slice(8,13).map(cel);
-  const estandar = hdr.length===5 && /^0\s*D$/i.test(hdr[0]) && /^30\s*D$/i.test(hdr[1]) && /^60\s*D$/i.test(hdr[2]) && /^90\s*D$/i.test(hdr[3]) && /^\+?\s*120\s*D$/i.test(hdr[4]);
+  const hf = filas[idxHead];
+  const cDias = hf.findIndex(c=>/D[IÍ]AS\s*V/i.test(cel(c)));
+  const cVenc = hf.findIndex(c=>/VENC/i.test(cel(c)));
+  const hdr = hf.slice(cDias+1, cDias+6).map(cel);
+  if(hdr.length<5) return null;
+  const norm = hdr.map(h=>h.replace(/[\s+dD]/g,""));
+  const estandar = norm.join("|")==="0|30|60|90|120";
   const labels = estandar ? ["Por vencer","1-30 días","31-60 días","61-90 días","Más de 90 días"] : hdr.map(h=>h.replace(/\s+/g," "));
-  const terceros = []; let cur = null, esperaTercero = false, tipo = null;
+  let cRuc = 5, cCod = 10;
+  for(let i=idxHead-1;i>=Math.max(0,idxHead-8);i--){
+    const r = filas[i]||[]; const a = r.findIndex(c=>/CI\s*\/?\s*RUC/i.test(cel(c)));
+    if(a>=0){ cRuc = a; const b = r.findIndex(c=>/CODIGO/i.test(cel(c))); if(b>=0) cCod = b; break; }
+  }
+  const cSal = cDias+5;
+  const terceros = []; let cur = null, tipo = null, seen = false;
   for(const f of filas){
     const c0 = cel(f[0]);
-    if(/^TIPO/i.test(c0) && /D[IÍ]AS/i.test(cel(f[7]))){ esperaTercero = true; cur = null; continue; }
-    if(/^TOTAL\s+(CLIENTE|PROVEEDOR)/i.test(c0)){
-      if(/CLIENTE/i.test(c0)) tipo = "clientes"; else tipo = "proveedores";
-      if(cur) cur.edades = f.slice(8,13).map(v=>Math.round(desgloseNumero(v)*100)/100);
-      continue;
+    if(esHead(f)){ seen = true; cur = null; continue; }
+    if(!seen) continue;
+    const m = c0.match(/^TOTAL\s+(CLIENTE|PROVEEDOR)\s+por/i);
+    if(m){
+      tipo = /CLIENTE/i.test(m[1]) ? "clientes" : "proveedores";
+      if(cur) cur.edades = f.slice(cDias+1, cDias+6).map(v=>desgloseR2(desgloseNumero(v)));
+      cur = null; continue;
     }
     if(/^TOTAL/i.test(c0)){ cur = null; continue; }
-    if(esperaTercero && c0){
-      cur = { nombre:c0, ruc:desgloseRuc(f[5]), codigo:cel(f[10]), saldo:Math.round(desgloseNumero(f[12])*100)/100, edades:null };
-      terceros.push(cur); esperaTercero = false; continue;
+    if(!c0 || /^NOMBRE/i.test(c0)) continue;
+    if(cur){
+      const val = desgloseR2(f.slice(cDias+1, cDias+6).reduce((s,x)=>s+desgloseNumero(x),0));
+      const fv = cVenc>=0 ? desgloseFechaISO(f[cVenc]) : "";
+      if(fv) cur.docs.push([fv, val]);
+      continue;
     }
+    cur = { nombre:c0, ruc:desgloseRuc(f[cRuc]), codigo:cel(f[cCod]), saldo:desgloseR2(desgloseNumero(f[cSal])), edades:null, docs:[] };
+    terceros.push(cur);
   }
   const validos = terceros.filter(t=>t.edades);
   if(!validos.length) return null;
-  return { tipo, labels, terceros: validos, corte: desgloseDetectarCorte(filas), nombreReporte: cel((filas[0]||[])[0]) };
+  const conDocs = validos.some(t=>t.docs.length);
+  const descuadre = validos.filter(t=>Math.abs(t.edades.reduce((s,v)=>s+v,0)-t.saldo)>0.02).length;
+  return { tipo, labels, terceros: validos, corte: desgloseDetectarCorte(filas), nombreReporte: cel((filas[0]||[])[0]), conDocs, descuadre, estandar };
 }
+
+/* ---------- Tramos de antigüedad editables ---------- */
+function desgloseEtiquetasTramos(lim){
+  const out = [];
+  lim.forEach((L,k)=>{ out.push(k===0 ? (L===0 ? "Por vencer" : `Hasta ${L} días`) : `${lim[k-1]+1}-${L} días`); });
+  out.push(`Más de ${lim[lim.length-1]} días`);
+  return out;
+}
+function desgloseParseLimites(txt){
+  const a = String(txt||"").split(/[\s,;]+/).filter(Boolean).map(Number);
+  if(!a.length || a.length>9) return null;
+  for(let i=0;i<a.length;i++){ if(!Number.isInteger(a[i]) || a[i]<0 || (i>0 && a[i]<=a[i-1])) return null; }
+  return a;
+}
+/* Recalcula la antigüedad de cada tercero a partir de sus documentos (vencimiento y valor). */
+function desgloseRecalcularItems(items, lim, corteISO){
+  const corte = desgloseFecha(corteISO); if(!corte) return null;
+  const labels = desgloseEtiquetasTramos(lim);
+  let sinDocs = 0, ajustados = 0;
+  const out = items.map(x=>{
+    if(!Array.isArray(x.docs) || !x.docs.length){ const o = { ...x }; if(Array.isArray(o.edades)) sinDocs++; delete o.edades; return o; }
+    const e = labels.map(()=>0);
+    x.docs.forEach(([v,val])=>{
+      const fe = desgloseFecha(v); if(!fe) return;
+      const dias = Math.round((corte - fe)/86400000);
+      let k = lim.length; for(let j=0;j<lim.length;j++){ if(dias<=lim[j]){ k = j; break; } }
+      e[k] += Number(val)||0;
+    });
+    let ed = e.map(desgloseR2);
+    const dif = desgloseR2((Number(x.valor)||0) - ed.reduce((s,v)=>s+v,0));
+    if(Math.abs(dif)>=0.01){
+      let kk = 0; ed.forEach((v,j)=>{ if(Math.abs(v)>Math.abs(ed[kk])) kk = j; });
+      ed[kk] = desgloseR2(ed[kk]+dif); ajustados++;
+    }
+    return { ...x, edades: ed };
+  });
+  return { items: out, labels, sinDocs, ajustados };
+}
+function desgloseTieneDocs(d){ return (d.items||[]).some(x=>Array.isArray(x.docs) && x.docs.length); }
+async function aplicarTramosDesglose(restablecer){
+  const tipo = desgloseTab; const d = desgloseDatos[tipo];
+  const lim = restablecer ? DESGLOSE_TRAMOS_DEF.slice() : desgloseParseLimites(document.getElementById("desgloseTramosTxt")?.value);
+  if(!lim){ toast("Escribe los días límite en orden creciente, separados por coma (ej.: 0,30,60,90,180,360)", "warning", 6000); return; }
+  const corte = document.getElementById("desgloseTramosCorte")?.value || d.corte || "";
+  if(!corte){ toast("Indica la fecha de corte de la antigüedad", "warning"); return; }
+  const r = desgloseRecalcularItems(d.items||[], lim, corte);
+  if(!r){ toast("Fecha de corte no válida", "warning"); return; }
+  desgloseDatos[tipo] = { ...d, items:r.items, edadLabels:r.labels, tramos:lim, corte };
+  try{
+    await persistirDesgloseTipo(tipo);
+    registrarCambio("Desglose Proveedores y Clientes","editar",`${desgloseNombreEmpresa()} — tramos de antigüedad de ${DESGLOSE_TIPOS[tipo].plural}: ${r.labels.join(" | ")} (corte ${corte})`);
+    toast(`Tramos aplicados: ${r.labels.join(" · ")}${r.sinDocs?` — ${r.sinDocs} sin documentos quedan «sin clasificar»`:''}`, "success", 6000);
+    pintarDesglose(false);
+  }catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
+}
+function desgloseTramosPreset(txt){ const e = document.getElementById("desgloseTramosTxt"); if(e) e.value = txt; }
+function desgloseHtmlTramos(d){
+  if(!desgloseTieneDocs(d)) return `<div class="helpNote" style="margin-top:8px;">ℹ️ Para <b>editar los días de los tramos</b> carga el <b>reporte de antigüedad del sistema</b> (guarda el vencimiento de cada documento y permite recalcular con otros tramos).</div>`;
+  const lim = (d.tramos && d.tramos.length) ? d.tramos : DESGLOSE_TRAMOS_DEF;
+  return `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#ddd);">
+    <b>⚙️ Editar días de los tramos</b>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:6px;">
+      <div class="field" style="margin:0;flex:1;min-width:220px;"><label>Días límite de cada tramo (separados por coma)</label><input type="text" id="desgloseTramosTxt" value="${escapeHtml(lim.join(','))}" placeholder="0,30,60,90"></div>
+      <div class="field" style="margin:0;"><label>Antigüedad al corte</label><input type="date" id="desgloseTramosCorte" value="${escapeHtml(d.corte||'')}"></div>
+      <button class="btn primary small" onclick="aplicarTramosDesglose()">Aplicar tramos</button>
+      <button class="btn small" onclick="aplicarTramosDesglose(true)">Restablecer</button>
+    </div>
+    <div style="margin-top:6px;font-size:12px;color:var(--muted);">Ejemplos: <a href="#" onclick="desgloseTramosPreset('0,30,60,90');return false;">0,30,60,90</a> · <a href="#" onclick="desgloseTramosPreset('0,30,60,90,180,360');return false;">0,30,60,90,180,360</a> · <a href="#" onclick="desgloseTramosPreset('0,15,30,45,60,90');return false;">0,15,30,45,60,90</a>. El primer número separa «por vencer» (0) de lo vencido; el último abre el tramo «Más de…». Si cambias la fecha de corte, se recalculan los días vencidos de cada documento.</div>
+  </div>`;
+}
+
 async function leerReporteAntiguedad(input){
   const file = input.files && input.files[0]; if(!file) return;
   const host = document.getElementById("desgloseRepHost");
@@ -22191,21 +22307,168 @@ async function guardarAntiguedadDesglose(){
   const rep = desgloseRepPreview; if(!rep || !desgloseEmpresaId) return;
   const tipo = desgloseTab;
   const d = desgloseDatos[tipo];
-  const items = (d.items||[]).map(x=>({ ...x }));
+  let items = (d.items||[]).map(x=>({ ...x }));
   const x = desgloseCruzarAntiguedad(items, rep);
-  items.forEach(it=>{ delete it.edades; });
-  x.casados.forEach(({i,t})=>{ items[i].edades = [...t.edades]; });
+  items.forEach(it=>{ delete it.edades; delete it.docs; });
+  x.casados.forEach(({i,t})=>{ items[i].edades = [...t.edades]; if(t.docs && t.docs.length) items[i].docs = t.docs.map(p=>[p[0],p[1]]); });
   if(x.nuevos.length && document.getElementById("desgloseRepAgregarNuevos")?.checked){
-    x.nuevos.forEach(n=>items.push({ ruc:n.codigo||n.ruc, nombre:n.nombre, valor:n.saldo, edades:[...n.edades] }));
+    x.nuevos.forEach(n=>{ const it = { ruc:n.codigo||n.ruc, nombre:n.nombre, valor:n.saldo, edades:[...n.edades] }; if(n.docs && n.docs.length) it.docs = n.docs.map(p=>[p[0],p[1]]); items.push(it); });
   }
-  desgloseDatos[tipo] = { ...d, items, edadLabels: rep.labels, corte: d.corte || rep.corte || "", archivoAntiguedad: rep.archivo };
+  const corte = rep.corte || d.corte || "";
+  let labels = rep.labels, tramos = null, ajustados = 0;
+  if(rep.conDocs && corte){
+    // se recalcula desde los documentos con los tramos vigentes (los del sistema por defecto), cuadrando cada tercero con su saldo
+    tramos = (d.tramos && d.tramos.length) ? d.tramos : DESGLOSE_TRAMOS_DEF.slice();
+    const r = desgloseRecalcularItems(items, tramos, corte);
+    if(r){ items = r.items; labels = r.labels; ajustados = r.ajustados; }
+  }
+  desgloseDatos[tipo] = { ...d, items, edadLabels: labels, corte, archivoAntiguedad: rep.archivo };
+  if(tramos) desgloseDatos[tipo].tramos = tramos; else delete desgloseDatos[tipo].tramos;
   try{
     await persistirDesgloseTipo(tipo);
     registrarCambio("Desglose Proveedores y Clientes", "cargar", `${desgloseNombreEmpresa()} — antigüedad de ${DESGLOSE_TIPOS[tipo].plural}: ${x.casados.length} cruzados, ${x.nuevos.length} nuevos (${rep.archivo})`);
-    toast(`Antigüedad guardada (${x.casados.length} cruzados)`, "success");
+    toast(`Antigüedad guardada (${x.casados.length} cruzados${ajustados?`, ${ajustados} ajustados al saldo`:''})`, "success");
     desgloseRepPreview = null;
     pintarDesglose(false);
   }catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
+}
+
+/* =====================  Informes de cartera (ejecutivo / general)  ===================== */
+function desgloseMetricas(d, tipo){
+  const items = d.items||[]; const labels = d.edadLabels||[];
+  const r = desgloseResumenEdades(d);
+  const total = r.total;
+  const orden = [...items].sort((a,b)=>(Number(b.valor)||0)-(Number(a.valor)||0));
+  const suma = n => orden.slice(0,n).reduce((s,x)=>s+(Number(x.valor)||0),0);
+  const conEdad = labels.length>0 && items.some(x=>Array.isArray(x.edades));
+  const primeroVencer = conEdad && /vencer/i.test(labels[0]);
+  const porVencer = primeroVencer ? r.tot[0] : null;
+  const vencido = primeroVencer ? r.tot.slice(1).reduce((s,v)=>s+v,0) : null;
+  const ultimo = conEdad ? r.tot[labels.length-1] : null;
+  let acum = 0, nPareto = 0;
+  for(const x of orden){ if(total>0 && acum >= total*0.8) break; acum += Number(x.valor)||0; nPareto++; }
+  // días promedio de atraso (ponderado por valor) de lo vencido, si hay documentos
+  let sw = 0, sd = 0;
+  const corte = desgloseFecha(d.corte);
+  if(corte) items.forEach(x=>(x.docs||[]).forEach(([v,val])=>{ const fe = desgloseFecha(v); if(!fe) return; const dias = Math.round((corte-fe)/86400000); if(dias>0 && val>0){ sw += val; sd += val*dias; } }));
+  return { n:items.length, total, labels, tot:r.tot, sinClas:r.sinClas, conEdad, primeroVencer, porVencer, vencido, ultimo, top1:suma(1), top5:suma(5), top10:suma(10), nPareto, diasProm: sw>0 ? sd/sw : null, mayor: orden[0]||null, orden };
+}
+function desgloseVencidoItem(x, primeroVencer){ return primeroVencer && Array.isArray(x.edades) ? (Number(x.valor)||0)-(Number(x.edades[0])||0) : null; }
+function desgloseColorTramo(k, n){
+  const pal = ["#2e8b57","#8fbf3a","#e6c229","#ee8f2b","#d64545","#a02020","#701515","#4d0d0d","#330909"];
+  if(n<=1) return pal[0];
+  return pal[Math.min(pal.length-1, Math.round(k/(n-1)*(Math.min(n,pal.length)-1)))];
+}
+const DESGLOSE_PRINT_COLOR = "-webkit-print-color-adjust:exact;print-color-adjust:exact;";
+function desglosePct(v, base){ return base ? (v/base*100).toFixed(1)+"%" : "0.0%"; }
+function desgloseKpi(titulo, valor, sub, color){
+  return `<div style="flex:1;min-width:120px;border:1px solid #b8c4d4;border-left:5px solid ${color||'#1f3a5f'};border-radius:5px;padding:8px 10px;${DESGLOSE_PRINT_COLOR}"><div style="font-size:9.5px;text-transform:uppercase;color:#555;letter-spacing:.4px;">${titulo}</div><div style="font-size:17px;font-weight:800;margin:2px 0;">${valor}</div><div style="font-size:10px;color:#555;">${sub||''}</div></div>`;
+}
+function desgloseCabeceraInforme(t, d, subtitulo){
+  return `<div class="doc-header"><div class="doc-title">${subtitulo} — ${escapeHtml(t.titulo)} (${t.valorLabel})</div><div class="doc-subtitle">${escapeHtml(desgloseNombreEmpresa())}${d.corte?` · Corte: ${escapeHtml(desgloseFmtCorte(d.corte))}`:''}</div></div>`;
+}
+function desgloseTablaTramosHtml(m, t){
+  if(!m.conEdad) return `<p style="color:#777;">Este listado no tiene antigüedad cargada.</p>`;
+  const filas = m.labels.map((l,k)=>({l, v:m.tot[k], c:desgloseColorTramo(k,m.labels.length)}));
+  if(Math.abs(m.sinClas)>=0.01) filas.push({l:"Sin clasificar", v:m.sinClas, c:"#999"});
+  return `<table style="width:100%;"><thead><tr><th>Tramo</th><th class="num">Valor</th><th class="num">%</th><th style="width:45%;"></th></tr></thead><tbody>
+    ${filas.map(f=>`<tr><td>${escapeHtml(f.l)}</td><td class="num">${bpUSD(f.v)}</td><td class="num">${desglosePct(f.v,m.total)}</td><td><div style="height:11px;width:${Math.max(0,Math.min(100,m.total?f.v/m.total*100:0)).toFixed(1)}%;background:${f.c};border-radius:3px;${DESGLOSE_PRINT_COLOR}"></div></td></tr>`).join("")}
+    <tr class="tot"><td>TOTAL</td><td class="num">${bpUSD(m.total)}</td><td class="num">100.0%</td><td></td></tr></tbody></table>`;
+}
+function desgloseLecturaEjecutiva(m, t, tipo){
+  const L = [];
+  const u = tipo==="clientes" ? "cobrar" : "pagar";
+  const sing = t.plural.slice(0,-1);
+  L.push(`La cartera por ${u} suma <b>${bpUSD(m.total)}</b> repartida en <b>${m.n}</b> ${t.plural}.`);
+  if(m.vencido!==null && m.total) L.push(`Está <b>vencido ${bpUSD(m.vencido)} (${desglosePct(m.vencido,m.total)})</b> y por vencer ${bpUSD(m.porVencer)} (${desglosePct(m.porVencer,m.total)}).`);
+  if(m.conEdad && m.ultimo!==null && m.total && m.labels.length>1) L.push(`El tramo <b>${escapeHtml(m.labels[m.labels.length-1])}</b> concentra ${bpUSD(m.ultimo)} (${desglosePct(m.ultimo,m.total)} del total).`);
+  if(m.mayor && m.total) L.push(`El mayor ${sing} es <b>${escapeHtml(m.mayor.nombre||m.mayor.ruc)}</b> con ${bpUSD(m.mayor.valor)} (${desglosePct(m.top1,m.total)}); los 5 mayores suman ${desglosePct(m.top5,m.total)} y los 10 mayores ${desglosePct(m.top10,m.total)}.`);
+  if(m.total && m.n>1) L.push(`<b>${m.nPareto}</b> ${m.nPareto===1?sing:t.plural} (${(m.nPareto/m.n*100).toFixed(0)}% de los ${t.plural}) acumulan el 80% del saldo.`);
+  if(m.diasProm!==null) L.push(`Los documentos vencidos tienen un atraso promedio ponderado de <b>${m.diasProm.toFixed(0)} días</b>.`);
+  if(Math.abs(m.sinClas)>=0.01) L.push(`Hay ${bpUSD(m.sinClas)} sin clasificar por antigüedad.`);
+  return `<ul style="margin:6px 0 10px 18px;padding:0;line-height:1.55;">${L.map(x=>`<li>${x}</li>`).join("")}</ul>`;
+}
+function desgloseHtmlEjecutivo(tipo){
+  const t = DESGLOSE_TIPOS[tipo]; const d = desgloseDatos[tipo];
+  const m = desgloseMetricas(d, tipo);
+  const color = tipo==="clientes" ? "#1e7e34" : "#b36b00";
+  const top = m.orden.slice(0,10);
+  const lbl = m.labels;
+  const ultL = m.conEdad ? lbl[lbl.length-1] : "";
+  return `${desgloseCabeceraInforme(t, d, "Informe ejecutivo de cartera")}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">
+      ${desgloseKpi(`Total ${t.valorLabel.toLowerCase()}`, bpUSD(m.total), `${m.n} ${t.plural}`, color)}
+      ${m.vencido!==null ? desgloseKpi("Vencido", bpUSD(m.vencido), `${desglosePct(m.vencido,m.total)} del total`, "#d64545") : ""}
+      ${m.conEdad && m.labels.length>1 ? desgloseKpi(escapeHtml(ultL), bpUSD(m.ultimo), `${desglosePct(m.ultimo,m.total)} del total`, "#a02020") : ""}
+      ${desgloseKpi("Concentración", desglosePct(m.top10,m.total), `10 mayores · el mayor ${desglosePct(m.top1,m.total)}`, "#1f3a5f")}
+    </div>
+    <h4 style="margin:10px 0 2px;">Lectura ejecutiva</h4>${desgloseLecturaEjecutiva(m, t, tipo)}
+    <h4 style="margin:10px 0 2px;">Antigüedad de la cartera</h4>${desgloseTablaTramosHtml(m, t)}
+    <h4 style="margin:10px 0 2px;">Los 10 mayores ${t.plural}</h4>
+    <table><thead><tr><th>#</th><th>Nombre</th><th class="num">${t.valorLabel}</th><th class="num">% total</th>${m.primeroVencer?`<th class="num">Vencido</th>`:''}${m.conEdad&&lbl.length>1?`<th class="num">${escapeHtml(ultL)}</th>`:''}</tr></thead><tbody>
+      ${top.map((x,n)=>{ const v = desgloseVencidoItem(x, m.primeroVencer); const ul = m.conEdad && Array.isArray(x.edades) ? (Number(x.edades[lbl.length-1])||0) : 0;
+        return `<tr><td>${n+1}</td><td>${escapeHtml(x.nombre||x.ruc||'')}</td><td class="num">${bpUSD(x.valor)}</td><td class="num">${desglosePct(Number(x.valor)||0,m.total)}</td>${m.primeroVencer?`<td class="num">${v===null?'—':bpUSD(v)}</td>`:''}${m.conEdad&&lbl.length>1?`<td class="num">${ul?bpUSD(ul):'—'}</td>`:''}</tr>`; }).join("")}
+      <tr class="tot"><td colspan="2">Subtotal 10 mayores</td><td class="num">${bpUSD(m.top10)}</td><td class="num">${desglosePct(m.top10,m.total)}</td>${m.primeroVencer?`<td></td>`:''}${m.conEdad&&lbl.length>1?`<td></td>`:''}</tr>
+    </tbody></table>`;
+}
+function desgloseHtmlConsolidado(){
+  const t1 = DESGLOSE_TIPOS.clientes, t2 = DESGLOSE_TIPOS.proveedores;
+  const d1 = desgloseDatos.clientes, d2 = desgloseDatos.proveedores;
+  const a = desgloseMetricas(d1,"clientes"), b = desgloseMetricas(d2,"proveedores");
+  const f = (x,fn)=> x===null||x===undefined ? "—" : fn(x);
+  const corte = d1.corte || d2.corte || "";
+  const neto = a.total - b.total;
+  return `<div class="doc-header"><div class="doc-title">Informe ejecutivo de cartera — Resumen consolidado</div><div class="doc-subtitle">${escapeHtml(desgloseNombreEmpresa())}${corte?` · Corte: ${escapeHtml(desgloseFmtCorte(corte))}`:''}</div></div>
+    <table><thead><tr><th>Concepto</th><th class="num">Por cobrar (clientes)</th><th class="num">Por pagar (proveedores)</th></tr></thead><tbody>
+      <tr><td>Número de terceros</td><td class="num">${a.n}</td><td class="num">${b.n}</td></tr>
+      <tr><td><b>Saldo total</b></td><td class="num"><b>${bpUSD(a.total)}</b></td><td class="num"><b>${bpUSD(b.total)}</b></td></tr>
+      <tr><td>Por vencer</td><td class="num">${f(a.porVencer,bpUSD)}</td><td class="num">${f(b.porVencer,bpUSD)}</td></tr>
+      <tr><td>Vencido</td><td class="num">${f(a.vencido,bpUSD)}</td><td class="num">${f(b.vencido,bpUSD)}</td></tr>
+      <tr><td>% vencido sobre el total</td><td class="num">${a.vencido!==null?desglosePct(a.vencido,a.total):'—'}</td><td class="num">${b.vencido!==null?desglosePct(b.vencido,b.total):'—'}</td></tr>
+      <tr><td>Atraso promedio ponderado de lo vencido (días)</td><td class="num">${f(a.diasProm,v=>v.toFixed(0))}</td><td class="num">${f(b.diasProm,v=>v.toFixed(0))}</td></tr>
+      <tr><td>Concentración de los 10 mayores</td><td class="num">${desglosePct(a.top10,a.total)}</td><td class="num">${desglosePct(b.top10,b.total)}</td></tr>
+      <tr class="tot"><td>Posición neta (por cobrar − por pagar)</td><td class="num" colspan="2" style="text-align:center;">${neto<0?'−':''}${bpUSD(Math.abs(neto))} ${neto>=0?'(a favor)':'(en contra)'}</td></tr>
+    </tbody></table>
+    <p style="font-size:10px;color:#666;">Los tramos de antigüedad de cada cartera pueden diferir; el detalle está en los informes por cartera.</p>`;
+}
+function desgloseHtmlGeneral(tipo){
+  const t = DESGLOSE_TIPOS[tipo]; const d = desgloseDatos[tipo];
+  const m = desgloseMetricas(d, tipo);
+  const items = m.orden; const labels = m.labels; const total = m.total;
+  let acum = 0;
+  return `${desgloseCabeceraInforme(t, d, "Informe general de cartera")}
+    ${m.conEdad ? `<h4 style="margin:6px 0 2px;">Resumen por antigüedad</h4>${desgloseTablaTramosHtml(m, t)}<h4 style="margin:10px 0 2px;">Detalle por ${t.plural.slice(0,-1)}</h4>` : ''}
+    <table><thead><tr><th style="width:3%;">#</th><th style="width:10%;">RUC / Código</th><th style="width:26%;">Nombre</th><th class="num">${t.valorLabel}</th><th class="num">%</th><th class="num">% acum.</th>${labels.map(l=>`<th class="num">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>
+      ${items.map((x,n)=>{ acum += Number(x.valor)||0; return `<tr><td>${n+1}</td><td>${escapeHtml(x.ruc||'')}</td><td>${escapeHtml(x.nombre||'')}</td><td class="num">${bpUSD(x.valor)}</td><td class="num">${desglosePct(Number(x.valor)||0,total)}</td><td class="num">${desglosePct(acum,total)}</td>${labels.map((_,k)=>`<td class="num">${Array.isArray(x.edades)&&Number(x.edades[k])?bpUSD(x.edades[k]):'—'}</td>`).join("")}</tr>`; }).join("")}
+      <tr class="tot"><td colspan="3">TOTAL (${m.n} ${t.plural})</td><td class="num">${bpUSD(total)}</td><td class="num">100.0%</td><td></td>${m.tot.map(v=>`<td class="num">${bpUSD(v)}</td>`).join("")}</tr>
+    </tbody></table>`;
+}
+function desgloseHtmlPanelInformes(){
+  const nC = (desgloseDatos.clientes.items||[]).length, nP = (desgloseDatos.proveedores.items||[]).length;
+  return `<div class="card" id="desgloseInformes">
+    <h4 style="margin-top:0;">🖨️ Informes de cartera para imprimir</h4>
+    <p class="helpNote">Elige qué informe y de qué cartera. <b>Ejecutivo</b>: indicadores, lectura, antigüedad y los 10 mayores. <b>General</b>: todo el detalle por tercero con sus tramos. Cargados: ${nC} clientes · ${nP} proveedores.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+      <div class="field" style="margin:0;"><label>Informe</label><select id="desgloseInfTipo"><option value="ejecutivo">Ejecutivo</option><option value="general">General (detalle)</option><option value="ambos">Ejecutivo + General</option></select></div>
+      <div class="field" style="margin:0;"><label>Cartera</label><select id="desgloseInfCartera"><option value="clientes" ${desgloseTab==='clientes'?'selected':''}>Clientes (por cobrar)</option><option value="proveedores" ${desgloseTab==='proveedores'?'selected':''}>Proveedores (por pagar)</option><option value="ambas">Clientes y proveedores</option></select></div>
+      <button class="btn primary" onclick="imprimirInformesDesglose()">🖨️ Imprimir informe</button>
+    </div></div>`;
+}
+function imprimirInformesDesglose(){
+  const tipoInf = document.getElementById("desgloseInfTipo")?.value || "ejecutivo";
+  const cart = document.getElementById("desgloseInfCartera")?.value || "clientes";
+  const carteras = cart==="ambas" ? ["clientes","proveedores"] : [cart];
+  const faltan = carteras.filter(c=>!(desgloseDatos[c].items||[]).length);
+  if(faltan.length){ toast(`No hay ${faltan.map(c=>DESGLOSE_TIPOS[c].plural).join(" ni ")} cargados para imprimir`, "warning"); return; }
+  const secs = [];
+  if(tipoInf!=="general"){
+    if(carteras.length>1) secs.push(desgloseHtmlConsolidado());
+    carteras.forEach(c=>secs.push(desgloseHtmlEjecutivo(c)));
+  }
+  if(tipoInf!=="ejecutivo") carteras.forEach(c=>secs.push(desgloseHtmlGeneral(c)));
+  const cont = secs.map((s,i)=> i ? `<div style="page-break-before:always;"></div>${s}` : s).join("");
+  const nombre = (tipoInf==="ejecutivo"?"Informe ejecutivo":tipoInf==="general"?"Informe general":"Informe ejecutivo y general") + " de cartera";
+  bpAbrirVentanaImpresion(cont, `${nombre} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape: tipoInf!=="ejecutivo", logo:'📊 INFORME DE CARTERA', pie:'Documento generado internamente a partir de los listados cargados en Control Documental.'});
 }
 
 function agregarFilaDesglose(){ abrirEditorFilaDesglose(-1); }
@@ -22217,7 +22480,7 @@ function abrirEditorFilaDesglose(i){
   const nombre = prompt("Nombre:", x.nombre||""); if(nombre===null) return;
   const v = prompt(`${t.valorLabel} (USD):`, x.valor===""?"":String(x.valor)); if(v===null) return;
   const fila = { ruc: desgloseRuc(ruc), nombre: nombre.trim(), valor: Math.round(desgloseNumero(v)*100)/100 };
-  if(i>=0 && Array.isArray(x.edades) && Math.abs((Number(x.valor)||0)-fila.valor)<0.005) fila.edades = x.edades; // si cambió el valor, la antigüedad de esa fila queda «sin clasificar»
+  if(i>=0 && Array.isArray(x.edades) && Math.abs((Number(x.valor)||0)-fila.valor)<0.005){ fila.edades = x.edades; if(Array.isArray(x.docs)) fila.docs = x.docs; } // si cambió el valor, la antigüedad de esa fila queda «sin clasificar»
   guardarFilaDesglose(i, fila);
 }
 async function guardarFilaDesglose(i, fila){
