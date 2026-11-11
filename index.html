@@ -12736,7 +12736,16 @@ function bpAbrirVentanaImpresion(contentHtml, titulo, opciones){
     .doc-subtitle{font-size:11px;color:#555;}
     .doc-footer{border-top:1px solid #ccc;padding-top:7px;font-size:9px;color:#888;margin-top:18px;}
     tr.tot td{font-weight:700;background:${colorTotBg};}
-    ${landscape?'div[style*="min-width:1200px"]{min-width:100% !important;}':''}
+    ${landscape?`div[style*="min-width:1200px"]{min-width:100% !important;}
+    /* Tablas anchas (p. ej. las mensuales de 14 columnas): se ajustan al ancho de la hoja en vez de salirse de los márgenes */
+    div[style*="overflow-x"], div[style*="overflow:auto"]{overflow:visible !important;max-width:100% !important;}
+    table{width:100% !important;min-width:0 !important;max-width:100% !important;table-layout:fixed;}
+    table[style*="min-width"]{min-width:0 !important;width:100% !important;}
+    table th, table td{padding:3px 3px;font-size:8.5px;overflow-wrap:anywhere;word-break:normal;}
+    table td.num, table th.num{white-space:nowrap;overflow-wrap:normal;}
+    table th:first-child, table td:first-child{width:17%;}
+    thead{display:table-header-group;} tr{page-break-inside:avoid;break-inside:avoid;}
+    *{box-sizing:border-box;} img,canvas,svg{max-width:100%;}`:''}
   </style></head><body>
     <div class="bp-header"><div class="bp-logo">${logoTxt}</div><div class="bp-sub">${escapeHtml(titulo||'')}</div></div>
     ${contentHtml}
