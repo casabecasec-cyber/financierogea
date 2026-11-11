@@ -21850,7 +21850,7 @@ function pintarTablaDesglose(){
       <td class="num" style="text-align:right;">${bpUSD(x.valor)}</td>
       <td class="num" style="text-align:right;">${total?((Number(x.valor)||0)/total*100).toFixed(2):'0.00'}%</td>
       ${labels.map((_,k)=>`<td class="num" style="text-align:right;font-size:12px;">${Array.isArray(x.edades)&&Number(x.edades[k])?bpUSD(x.edades[k]):'<span style="color:var(--muted);">—</span>'}</td>`).join("")}
-      <td style="white-space:nowrap;"><button class="btn small" onclick="editarFilaDesglose(${x._i})">Editar</button> <button class="btn small danger" onclick="eliminarFilaDesglose(${x._i})">✕</button></td></tr>`).join("")}
+      <td style="white-space:nowrap;"><button class="btn small" onclick="editarFilaDesglose(${x._i})">Editar</button> ${labels.length?`<button class="btn small" title="Editar antigüedad" onclick="editarAntiguedadFilaDesglose(${x._i})">⏳</button>`:''} <button class="btn small danger" onclick="eliminarFilaDesglose(${x._i})">✕</button></td></tr>`).join("")}
     <tr class="tot"><td colspan="3"><b>${q?'Subtotal de la búsqueda':'TOTAL'}</b></td><td class="num" style="text-align:right;"><b>${bpUSD(sub)}</b></td><td></td>${subE.map(v=>`<td class="num" style="text-align:right;font-size:12px;"><b>${bpUSD(v)}</b></td>`).join("")}<td></td></tr>
   </tbody></table></div>`;
 }
@@ -22200,6 +22200,7 @@ function desgloseRecalcularItems(items, lim, corteISO){
   const labels = desgloseEtiquetasTramos(lim);
   let sinDocs = 0, ajustados = 0;
   const out = items.map(x=>{
+    if(x.manual && Array.isArray(x.edades) && x.edades.length===labels.length) return { ...x };
     if(!Array.isArray(x.docs) || !x.docs.length){ const o = { ...x }; if(Array.isArray(o.edades)) sinDocs++; delete o.edades; return o; }
     const e = labels.map(()=>0);
     x.docs.forEach(([v,val])=>{
@@ -22235,9 +22236,33 @@ async function aplicarTramosDesglose(restablecer){
     pintarDesglose(false);
   }catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
 }
+async function aplicarEtiquetasDesglose(){
+  const d = desgloseDatos[desgloseTab]; const n = (d.edadLabels||[]).length;
+  const a = String(document.getElementById("desgloseEtiquetasTxt")?.value||"").split("|").map(z=>z.trim()).filter(Boolean);
+  if(a.length!==n){ toast(`Debes escribir ${n} nombres separados por «|»`, "warning"); return; }
+  desgloseDatos[desgloseTab] = { ...d, edadLabels:a };
+  try{ await persistirDesgloseTipo(desgloseTab); registrarCambio("Desglose Proveedores y Clientes","editar",`${desgloseNombreEmpresa()} — nombres de tramos: ${a.join(" | ")}`); pintarDesglose(false); }
+  catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
+}
+async function editarAntiguedadFilaDesglose(i){
+  const d = desgloseDatos[desgloseTab]; const x = d.items[i]; const labels = d.edadLabels||[];
+  if(!x || !labels.length) return;
+  const act = labels.map((_,k)=>Array.isArray(x.edades)?(Number(x.edades[k])||0):0);
+  const txt = prompt(`Antigüedad de «${x.nombre||x.ruc}» — saldo ${bpUSD(x.valor)}.\nValores por tramo, separados por «;» en este orden:\n${labels.join(" ; ")}`, act.join(" ; "));
+  if(txt===null) return;
+  const v = txt.split(";").map(z=>desgloseR2(desgloseNumero(z)));
+  if(v.length!==labels.length){ toast(`Debes escribir ${labels.length} valores separados por «;»`, "warning"); return; }
+  const dif = desgloseR2((Number(x.valor)||0) - v.reduce((s,z)=>s+z,0));
+  if(Math.abs(dif)>=0.01 && !confirm(`Los tramos suman ${bpUSD(v.reduce((s,z)=>s+z,0))} y el saldo es ${bpUSD(x.valor)} (diferencia ${bpUSD(dif)}). ¿Guardar igual? La diferencia quedará «sin clasificar».`)) return;
+  d.items[i] = { ...x, edades:v, manual:true };
+  try{ await persistirDesgloseTipo(desgloseTab); registrarCambio("Desglose Proveedores y Clientes","editar",`${desgloseNombreEmpresa()} — antigüedad de ${x.nombre||x.ruc}`); pintarDesglose(false); }
+  catch(e){ toast("No se pudo guardar: "+(e.message||e), "error"); }
+}
 function desgloseTramosPreset(txt){ const e = document.getElementById("desgloseTramosTxt"); if(e) e.value = txt; }
 function desgloseHtmlTramos(d){
-  if(!desgloseTieneDocs(d)) return `<div class="helpNote" style="margin-top:8px;">ℹ️ Para <b>editar los días de los tramos</b> carga el <b>reporte de antigüedad del sistema</b> (guarda el vencimiento de cada documento y permite recalcular con otros tramos).</div>`;
+  const etq = `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#ddd);"><b>✏️ Nombres de los tramos</b> <span style="font-size:12px;color:var(--muted);">(sepáralos con «|»; también puedes editar la antigüedad de cada fila con el botón ⏳)</span>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:6px;"><div class="field" style="margin:0;flex:1;min-width:260px;"><input type="text" id="desgloseEtiquetasTxt" value="${escapeHtml((d.edadLabels||[]).join(' | '))}"></div><button class="btn small" onclick="aplicarEtiquetasDesglose()">Aplicar nombres</button></div></div>`;
+  if(!desgloseTieneDocs(d)) return etq + `<div class="helpNote" style="margin-top:8px;">ℹ️ Para <b>recalcular con otros días</b> (ej. 0,30,60,90,180,360) carga el <b>reporte de antigüedad del sistema</b>: guarda el vencimiento de cada documento. Mientras tanto puedes corregir los valores de cada tercero con ⏳.</div>`;
   const lim = (d.tramos && d.tramos.length) ? d.tramos : DESGLOSE_TRAMOS_DEF;
   return `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#ddd);">
     <b>⚙️ Editar días de los tramos</b>
@@ -22247,8 +22272,8 @@ function desgloseHtmlTramos(d){
       <button class="btn primary small" onclick="aplicarTramosDesglose()">Aplicar tramos</button>
       <button class="btn small" onclick="aplicarTramosDesglose(true)">Restablecer</button>
     </div>
-    <div style="margin-top:6px;font-size:12px;color:var(--muted);">Ejemplos: <a href="#" onclick="desgloseTramosPreset('0,30,60,90');return false;">0,30,60,90</a> · <a href="#" onclick="desgloseTramosPreset('0,30,60,90,180,360');return false;">0,30,60,90,180,360</a> · <a href="#" onclick="desgloseTramosPreset('0,15,30,45,60,90');return false;">0,15,30,45,60,90</a>. El primer número separa «por vencer» (0) de lo vencido; el último abre el tramo «Más de…». Si cambias la fecha de corte, se recalculan los días vencidos de cada documento.</div>
-  </div>`;
+    <div style="margin-top:6px;font-size:12px;color:var(--muted);">Ejemplos: <a href="#" onclick="desgloseTramosPreset('0,30,60,90');return false;">0,30,60,90</a> · <a href="#" onclick="desgloseTramosPreset('0,30,60,90,180,360');return false;">0,30,60,90,180,360</a> · <a href="#" onclick="desgloseTramosPreset('0,15,30,45,60,90');return false;">0,15,30,45,60,90</a>. El primer número separa «por vencer» (0) de lo vencido; el último abre el tramo «Más de…». Si cambias la fecha de corte, se recalculan los días vencidos de cada documento. Las filas editadas a mano con ⏳ se respetan mientras no cambie el número de tramos.</div>
+  </div>` + etq;
 }
 
 async function leerReporteAntiguedad(input){
