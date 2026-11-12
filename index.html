@@ -22882,8 +22882,10 @@ let impMesInforme = 1;
 function impR2(n){ return Math.round((Number(n)||0)*100)/100; }
 function impArr(v){ return Array.isArray(v) ? v : (v && typeof v==='object' ? Object.values(v) : []); }
 function impMM(m){ return String(m).padStart(2,'0'); }
+const IMP_CAS_EXTRA = {"410": "Ventas locales gravadas tarifa variable — bruto", "420": "Ventas locales gravadas tarifa variable — neto", "430": "Ventas tarifa variable — IVA generado", "425": "Ventas locales gravadas tarifa 5% — bruto", "435": "Ventas locales gravadas tarifa 5% — neto", "445": "Ventas tarifa 5% — IVA generado", "423": "IVA generado por diferencia ventas/NC (ajuste a pagar)", "424": "IVA generado por diferencia ventas/NC (ajuste a favor)", "404": "Ventas de activos fijos tarifa 0% sin crédito — bruto", "414": "Ventas de activos fijos tarifa 0% sin crédito — neto", "406": "Ventas de activos fijos tarifa 0% con crédito — bruto", "416": "Ventas de activos fijos tarifa 0% con crédito — neto", "442": "Notas de crédito tarifa 0% por compensar próximo mes", "443": "Notas de crédito tarifa distinta de cero por compensar (neto)", "453": "Notas de crédito tarifa distinta de cero por compensar (IVA)", "480": "Transferencias gravadas a contado", "481": "Transferencias gravadas a crédito", "482": "Total impuesto generado", "483": "Impuesto a liquidar del mes anterior", "484": "Impuesto a liquidar en este mes", "485": "Impuesto a liquidar en el próximo mes", "499": "Total impuesto a liquidar en este mes", "530": "Adquisiciones tarifa variable con crédito — bruto", "533": "Adquisiciones tarifa variable con crédito — neto", "534": "Adquisiciones tarifa variable — IVA", "540": "Adquisiciones tarifa 5% con crédito — bruto", "550": "Adquisiciones tarifa 5% con crédito — neto", "560": "Adquisiciones tarifa 5% — IVA", "508": "Adquisiciones a negocios populares / RISE — bruto", "518": "Adquisiciones a negocios populares / RISE — neto", "541": "Adquisiciones no objeto de IVA — neto", "542": "Adquisiciones exentas — neto", "543": "Notas de crédito tarifa 0% por compensar (adquisiciones)", "544": "Notas de crédito tarifa distinta de cero por compensar (adquisiciones)", "563": "Factor de proporcionalidad para crédito tributario", "564": "Crédito tributario aplicable en este período", "565": "IVA no considerado como crédito por proporcionalidad", "601": "Impuesto causado", "602": "Crédito tributario aplicable en este período (saldo)", "605": "Saldo crédito tributario mes anterior — adquisiciones", "606": "Saldo crédito tributario mes anterior — retenciones", "609": "Retenciones en la fuente de IVA que le han sido efectuadas en el período", "615": "Saldo crédito tributario próximo mes — adquisiciones", "617": "Saldo crédito tributario próximo mes — retenciones", "620": "Subtotal a pagar", "699": "Total impuesto a pagar por percepción y retenciones en ventas", "721": "Retención de IVA 10%", "723": "Retención de IVA 20%", "725": "Retención de IVA 30%", "727": "Retención de IVA 50%", "729": "Retención de IVA 70%", "731": "Retención de IVA 100%", "799": "Total impuesto retenido", "801": "Total impuesto a pagar por retención", "859": "Total consolidado de IVA", "902": "Total impuesto a pagar", "999": "Total pagado", "111": "Total comprobantes de venta emitidos", "113": "Total comprobantes de venta anulados", "115": "Total comprobantes de venta recibidos", "117": "Total notas de venta recibidas", "119": "Total liquidaciones de compra emitidas"};
 function impCasDescMap(){
   const m = {}; (typeof CSRI_104_DEF!=='undefined' ? CSRI_104_DEF : []).forEach(r=>{ m[r[0]] = { d:r[1], g:r[4] }; });
+  Object.keys(IMP_CAS_EXTRA).forEach(k=>{ if(!m[k]) m[k] = { d:IMP_CAS_EXTRA[k], g:'otros' }; });
   return m;
 }
 
@@ -22930,27 +22932,28 @@ function impMetricasMes(c){
   c = c || {};
   const g = k => (c[k]===undefined || c[k]===null || c[k]==='') ? null : Number(c[k]);
   const sum = ks => ks.reduce((s,k)=>s+(g(k)||0),0);
-  const tiene = ks => ks.some(k=>g(k)!==null);
   const o = {};
-  o.ventasBrutas = g('409')!==null ? g('409') : sum(['401','402','403','405','431']);
-  o.ventasNetas  = g('419')!==null ? g('419') : sum(['411','412','413','415','441']);
-  o.ivaGenerado  = g('429')!==null ? g('429') : sum(['421','422']);
-  o.ventasGravadas = sum(['411']); o.ventas0 = sum(['413']); o.ventasNoObjeto = sum(['441']);
-  o.comprasNetas = sum(['510','512','517','531','532','513','514']);
+  o.ventasBrutas = g('409')!==null ? g('409') : sum(['401','402','410','425','403','404','405','406','407','408']);
+  o.ventasNetas  = g('419')!==null ? g('419') : sum(['411','412','420','435','413','414','415','416','417','418']);
+  o.ivaGenerado  = g('429')!==null ? g('429') : sum(['421','422','430','445']);
+  o.ventasGravadas = sum(['411','420','435']); o.ventas0 = sum(['413','414','415','416']); o.ventasNoObjeto = sum(['441']);
   o.comprasAF    = sum(['511','515']);
-  o.comprasBrutas= sum(['500','502','507','503','504','501','505']);
-  o.ivaCredito   = sum(['520','521','523','524','525']);
+  const totNeto  = g('519')!==null ? g('519') : sum(['510','511','533','550','512','513','514','515','516','517','518']);
+  o.comprasNetas = totNeto - o.comprasAF + sum(['541','542']);
+  o.comprasBrutas= g('509')!==null ? g('509') : sum(['500','501','530','540','502','503','504','505','506','507','508']);
+  o.ivaCredito   = g('564')!==null ? g('564') : (g('529')!==null ? g('529') : sum(['520','521','534','560','523','524','525','526'])-(g('527')||0));
   o.ivaSinCredito= sum(['522']);
   o.retIvaEfectuadas = g('799')!==null ? g('799') : sum(['721','723','725','727','729','731']);
   o.retIvaRecibidas  = g('609')!==null ? g('609') : 0;
   o.ivaNeto = o.ivaGenerado - o.ivaCredito - o.retIvaRecibidas;
+  o.totalPagar = g('902')!==null ? g('902') : (g('999')!==null ? g('999') : 0);
   Object.keys(o).forEach(k=>o[k]=impR2(o[k]));
   return o;
 }
 const IMP_METRICAS_COLS = [
   ['ventasBrutas','Ventas brutas'],['ventasNetas','Ventas netas'],['ivaGenerado','IVA generado'],
   ['comprasNetas','Compras netas (bienes y serv.)'],['comprasAF','Compras activos fijos'],['ivaCredito','IVA crédito tributario'],
-  ['retIvaEfectuadas','Ret. IVA efectuadas'],['retIvaRecibidas','Ret. IVA recibidas'],['ivaNeto','IVA neto referencial']
+  ['retIvaEfectuadas','Ret. IVA efectuadas'],['retIvaRecibidas','Ret. IVA recibidas'],['ivaNeto','IVA neto referencial'],['totalPagar','IVA pagado al SRI (form.)']
 ];
 function impResumenAnual(an){
   const meses = []; const tot = {}; IMP_METRICAS_COLS.forEach(([k])=>tot[k]=0);
@@ -23143,37 +23146,34 @@ function impNumero(t){
 }
 function impExtraerCasilleros(filas){
   const c = {}; const textos = [];
+  const esValor = t => /^\(?-?\$?\d+(?:,\d{3})*\.\d{2,4}\)?$/.test(t) || /^-?\d+,\d{2}$/.test(t) || t==='0';
   for(const fila of filas){
     const cells = (Array.isArray(fila)?fila:[fila]).map(x=>String(x==null?'':x).trim()).filter(x=>x!=='');
     if(!cells.length) continue;
     textos.push(cells.join(' '));
-    const toks = []; cells.forEach(cl=>cl.split(/\s+/).forEach(t=>toks.push(t)));
+    const toks = []; cells.forEach(cl=>cl.split(/\s+/).forEach(t=>{ if(t) toks.push(t); }));
     for(let i=0;i<toks.length-1;i++){
-      const cod = toks[i].replace(/[:.\-)(]+$/,'').replace(/^\(/,'');
-      if(!/^[4-9]\d{2}$/.test(cod)) continue;
+      const cod = toks[i].replace(/^\(|[:)]+$/g,'');
+      if(!/^[1-9]\d{2}$/.test(cod)) continue;
       let j = i+1; if(toks[j]==='$' && toks[j+1]) j++;
-      let raw = toks[j]; let v = impNumero(raw);
-      if(v===null && typeof CSRI_104_DEF!=='undefined' && CSRI_104_DEF.some(r=>r[0]===cod)){
-        for(let k=j; k<Math.min(toks.length, j+14); k++){ if(/^\(?-?\$?\d[\d.,]*[.,]\d{2}\)?$/.test(toks[k])){ raw = toks[k]; v = impNumero(raw); j = k; break; } }
-      }
-      if(v===null) continue;
-      const conDec = /[.,]\d{2}$/.test(raw||'');
-      if(!conDec && /^\d{7,}$/.test(String(raw).replace(/\D/g,''))) continue;
+      const raw = toks[j]; if(!raw || !esValor(raw)) continue;      // el valor debe ser un monto con decimales (o 0): evita tomar números de las fórmulas, p.ej. «419 563»
+      const v = raw==='0' ? 0 : (raw.indexOf(',')>=0 && raw.indexOf('.')<0 ? parseFloat(raw.replace(',','.')) : impNumero(raw));
+      if(v===null || !isFinite(v)) continue;
       c[cod] = impR2(v); i = j;
     }
   }
   const txt = textos.join('\n');
-  const meta = { es104:/(?:formulario|form\.?)\s*(?:n[°º.o]*\s*)?104|declaraci[oó]n\s+del?\s+iva|impuesto al valor agregado/i.test(txt) };
-  let m;
-  if((m = txt.match(/(?:per[ií]odo(?:\s+fiscal)?|mes\s+y\s+a[ñn]o)[^\d\n]{0,25}(\d{1,2})\s*[\/\-]\s*(20\d{2})/i))){ meta.mes = +m[1]; meta.anio = +m[2]; }
-  else if((m = txt.match(/(20\d{2})\s*[\/\-]\s*(\d{1,2})\b/)) && /per[ií]odo/i.test(txt)){ meta.anio = +m[1]; meta.mes = +m[2]; }
-  if(!meta.mes){
-    const nombres = IMP_MESES.map(x=>x.toLowerCase());
-    const mm = txt.toLowerCase().match(new RegExp('\\b('+nombres.join('|')+')\\b[^\\d\\n]{0,12}(20\\d{2})'));
-    if(mm){ meta.mes = nombres.indexOf(mm[1])+1; meta.anio = +mm[2]; }
-  }
+  const meta = { es104:/declaraci[oó]n\s+de\s+iva|formulario\s*(?:n[°º.o]*\s*)?104|impuesto al valor agregado/i.test(txt) };
+  const quitar = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+  const nombres = IMP_MESES.map(quitar); let m;
+  if((m = quitar(txt).match(/periodo\s+fiscal[:\s]*([a-z]+)\s+(20\d{2})/))){ let k = nombres.indexOf(m[1]); if(k<0 && m[1]==='setiembre') k = 8; if(k>=0){ meta.mes = k+1; meta.anio = +m[2]; } }
+  if(!meta.mes && (m = txt.match(/(?:per[ií]odo(?:\s+fiscal)?|mes\s+y\s+a[ñn]o)[^\d\n]{0,25}(\d{1,2})\s*[\/\-]\s*(20\d{2})/i))){ meta.mes = +m[1]; meta.anio = +m[2]; }
+  if(!meta.mes){ const mm = quitar(txt).match(new RegExp('\\b('+nombres.join('|')+')\\b[^\\d\\n]{0,12}(20\\d{2})')); if(mm){ meta.mes = nombres.indexOf(mm[1])+1; meta.anio = +mm[2]; } }
   if(meta.mes && (meta.mes<1 || meta.mes>12)) delete meta.mes;
-  meta.tipo = /sustitutiv/i.test(txt) ? 'sustitutiva' : 'original';
+  const tp = txt.match(/Tipo\s+Declaraci[oó]n[:\s]*([A-Za-zÁÉÍÓÚáéíóú]+)/i);
+  meta.tipo = tp ? (/sustitu/i.test(tp[1]) ? 'sustitutiva' : 'original') : (/declaraci[oó]n\s+sustitutiva/i.test(txt) ? 'sustitutiva' : 'original');
+  const ru = txt.match(/Identificaci[oó]n[:\s]*(\d{10,13})/i); if(ru) meta.ruc = ru[1];
+  const rz = txt.match(/Raz[oó]n\s+Social[:\s]*(.+?)(?:\s{2,}|\s+Tipo\s|$)/im); if(rz) meta.razon = rz[1].trim();
   return { c, meta };
 }
 async function impLeerArchivo(file){
@@ -23306,6 +23306,7 @@ async function impLeerArchivos(input, forzado){
     try{
       const r = await impLeerArchivo(f);
       const p = { archivo:f.name, c:r.c, nCas:Object.keys(r.c).length, mes:r.meta.mes||0, anio:r.meta.anio||impAnio, tipo:r.meta.tipo||'original', es104:r.meta.es104, error:'' };
+      p.ruc = r.meta.ruc||''; p.razon = r.meta.razon||''; { const rc = (impDatos[impContribId]?.meta?.ruc||'').trim(); if(p.ruc && rc && rc.slice(0,10)!==p.ruc.slice(0,10)) p.aviso = `El RUC del formulario (${p.ruc}${p.razon?' · '+p.razon:''}) no coincide con el del contribuyente (${rc}).`; }
       if(fz){ if(r.meta.mes && r.meta.mes!==fz.mes) p.aviso = `El archivo parece ser del mes ${r.meta.mes}; se asignó a ${IMP_MESES[fz.mes-1]} como indicaste.`; p.mes = fz.mes; p.tipo = fz.tipo; p.anio = impAnio; }
       if(!p.nCas) p.error = 'No se encontraron casilleros (verifique que sea el formulario 104 con texto seleccionable).';
       nuevos.push(p);
@@ -23319,7 +23320,7 @@ function impHtmlPendientes(){
   if(!impPendientes.length) return '';
   const filas = impPendientes.map((p,i)=>`<tr>
     <td><input type="checkbox" ${p.incluir===false||p.error?'':'checked'} ${p.error?'disabled':''} onchange="impPendientes[${i}].incluir=this.checked"></td>
-    <td style="font-size:12px;">${escapeHtml(p.archivo)}${p.error?`<div style="color:var(--danger);">${escapeHtml(p.error)}</div>`:''}${p.aviso?`<div style="color:#b36b00;">${escapeHtml(p.aviso)}</div>`:''}${p.es104===false&&!p.error?`<div style="color:#b36b00;">No se vio «104» en el texto: revise que sea el formulario correcto.</div>`:''}</td>
+    <td style="font-size:12px;">${escapeHtml(p.archivo)}${p.error?`<div style="color:var(--danger);">${escapeHtml(p.error)}</div>`:''}${p.aviso?`<div style="color:#b36b00;">${escapeHtml(p.aviso)}</div>`:''}${p.razon&&!p.error?`<div style="color:var(--muted);">${escapeHtml(p.razon)}${p.ruc?' · '+escapeHtml(p.ruc):''}</div>`:''}${p.es104===false&&!p.error?`<div style="color:#b36b00;">No se vio «104» en el texto: revise que sea el formulario correcto.</div>`:''}</td>
     <td><select onchange="impPendientes[${i}].mes=+this.value"><option value="0">—</option>${IMP_MESES.map((m,k)=>`<option value="${k+1}" ${p.mes===k+1?'selected':''}>${m}</option>`).join('')}</select></td>
     <td><input type="number" style="width:80px;" value="${p.anio}" onchange="impPendientes[${i}].anio=+this.value"></td>
     <td><select onchange="impPendientes[${i}].tipo=this.value"><option value="original" ${p.tipo==='original'?'selected':''}>Original</option><option value="sustitutiva" ${p.tipo==='sustitutiva'?'selected':''}>Sustitutiva</option></select></td>
@@ -23381,7 +23382,7 @@ function impVerDoc(mm, idx){
 }
 function impAnadirCasillero(){
   const cod = (document.getElementById('impNuevoCod').value||'').trim(), val = document.getElementById('impNuevoVal').value;
-  if(!/^[4-9]\d{2}$/.test(cod)){ toast('Casillero de 3 dígitos (400–999)','warning'); return; }
+  if(!/^[1-9]\d{2}$/.test(cod)){ toast('Casillero de 3 dígitos (100–999)','warning'); return; }
   let inp = document.getElementById('impCas_'+cod);
   if(!inp){ const tb = document.querySelector('#impTablaCas tbody'); const tr = document.createElement('tr'); tr.innerHTML = `<td><b>${cod}</b></td><td style="font-size:12px;">Casillero agregado</td><td><input type="number" step="0.01" id="impCas_${cod}" style="width:130px;text-align:right;"></td>`; tb.insertBefore(tr, tb.firstChild); inp = tr.querySelector('input'); }
   inp.value = val; inp.focus();
