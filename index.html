@@ -385,6 +385,11 @@ table.efEst .r-blank td{height:6px;border:0;padding:0;}
 @media (max-width:640px){ .efModalBox{padding:14px;margin:8px auto;} .efModalBg{padding:8px;} table.efTabla,table.efEst{font-size:12px;} }
 
 /* ══════════ REDISEÑO PROFESIONAL (49na) ══════════ */
+.fcEstado{display:inline-flex;align-items:center;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;}
+.fcEstado.ok{background:rgba(16,185,129,.16);color:var(--accent2);border:1px solid var(--accent2);}
+.fcEstado.warn{background:rgba(245,158,11,.16);color:var(--warn);border:1px solid var(--warn);}
+.doc-btn-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+:root{--emerald:#10b981;}
 :root{
   --bg:#0a1120; --panel:#101a2e; --panel2:#16233b; --border:#22314b;
   --text:#e7edf7; --muted:#8a9bb5; --accent:#3b82f6; --accent2:#10b981;
@@ -12926,6 +12931,11 @@ function bpFlujoCajaFormHTML(){
       <strong>Guía Metodológica:</strong> Replica la <em>Guía de Flujo de Caja Proyectado v2.0</em> del Banco del Pacífico (Res. 209-2016F, JPRMF). Ingresa las premisas y las proyecciones mensuales del Año 1; los préstamos calculan automáticamente su tabla de amortización (sistema francés / cuota fija) y el <b>Flujo de Caja Consolidado</b> se recalcula solo, igual que las fórmulas del Excel original.
     </div>
     <h3>1. Datos Generales y Premisas</h3>
+    <div class="fcSugerir" style="background:var(--accent-soft);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px;">💡 Premisas recomendadas por el sistema</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Primero ingrese los ingresos, costos, gastos y préstamos; el sistema redacta las 4 premisas con sus cifras y propone los % de crecimiento según el escenario. Luego complete los textos entre [corchetes].</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn small" onclick="bpFcSugerir('conservador')">Escenario conservador</button><button type="button" class="btn small primary" onclick="bpFcSugerir('base')">Escenario base (recomendado)</button><button type="button" class="btn small" onclick="bpFcSugerir('optimista')">Escenario optimista</button></div>
+    </div>
     <div class="form-group"><label>Cliente / Razón Social</label><input type="text" id="fc2-cliente" placeholder="Ej. COMERCIAL IMPORTADORA XYZ S.A."></div>
     <div class="form-group"><label>Saldo Inicial de Caja (USD)</label><input type="number" id="fc2-saldoinicial" value="150000" step="0.01" oninput="bpFlujoCajaLive()"></div>
     <div class="form-group"><label>Premisas de Ingresos Operacionales</label><textarea id="fc2-premisas-ing" rows="2" placeholder="Ej. crecimiento del 2% anual en unidades, precio ajustado por inflación..."></textarea></div>
@@ -12973,6 +12983,7 @@ function bpFlujoCajaFormHTML(){
 
     <div class="doc-btn-row">
       <button class="btn-calc" onclick="generarBPFlujoCaja()">👁 Generar Flujo de Caja</button>
+      <span id="fc2-estado" class="fcEstado"></span>
       <button class="btn-secondary" onclick="bpImprimirFlujoCaja()">🖨 Imprimir</button>
       <button class="btn-calc" onclick="terminarYGuardarBP('flujocaja','Flujo de Caja Proyectado','flujocaja-preview','#bpdoc-flujocaja .doc-form')" style="background:linear-gradient(135deg,var(--emerald) 0%,#0a9468 100%)">✅ Terminar y Guardar</button>
     </div>
@@ -13051,56 +13062,201 @@ function bpFlujoCajaLive(){
   const box = document.getElementById('fc2-resumen-live');
   if(!box) return;
   const r = bpFlujoCajaCalcular();
-  box.innerHTML = `<b>Vista rápida (en vivo):</b> Flujo Neto Año 1: ${bpUSD(r.flujoNetoAnios[0])} · Flujo Acumulado fin Año 1: ${bpUSD(r.flujoAcumAnios[0])} · Total cuotas mensuales préstamos (mes 1): ${bpUSD(r.egrFinM[0])}`;
+  let ctl = ''; try{ const c = bpFcControles(r); ctl = `<br><b>Control de revisión:</b> ✔ ${c.nOk} conformes · ⚠ ${c.nWarn} por revisar · ✖ ${c.nErr} errores`; }catch(e){}
+  box.innerHTML = `<b>Vista rápida (en vivo):</b> Flujo Neto Año 1: ${bpUSD(r.flujoNetoAnios[0])} · Flujo Acumulado fin Año 1: ${bpUSD(r.flujoAcumAnios[0])} · Total cuotas mensuales préstamos (mes 1): ${bpUSD(r.egrFinM[0])}${ctl}`;
+  if(bpFcGenerado){ const el = document.getElementById('fc2-estado'); if(el){ el.className = 'fcEstado warn'; el.textContent = '⚠ Hay cambios sin regenerar'; } }
 }
 
 function bpTablaFilaMesesAnios(etiqueta, mensuales, anios, clase){
   return `<tr class="${clase||''}"><td>${etiqueta}</td>${mensuales.map(v=>`<td class="num">${bpUSD(v)}</td>`).join('')}${anios.map(v=>`<td class="num">${bpUSD(v)}</td>`).join('')}</tr>`;
 }
 
+/* ═══ Flujo de caja: premisas sugeridas, control de revisión y razonabilidad ═══ */
+let bpFcGenerado = false;
+const BP_FC_MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const BP_FC_ESCENARIOS = {
+  conservador:{ nombre:'Conservador', ing:2, costo:2, gasto:3 },
+  base:{ nombre:'Base', ing:4, costo:4, gasto:2.5 },
+  optimista:{ nombre:'Optimista', ing:6, costo:5.5, gasto:3 }
+};
+function bpFcCerca(a,b,tol){ return Math.abs((Number(a)||0)-(Number(b)||0)) <= (tol||0.01); }
+function bpFcSemaforo(e){ return e==='ok' ? '<span class="fcTag ok">✔ Conforme</span>' : (e==='warn' ? '<span class="fcTag warn">⚠ Revisar</span>' : (e==='err' ? '<span class="fcTag err">✖ Error</span>' : '<span class="fcTag info">ℹ Informativo</span>')); }
+
+/* Controles de revisión (cuadre aritmético, coherencia y razonabilidad) */
+function bpFcControles(r){
+  const it = []; const add = (grupo, nombre, estado, detalle) => it.push({ grupo, nombre, estado, detalle });
+  const S = a => a.reduce((x,y)=>x+(Number(y)||0),0);
+  const ing1 = r.ingresosAnios[0], cos1 = r.costosAnios[0], gas1 = r.gastosAnios[0];
+  /* A. Cuadre aritmético */
+  add('A. Cuadre aritmético','Suma mensual de ingresos, costos y gastos = total Año 1', (bpFcCerca(S(r.ingresosM),ing1)&&bpFcCerca(S(r.costosM),cos1)&&bpFcCerca(S(r.gastosM),gas1))?'ok':'err', `Ingresos ${bpUSD(S(r.ingresosM))} · Costos ${bpUSD(S(r.costosM))} · Gastos ${bpUSD(S(r.gastosM))}`);
+  const netoSum = S(r.flujoNetoM);
+  add('A. Cuadre aritmético','Flujo acumulado mes 12 = saldo inicial + suma de flujos netos mensuales', bpFcCerca(r.flujoAcumM[11], r.saldoInicial+netoSum)?'ok':'err', `${bpUSD(r.flujoAcumM[11])} vs ${bpUSD(r.saldoInicial+netoSum)}`);
+  add('A. Cuadre aritmético','Flujo neto mensual (Año 1) = flujo anual Año 1', bpFcCerca(netoSum, r.flujoNetoAnios[0])?'ok':'err', `${bpUSD(netoSum)} vs ${bpUSD(r.flujoNetoAnios[0])}`);
+  add('A. Cuadre aritmético','Flujo acumulado fin Año 1 (mensual) = flujo acumulado Año 1 (anual)', bpFcCerca(r.flujoAcumM[11], r.flujoAcumAnios[0])?'ok':'err', `${bpUSD(r.flujoAcumM[11])} vs ${bpUSD(r.flujoAcumAnios[0])}`);
+  let encadena = true; for(let k=1;k<5;k++) if(!bpFcCerca(r.saldoInicialAnios[k], r.flujoAcumAnios[k-1])) encadena = false;
+  add('A. Cuadre aritmético','Saldo inicial de cada año = flujo acumulado del año anterior', encadena?'ok':'err', encadena?'Los 5 años encadenan correctamente':'Hay un año cuyo saldo inicial no coincide');
+  r.dist.forEach(p=>{
+    if(!p.filas.length) return;
+    const capital = S(p.filas.map(f=>f.capital)); const ult = p.filas[p.filas.length-1];
+    const cierra = bpFcCerca(capital, p.monto, 0.05) && Math.abs(ult.saldoFinal) < 0.05;
+    add('A. Cuadre aritmético',`Amortización ${p.nombre}: capital total = monto y saldo final = 0`, cierra?'ok':'err', `Capital ${bpUSD(capital)} de ${bpUSD(p.monto)}; saldo final ${bpUSD(ult.saldoFinal)}`);
+    const intEsp = p.monto*(p.tasa/100/12);
+    add('A. Cuadre aritmético',`Interés del primer mes ${p.nombre} = monto × tasa / 12`, bpFcCerca(p.filas[0].interes, intEsp, 0.02)?'ok':'err', `${bpUSD(p.filas[0].interes)} vs ${bpUSD(intEsp)}`);
+    const fin = p.inicio + p.filas.length - 1;
+    if(fin > 60) add('A. Cuadre aritmético',`Plazo de ${p.nombre} dentro del horizonte de 5 años`, 'warn', `Termina en el mes ${fin} (horizonte 60): parte del capital queda fuera de la proyección.`);
+  });
+  /* B. Coherencia de la información ingresada */
+  const pac = r.dist.filter(p=>/pac[ií]fico/i.test(p.nombre)); const montoPac = S(pac.map(p=>p.monto));
+  const cred = r.ingFinM.reduce((a,b)=>a+b,0);
+  const aporteMes = parseInt(bpV('fc2-aportes-mes'))||1, aporteMonto = bpN('fc2-aportes-monto'), creditoMonto = bpN('fc2-creditoing-monto'), creditoMes = parseInt(bpV('fc2-creditoing-mes'))||1;
+  if(creditoMonto>0 || montoPac>0){
+    const ok = bpFcCerca(creditoMonto, montoPac, 1);
+    add('B. Coherencia','Crédito recibido de Banco del Pacífico = monto del préstamo Banco del Pacífico (tabla)', ok?'ok':'warn', `Ingreso por crédito ${bpUSD(creditoMonto)} vs tabla ${bpUSD(montoPac)}`);
+    pac.forEach(p=>{ if(creditoMonto>0 && p.inicio < creditoMes) add('B. Coherencia',`Cuotas de ${p.nombre} inician antes del desembolso`, 'err', `Desembolso en mes ${creditoMes}; primera cuota en mes ${p.inicio}.`); });
+  }
+  add('B. Coherencia','Premisas documentadas (las 4 premisas diligenciadas)', ['fc2-premisas-ing','fc2-premisas-egr','fc2-premisas-ingno','fc2-premisas-egrno'].every(id=>bpV(id).trim().length>8)?'ok':'warn', 'Un flujo para el banco debe sustentar cada rubro con su premisa (use «Sugerir premisas»).');
+  const mesesSinIng = r.ingresosM.filter(v=>v<=0).length;
+  add('B. Coherencia','Meses con ingresos en cero', mesesSinIng===0?'ok':(mesesSinIng>=6?'err':'warn'), mesesSinIng? `${mesesSinIng} mes(es) sin ventas: confirme que no es un olvido de digitación.`:'Todos los meses tienen ventas.');
+  r.dist.forEach(p=>{ add('B. Coherencia',`Tasa de ${p.nombre} dentro de un rango plausible (3%–16%)`, (p.tasa>=3&&p.tasa<=16)?'ok':'warn', `${p.tasa}% anual: verifique contra la tasa efectiva máxima vigente del BCE para el segmento.`); });
+  /* C. Razonabilidad */
+  if(ing1<=0){ add('C. Razonabilidad','Ingresos proyectados Año 1','err','No hay ingresos proyectados.'); }
+  else{
+    const mb = (ing1-cos1)/ing1*100; add('C. Razonabilidad','Margen bruto (ingresos − costos) / ingresos', mb<0?'err':((mb<10||mb>85)?'warn':'ok'), `${bpPct(mb)} — ${mb<0?'costos mayores que ventas':(mb<10?'margen muy bajo':(mb>85?'margen excepcionalmente alto: revise qué se clasifica como costo':'dentro de un rango habitual'))}`);
+    const gp = gas1/ing1*100; add('C. Razonabilidad','Gastos administrativos y de ventas / ingresos', gp>40?'warn':'ok', `${bpPct(gp)}${gp>40?' — peso elevado de gastos':''}`);
+    const mo = r.flujoOpAnios[0]/ing1*100; add('C. Razonabilidad','Margen del flujo operacional / ingresos', mo<0?'err':(mo<5?'warn':'ok'), `${bpPct(mo)}${mo<0?' — el negocio no genera caja operativa':(mo<5?' — margen operativo muy ajustado':'')}`);
+    const prom = ing1/12, maxM = Math.max(...r.ingresosM), maxI = r.ingresosM.indexOf(maxM), minM = Math.min(...r.ingresosM);
+    add('C. Razonabilidad','Estacionalidad: mes de mayor venta / promedio mensual', maxM>prom*2?'warn':'ok', `Pico en ${BP_FC_MESES[maxI]} (${bpUSD(maxM)}) = ${(maxM/prom).toFixed(2)}× el promedio ${bpUSD(prom)}; mínimo ${bpUSD(minM)}.`);
+    let saltos = []; for(let i=1;i<12;i++){ const a = r.ingresosM[i-1], b = r.ingresosM[i]; if(a>0 && Math.abs(b-a)/a > 0.5) saltos.push(`${BP_FC_MESES[i-1]}→${BP_FC_MESES[i]} ${((b-a)/a*100).toFixed(0)}%`); }
+    add('C. Razonabilidad','Variaciones mensuales de ventas mayores a ±50%', saltos.length?'warn':'ok', saltos.length?saltos.join(' · '):'Sin saltos atípicos.');
+  }
+  const minAc = Math.min(...r.flujoAcumM), mesMin = r.flujoAcumM.indexOf(minAc);
+  add('C. Razonabilidad','Saldo de caja nunca negativo (Año 1)', minAc<0?'err':'ok', minAc<0?`Caja negativa: ${bpUSD(minAc)} en ${BP_FC_MESES[mesMin]}. Reprograme cobros/pagos o prevea financiamiento.`:`Saldo mínimo ${bpUSD(minAc)} en ${BP_FC_MESES[mesMin]}.`);
+  const egrOpProm = S(r.totalEgrOpM)/12;
+  if(egrOpProm>0 && minAc>=0){ const cob = minAc/egrOpProm; add('C. Razonabilidad','Colchón de liquidez: saldo mínimo / egreso operativo mensual', cob<0.25?'warn':'ok', `${cob.toFixed(2)} meses de egresos operativos cubiertos con el saldo mínimo.`); }
+  const sd = r.egrFinAnios; 
+  const dscr = [0,1,2,3,4].map(k=> sd[k]>0 ? r.flujoOpAnios[k]/sd[k] : null);
+  if(dscr.some(v=>v!==null)){
+    const v = dscr.filter(x=>x!==null); const mn = Math.min(...v);
+    add('C. Razonabilidad','Cobertura del servicio de la deuda (flujo operacional / capital + interés)', mn<1?'err':(mn<1.2?'warn':'ok'), 'Por año: '+dscr.map((x,i)=>`A${i+1} ${x===null?'—':x.toFixed(2)+'×'}`).join(' · ')+' (referencia bancaria: ≥ 1,20×).');
+    if(ing1>0) add('C. Razonabilidad','Servicio de la deuda Año 1 / ingresos Año 1', sd[0]/ing1*100>25?'warn':'ok', bpPct(sd[0]/ing1*100));
+  }
+  const ic = bpN('fc2-ing-crec'), cc = bpN('fc2-costo-crec'), gc = bpN('fc2-gasto-crec');
+  add('C. Razonabilidad','Crecimiento anual de ingresos proyectado (Años 2–5)', ic>15?'warn':'ok', `${bpPct(ic)}${ic>15?' — crecimiento alto: requiere sustento (contratos, capacidad instalada, mercado)':''}`);
+  add('C. Razonabilidad','Coherencia de crecimientos: costos vs. ingresos', (cc < ic-2)?'warn':'ok', `Ingresos ${bpPct(ic)}, costos ${bpPct(cc)}, gastos ${bpPct(gc)}${cc<ic-2?' — los costos crecen menos que las ventas: mejora de margen que debe justificarse':''}`);
+  const nErr = it.filter(x=>x.estado==='err').length, nWarn = it.filter(x=>x.estado==='warn').length, nOk = it.filter(x=>x.estado==='ok').length;
+  const dictamen = nErr ? 'CON ERRORES — corregir antes de presentar al banco' : (nWarn ? 'CONFORME CON OBSERVACIONES — revisar los puntos marcados' : 'CONFORME — el flujo cuadra y es razonable');
+  return { items:it, nErr, nWarn, nOk, dictamen, dscr, claseDictamen: nErr?'err':(nWarn?'warn':'ok') };
+}
+function bpFcControlesHTML(c){
+  const grupos = []; c.items.forEach(x=>{ if(!grupos.includes(x.grupo)) grupos.push(x.grupo); });
+  return `<div class="fcDictamen ${c.claseDictamen}"><b>Dictamen del control de revisión:</b> ${c.dictamen}<br><span>${c.nOk} conformes · ${c.nWarn} por revisar · ${c.nErr} errores</span></div>
+    <table class="fcCtrl"><thead><tr><th style="width:34%">Control</th><th style="width:13%">Resultado</th><th>Detalle</th></tr></thead><tbody>
+    ${grupos.map(g=>`<tr class="fcGrp"><td colspan="3">${escapeHtml(g)}</td></tr>`+c.items.filter(x=>x.grupo===g).map(x=>`<tr><td>${escapeHtml(x.nombre)}</td><td>${bpFcSemaforo(x.estado)}</td><td>${escapeHtml(x.detalle)}</td></tr>`).join('')).join('')}
+    </tbody></table>`;
+}
+function bpFcGraficoHTML(r){
+  const vals = r.flujoAcumM; const max = Math.max(1,...vals.map(v=>Math.abs(v)));
+  return `<div class="fcChart">${vals.map((v,i)=>`<div class="fcBarW"><div class="fcBarArea"><div class="fcBar ${v<0?'neg':''}" style="height:${(Math.abs(v)/max*100).toFixed(0)}%"></div></div><div class="fcBarL">${BP_FC_MESES[i]}</div><div class="fcBarV">${Math.round(v/1000)}k</div></div>`).join('')}</div>`;
+}
+/* Premisas recomendadas a partir de lo ingresado en el formulario */
+function bpFcSugerir(escenario){
+  const esc = BP_FC_ESCENARIOS[escenario] || BP_FC_ESCENARIOS.base;
+  const r = bpFlujoCajaCalcular();
+  const ing1 = r.ingresosAnios[0];
+  if(ing1<=0){ toast('Primero ingrese las proyecciones mensuales de ingresos (Año 1)','warning'); return; }
+  const S = a => a.reduce((x,y)=>x+(Number(y)||0),0);
+  const prom = ing1/12, maxI = r.ingresosM.indexOf(Math.max(...r.ingresosM)), minI = r.ingresosM.indexOf(Math.min(...r.ingresosM));
+  const cos1 = r.costosAnios[0], gas1 = r.gastosAnios[0];
+  const pCos = (cos1/ing1*100).toFixed(1), pGas = (gas1/ing1*100).toFixed(1);
+  const txt = {};
+  txt.ing = `Ventas del Año 1 por ${bpUSD(ing1)} (promedio mensual ${bpUSD(prom)}), con mayor venta en ${BP_FC_MESES[maxI]} y menor en ${BP_FC_MESES[minI]} según la estacionalidad histórica del negocio. Para los Años 2 a 5 se proyecta un crecimiento anual de ${esc.ing}% (escenario ${esc.nombre.toLowerCase()}), sustentado en inflación esperada, cartera de clientes actual y capacidad instalada. Política de cobro: [completar plazo promedio de cobro y % a crédito]. Sin considerar nuevos contratos no firmados.`;
+  txt.egr = `Costos de ventas equivalentes al ${pCos}% de los ingresos y gastos administrativos y de ventas al ${pGas}% (Año 1 ${bpUSD(cos1)} y ${bpUSD(gas1)}). Los costos crecen ${esc.costo}% anual acompañando el volumen de ventas; los gastos crecen ${esc.gasto}% anual (indexación por inflación y sueldos). Política de pagos a proveedores: [completar plazo promedio de pago]. Impuestos y participación a trabajadores: [indicar si están incluidos en costos y gastos].`;
+  const ap = bpN('fc2-aportes-monto'), cr = bpN('fc2-creditoing-monto');
+  txt.ingno = (ap>0||cr>0) ? `${ap>0?`Aporte de socios por ${bpUSD(ap)} en el mes ${bpV('fc2-aportes-mes')} del Año 1 (soporte: acta de junta / resolución de aumento de capital). `:''}${cr>0?`Desembolso del crédito solicitado a Banco del Pacífico por ${bpUSD(cr)} en el mes ${bpV('fc2-creditoing-mes')} del Año 1. `:''}No se consideran otros ingresos no operacionales.` : 'No se prevén ingresos no operacionales (aportes de socios o nuevos créditos) en el período proyectado.';
+  const cap = bpN('fc2-capex-monto'); const prest = r.dist.filter(p=>p.filas.length);
+  txt.egrno = `${cap>0?`Inversión en activos por ${bpUSD(cap)} en el mes ${bpV('fc2-capex-mes')} del Año 1. `:'No se prevén compras de activos fijos relevantes. '}${prest.length?`Servicio de deuda según tablas de amortización (sistema francés, cuota fija): ${prest.map(p=>`${p.nombre} por ${bpUSD(p.monto)} al ${p.tasa}% a ${p.plazo} meses`).join('; ')}. Cuota mensual total del mes 1: ${bpUSD(r.egrFinM[0])}.`:'No existen obligaciones financieras proyectadas.'}`;
+  const campos = { 'fc2-premisas-ing':txt.ing, 'fc2-premisas-egr':txt.egr, 'fc2-premisas-ingno':txt.ingno, 'fc2-premisas-egrno':txt.egrno };
+  const llenos = Object.keys(campos).filter(id=>bpV(id).trim());
+  if(llenos.length && !confirm('Ya hay premisas escritas. ¿Reemplazarlas por las sugeridas del escenario '+esc.nombre+'?')) return;
+  Object.keys(campos).forEach(id=>{ const el = document.getElementById(id); if(el) el.value = campos[id]; });
+  const set = (id,v)=>{ const el = document.getElementById(id); if(el) el.value = v; };
+  set('fc2-ing-crec', esc.ing); set('fc2-costo-crec', esc.costo); set('fc2-gasto-crec', esc.gasto);
+  bpFlujoCajaLive();
+  toast(`Premisas sugeridas (escenario ${esc.nombre}) aplicadas. Complete los textos entre [corchetes] y ajústelas a su negocio.`,'success',6000);
+}
+function bpFcMarcarEstado(generado){
+  bpFcGenerado = !!generado;
+  const el = document.getElementById('fc2-estado'); if(!el) return;
+  if(generado){ const d = new Date(); el.className = 'fcEstado ok'; el.textContent = '✔ Generado — '+d.toLocaleDateString('es-EC')+' '+d.toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}); }
+  else { el.className = 'fcEstado'; el.textContent = ''; }
+}
+
 function generarBPFlujoCaja(){
   const cliente = bpV('fc2-cliente');
   if(!cliente){ toast('Ingrese el nombre del cliente / razón social', 'error'); return; }
   const r = bpFlujoCajaCalcular();
+  const ctrl = bpFcControles(r);
   const headMeses = r.meses.map(m=>`<th class="num">Mes ${m}</th>`).join('');
   const headAnios = [1,2,3,4,5].map(a=>`<th class="num">Total Año ${a}</th>`).join('');
-
+  const fila = (...a) => bpTablaFilaMesesAnios(...a);
   const tablaFlujo = `
     <table><thead><tr><th>Concepto</th>${headMeses}${headAnios}</tr></thead><tbody>
-      ${bpTablaFilaMesesAnios('Ingresos por Ventas', r.ingresosM, r.ingresosAnios)}
-      ${bpTablaFilaMesesAnios('TOTAL INGRESO OPERACIONAL', r.totalIngOpM, r.totalIngOpAnios,'tot')}
-      ${bpTablaFilaMesesAnios('Costos de Ventas', r.costosM, r.costosAnios)}
-      ${bpTablaFilaMesesAnios('Gastos Adm. y Ventas', r.gastosM, r.gastosAnios)}
-      ${bpTablaFilaMesesAnios('TOTAL EGRESOS OPERACIONALES', r.totalEgrOpM, r.totalEgrOpAnios,'tot')}
-      ${bpTablaFilaMesesAnios('FLUJO OPERACIONAL', r.flujoOpM, r.flujoOpAnios,'tot')}
-      ${bpTablaFilaMesesAnios('Egresos por Actividades de Inversión', r.egrInvM, r.egrInvAnios)}
-      ${bpTablaFilaMesesAnios('FLUJO POR ACTIVIDADES DE INVERSIÓN', r.flujoInvM, r.flujoInvAnios,'tot')}
-      ${bpTablaFilaMesesAnios('Ingresos por Actividades de Financiamiento', r.ingFinM, r.ingFinAnios)}
-      ${bpTablaFilaMesesAnios('Egresos por Actividades de Financiamiento (capital + interés)', r.egrFinM, r.egrFinAnios)}
-      ${bpTablaFilaMesesAnios('FLUJO POR ACTIVIDADES DE FINANCIAMIENTO', r.flujoFinM, r.flujoFinAnios,'tot')}
-      ${bpTablaFilaMesesAnios('FLUJO NETO DE CAJA', r.flujoNetoM, r.flujoNetoAnios,'tot')}
-      ${bpTablaFilaMesesAnios('Saldo Inicial de Caja', r.saldoInicialM, r.saldoInicialAnios)}
-      ${bpTablaFilaMesesAnios('FLUJO ACUMULADO', r.flujoAcumM, r.flujoAcumAnios,'tot')}
+      <tr class="fcSec"><td colspan="18">ACTIVIDADES OPERACIONALES</td></tr>
+      ${fila('Ingresos por Ventas', r.ingresosM, r.ingresosAnios)}
+      ${fila('TOTAL INGRESO OPERACIONAL', r.totalIngOpM, r.totalIngOpAnios,'tot')}
+      ${fila('Costos de Ventas', r.costosM, r.costosAnios)}
+      ${fila('Gastos Adm. y Ventas', r.gastosM, r.gastosAnios)}
+      ${fila('TOTAL EGRESOS OPERACIONALES', r.totalEgrOpM, r.totalEgrOpAnios,'tot')}
+      ${fila('FLUJO OPERACIONAL', r.flujoOpM, r.flujoOpAnios,'tot')}
+      <tr class="fcSec"><td colspan="18">ACTIVIDADES DE INVERSIÓN</td></tr>
+      ${fila('Egresos por Actividades de Inversión', r.egrInvM, r.egrInvAnios)}
+      ${fila('FLUJO POR ACTIVIDADES DE INVERSIÓN', r.flujoInvM, r.flujoInvAnios,'tot')}
+      <tr class="fcSec"><td colspan="18">ACTIVIDADES DE FINANCIAMIENTO</td></tr>
+      ${fila('Ingresos por Actividades de Financiamiento', r.ingFinM, r.ingFinAnios)}
+      ${fila('Egresos por Actividades de Financiamiento (capital + interés)', r.egrFinM, r.egrFinAnios)}
+      ${fila('FLUJO POR ACTIVIDADES DE FINANCIAMIENTO', r.flujoFinM, r.flujoFinAnios,'tot')}
+      <tr class="fcSec"><td colspan="18">CONSOLIDADO</td></tr>
+      ${fila('FLUJO NETO DE CAJA', r.flujoNetoM, r.flujoNetoAnios,'tot')}
+      ${fila('Saldo Inicial de Caja', r.saldoInicialM, r.saldoInicialAnios)}
+      ${fila('FLUJO ACUMULADO', r.flujoAcumM, r.flujoAcumAnios,'tot')}
     </tbody></table>`;
-
   const tablasAmort = r.dist.map(p => {
     if(!p.filas.length) return '';
     return `<h4 style="margin:14px 0 6px;">Tabla de Amortización — ${escapeHtml(p.nombre)} (Monto ${bpUSD(p.monto)}, ${p.tasa}% anual, ${p.plazo} meses, cuota ${bpUSD(bpAmortizacionFrancesa(p.monto,p.tasa,p.plazo).cuota)})</h4>
     <table><thead><tr><th>Mes</th><th class="num">Saldo Inicial</th><th class="num">Capital</th><th class="num">Interés</th><th class="num">Dividendo</th><th class="num">Saldo Final</th></tr></thead>
     <tbody>${p.filas.map(f=>`<tr><td>${f.mes}</td><td class="num">${bpUSD(f.saldoInicial)}</td><td class="num">${bpUSD(f.capital)}</td><td class="num">${bpUSD(f.interes)}</td><td class="num">${bpUSD(f.dividendo)}</td><td class="num">${bpUSD(f.saldoFinal)}</td></tr>`).join('')}</tbody></table>`;
   }).join('');
-
-  document.getElementById('flujocaja-preview').innerHTML = `
-    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado</div><div class="doc-subtitle">${escapeHtml(cliente)} · Guía Metodológica Banco del Pacífico v2.0</div></div>
+  const minAc = Math.min(...r.flujoAcumM), dscr1 = ctrl.dscr[0];
+  const kpi = (t,v,s,c) => `<div class="fcKpi" style="border-top-color:${c}"><div class="t">${t}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const premisas = [['Ingresos operacionales','fc2-premisas-ing'],['Egresos operacionales','fc2-premisas-egr'],['Ingresos no operacionales','fc2-premisas-ingno'],['Egresos no operacionales','fc2-premisas-egrno']].filter(p=>bpV(p[1]).trim());
+  const fecha = new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'});
+  document.getElementById('flujocaja-preview').innerHTML = `<style>.fcKpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:6px 0 14px;}.fcKpi{border:1px solid #cfd8e3;border-top:4px solid #2563eb;border-radius:6px;padding:7px 10px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.fcKpi .t{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#667;font-weight:700;} .fcKpi .v{font-size:15px;font-weight:800;color:#111;margin:2px 0;} .fcKpi .s{font-size:9px;color:#667;}h4.fcH{margin:16px 0 6px;padding:5px 10px;background:#0057A3;color:#fff;font-size:11.5px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}tr.fcSec td{background:#e8f2fa !important;color:#0057A3;font-weight:800;font-size:9px;letter-spacing:.06em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}table.fcPrem th{width:18%;text-align:left;} table.fcPrem td{font-size:10px;line-height:1.5;}.fcChart{display:flex;align-items:flex-end;gap:6px;height:130px;margin:6px 0 4px;border-bottom:1px solid #889;padding:0 4px;}.fcBarW{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;} .fcBarArea{width:100%;flex:1;display:flex;align-items:flex-end;justify-content:center;}.fcBar{width:70%;background:#2563eb;border-radius:3px 3px 0 0;min-height:1px;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcBar.neg{background:#dc2626;}.fcBarL{font-size:9px;margin-top:3px;} .fcBarV{font-size:8px;color:#667;}.fcDictamen{padding:9px 12px;border-radius:6px;margin:4px 0 8px;font-size:11px;border:1px solid;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcDictamen span{font-size:10px;opacity:.85;}.fcDictamen.ok{background:#e7f6ee;border-color:#8fd0ad;color:#0b5d36;} .fcDictamen.warn{background:#fff6e0;border-color:#ecc86b;color:#7a4c00;} .fcDictamen.err{background:#fde9e8;border-color:#e89a96;color:#8a1f19;}.fcTag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcTag.ok{background:#d9f2e4;color:#0b5d36;} .fcTag.warn{background:#fdebc0;color:#7a4c00;} .fcTag.err{background:#fbd5d2;color:#8a1f19;} .fcTag.info{background:#e3e9f0;color:#445;}table.fcCtrl td{font-size:9.5px;} tr.fcGrp td{background:#f1f4f8 !important;font-weight:800;color:#1f3a5f;font-size:9.5px;}table.fcFirmas{margin-top:34px;border:none;} table.fcFirmas td{border:none;text-align:center;font-size:10px;width:33%;color:#333;}@media(max-width:800px){.fcKpis{grid-template-columns:repeat(2,1fr);}}</style>
+    <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado</div><div class="doc-subtitle">${escapeHtml(cliente)} · Guía Metodológica Banco del Pacífico v2.0 · Proyección a 5 años · ${fecha}</div></div>
+    <div class="fcKpis">
+      ${kpi('Ingresos Año 1', bpUSD(r.ingresosAnios[0]), 'Año 5: '+bpUSD(r.ingresosAnios[4]), '#2563eb')}
+      ${kpi('Flujo operacional Año 1', bpUSD(r.flujoOpAnios[0]), r.ingresosAnios[0]>0?bpPct(r.flujoOpAnios[0]/r.ingresosAnios[0]*100)+' de los ingresos':'', '#059669')}
+      ${kpi('Servicio de la deuda Año 1', bpUSD(r.egrFinAnios[0]), dscr1!==null&&dscr1!==undefined?'Cobertura '+dscr1.toFixed(2)+'×':'Sin deuda', '#d97706')}
+      ${kpi('Saldo mínimo de caja (Año 1)', bpUSD(minAc), BP_FC_MESES[r.flujoAcumM.indexOf(minAc)], minAc<0?'#dc2626':'#7c3aed')}
+      ${kpi('Caja final Año 5', bpUSD(r.flujoAcumAnios[4]), 'Flujo neto Año 1: '+bpUSD(r.flujoNetoAnios[0]), '#0891b2')}
+    </div>
+    ${premisas.length?`<h4 class="fcH">1. Premisas de la proyección</h4><table class="fcPrem"><tbody>${premisas.map(p=>`<tr><th>${p[0]}</th><td>${escapeHtml(bpV(p[1])).replace(/\n/g,'<br>')}</td></tr>`).join('')}</tbody></table>`:''}
+    <h4 class="fcH">${premisas.length?'2':'1'}. Flujo de caja proyectado</h4>
     <div style="overflow-x:auto">${tablaFlujo}</div>
-    <div style="overflow-x:auto">${tablasAmort}</div>
+    <h4 class="fcH">${premisas.length?'3':'2'}. Evolución del flujo acumulado de caja — Año 1 (miles de USD)</h4>
+    ${bpFcGraficoHTML(r)}
+    <h4 class="fcH">${premisas.length?'4':'3'}. Control de revisión y razonabilidad</h4>
+    ${bpFcControlesHTML(ctrl)}
+    ${tablasAmort?`<h4 class="fcH">${premisas.length?'5':'4'}. Tablas de amortización</h4><div style="overflow-x:auto">${tablasAmort}</div>`:''}
     <div class="doc-footer">Saldo inicial de caja: ${bpUSD(r.saldoInicial)}. Las columnas Año 2 a Año 5 se proyectan aplicando el % de crecimiento anual indicado sobre ingresos, costos y gastos; los egresos de financiamiento provienen directamente de la tabla de amortización de cada préstamo.</div>
+    <table class="fcFirmas"><tr><td>Elaborado por<br><br><br>______________________<br>Nombre y cargo</td><td>Revisado por<br><br><br>______________________<br>Nombre y cargo</td><td>Aprobado por (Representante Legal)<br><br><br>______________________<br>Nombre y firma</td></tr></table>
   `;
+  bpFcMarcarEstado(true);
+  toast('Flujo de caja generado'+(ctrl.nErr?` — con ${ctrl.nErr} error(es) de control`:(ctrl.nWarn?` — con ${ctrl.nWarn} observación(es)`:' — controles conformes')), ctrl.nErr?'warning':'success', 4500);
 }
 function bpImprimirFlujoCaja(){
   const el = document.getElementById('flujocaja-preview');
   if(!el || el.querySelector('.doc-placeholder')){ toast('Genere el flujo de caja primero', 'warning'); return; }
-  bpAbrirVentanaImpresion(el.innerHTML, 'Flujo de Caja Proyectado');
+  bpAbrirVentanaImpresion(el.innerHTML, 'Flujo de Caja Proyectado', { landscape:true });
 }
 
 /* =========================================================================
