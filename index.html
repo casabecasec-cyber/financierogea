@@ -28302,6 +28302,15 @@ function descargarExcelInformeResumenes(){
 function csriR2(n){ n = Number(n); if(!isFinite(n)) n = 0; return Math.round((n + (n>=0?1e-9:-1e-9))*100)/100; }
 function csriAbs(n){ return Math.abs(Number(n)||0); }
 function csriSuma(arr, f){ let s=0; for(const x of arr) s += Number(f?f(x):x)||0; return s; }
+/* 58va: las notas de crédito (tipo 04/47/23) RESTAN en los totales. csriSgn da -1 para NC; csriSumaN suma con ese signo. */
+function csriSgn(d){ return (d && CSRI_TIPOS_NC.indexOf(d.tc)>=0) ? -1 : 1; }
+function csriSumaN(arr, f){ let s=0; for(const x of arr) s += csriSgn(x)*(Number(f?f(x):x)||0); return s; }
+/* Elige el total del ATS/reporte (neto de NC o bruto) que corresponde al del talón: el talón del SRI puede venir de cualquiera de las dos formas */
+function csriElegirTot(R, tt){
+  if(!R.totBruto || !tt) return { t:R.tot, bruto:false };
+  const dif = T=>Math.abs((T.b0+T.bG+(T.bNo||0))-(tt.b0+tt.bG+(tt.bNo||0))) + Math.abs(T.iva-tt.iva);
+  return dif(R.totBruto) < dif(R.tot) - 0.005 ? { t:R.totBruto, bruto:true } : { t:R.tot, bruto:false };
+}
 function csriFmt(n){
   n = Number(n); if(!isFinite(n)) n = 0;
   return n.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -28599,15 +28608,16 @@ function csriParseATS(xmlText){
 
 /* Totales del ATS por tipo de comprobante, sustento, código de retención, % de retención de IVA, ventas */
 function csriAtsResumen(ats){
-  const R = { porTipo:{}, tot:{n:0,b0:0,bG:0,bNo:0,bE:0,iva:0,ice:0}, porSust:{}, air:{}, airTot:{n:0,base:0,val:0},
+  const R = { porTipo:{}, tot:{n:0,b0:0,bG:0,bNo:0,bE:0,iva:0,ice:0}, totBruto:{n:0,b0:0,bG:0,bNo:0,bE:0,iva:0,ice:0}, porSust:{}, air:{}, airTot:{n:0,base:0,val:0},
     retIva:{'10':0,'20':0,'30':0,'50':0,'70':0,'100':0,'nc':0}, retIvaTot:0, reemb:{docs:0,n:0,base:0,iva:0},
     ventas:{nReg:0,nComp:0,b0:0,bG:0,bNo:0,iva:0,ice:0,rIva:0,rRenta:0,b0n:0,bGn:0,bNon:0,ivan:0,porTipo:{}},
     anulados:0, docsFueraMes:0 };
-  const sum = (o, d)=>{ o.n=(o.n||0)+1; o.b0=(o.b0||0)+d.b0; o.bG=(o.bG||0)+d.bG; o.bNo=(o.bNo||0)+d.bNo; o.bE=(o.bE||0)+(d.bE||0); o.iva=(o.iva||0)+d.iva; o.ice=(o.ice||0)+(d.ice||0); };
+  const sum = (o, d, g)=>{ g = g||1; o.n=(o.n||0)+1; o.b0=(o.b0||0)+g*d.b0; o.bG=(o.bG||0)+g*d.bG; o.bNo=(o.bNo||0)+g*d.bNo; o.bE=(o.bE||0)+g*(d.bE||0); o.iva=(o.iva||0)+g*d.iva; o.ice=(o.ice||0)+g*(d.ice||0); };
   for(const d of ats.compras||[]){
     sum(R.porTipo[d.tc] || (R.porTipo[d.tc]={}), d);
-    sum(R.tot, d);
-    sum(R.porSust[d.cs] || (R.porSust[d.cs]={}), d);
+    sum(R.tot, d, CSRI_TIPOS_NC.indexOf(d.tc)>=0 ? -1 : 1);      // neto: la NC resta
+    sum(R.totBruto, d);
+    sum(R.porSust[d.cs] || (R.porSust[d.cs]={}), d, CSRI_TIPOS_NC.indexOf(d.tc)>=0 ? -1 : 1);
     R.retIva['10']+=d.r10; R.retIva['20']+=d.r20; R.retIva['30']+=d.r30; R.retIva['50']+=d.r50; R.retIva['70']+=d.r70; R.retIva['100']+=d.r100; R.retIva['nc']+=d.rnc;
     for(const a of d.air||[]){
       const k = csriCodAir(a.c); const o = R.air[k] || (R.air[k]={n:0,base:0,val:0,pct:a.p});
@@ -28815,10 +28825,12 @@ function csriParseImpuestos(grillas){
 }
 /* totales del reporte contable por tipo de documento (compras) */
 function csriRepResumen(rep){
-  const R = { compras:{ porTipo:{}, tot:{n:0,b0:0,bG:0,iva:0} }, ventas:{ n:0, b0:0, bG:0, iva:0, rIva:0, rRenta:0, nc:{b0:0,bG:0,iva:0} } };
+  const R = { compras:{ porTipo:{}, tot:{n:0,b0:0,bG:0,iva:0}, totBruto:{n:0,b0:0,bG:0,iva:0} }, ventas:{ n:0, b0:0, bG:0, iva:0, rIva:0, rRenta:0, nc:{b0:0,bG:0,iva:0} } };
   for(const d of rep.compras||[]){
     const o = R.compras.porTipo[d.tc] || (R.compras.porTipo[d.tc]={n:0,b0:0,bG:0,iva:0});
-    o.n++; o.b0+=d.b0; o.bG+=d.bG; o.iva+=d.iva; R.compras.tot.n++; R.compras.tot.b0+=d.b0; R.compras.tot.bG+=d.bG; R.compras.tot.iva+=d.iva;
+    const g = CSRI_TIPOS_NC.indexOf(d.tc)>=0 ? -1 : 1;
+    o.n++; o.b0+=d.b0; o.bG+=d.bG; o.iva+=d.iva; R.compras.tot.n++; R.compras.tot.b0+=g*d.b0; R.compras.tot.bG+=g*d.bG; R.compras.tot.iva+=g*d.iva;
+    R.compras.totBruto.n++; R.compras.totBruto.b0+=d.b0; R.compras.totBruto.bG+=d.bG; R.compras.totBruto.iva+=d.iva;
   }
   for(const d of rep.ventas||[]){
     if(d.tc==='04'){ R.ventas.nc.b0+=d.b0; R.ventas.nc.bG+=d.bG; R.ventas.nc.iva+=d.iva; continue; }
@@ -30076,8 +30088,8 @@ function csriPuenteSRI(S, C, VC, ctx){
   }
   // SRI: de VALOR_SIN_IMPUESTOS a la base compuesta (valores sin IVA que solo están en IMPORTE_TOTAL)
   const conRest = sriAll.filter(d=>Math.abs(d.rest)>0.005);
-  const vsi = csriR2(csriSuma(sriAll,d=>d.rawBase));
-  const sriRaw = { vsi, vsiIva:csriR2(csriSuma(sriAll,d=>d.iva)), rest:csriR2(csriSuma(conRest,d=>d.rest)), nRest:conRest.length,
+  const vsi = csriR2(csriSumaN(sriAll,d=>d.rawBase));
+  const sriRaw = { vsi, vsiIva:csriR2(csriSumaN(sriAll,d=>d.iva)), rest:csriR2(csriSuma(conRest,d=>d.rest)), nRest:conRest.length,
     docs:conRest.map(d=>({ ref:d.serie+' · '+d.rucFull, nom:d.nom||'', fe:d.fe||'', k:d.ruc+'|'+d.sec, v:d.v, rest:d.rest, rawBase:d.rawBase, nota:'' })) };
   // desglose del SRI por tipo de comprobante y por marca del contador
   const tipos = {}, marcas = {};
@@ -30396,8 +30408,10 @@ function csriCalcular(S, C){
     }
     const tt = S.talon.comprasTot;
     if(tt){
-      ch.lineas.push(csriLinea('TOTAL — BI tarifa 0%', R.tot.b0, tt.b0)); ch.lineas.push(csriLinea('TOTAL — BI tarifa ≠ 0%', R.tot.bG, tt.bG));
-      ch.lineas.push(csriLinea('TOTAL — BI no objeto', R.tot.bNo, tt.bNo)); ch.lineas.push(csriLinea('TOTAL — IVA', R.tot.iva, tt.iva));
+      const el = csriElegirTot(R, tt), T = el.t;
+      ch.lineas.push(csriLinea('TOTAL — BI tarifa 0%', T.b0, tt.b0)); ch.lineas.push(csriLinea('TOTAL — BI tarifa ≠ 0%', T.bG, tt.bG));
+      ch.lineas.push(csriLinea('TOTAL — BI no objeto', T.bNo, tt.bNo)); ch.lineas.push(csriLinea('TOTAL — IVA', T.iva, tt.iva));
+      if(R.totBruto && Math.abs(R.totBruto.iva - R.tot.iva) > 0.005) ch.nota = (ch.nota?ch.nota+' ':'')+(el.bruto ? 'El talón del SRI suma las notas de crédito como valores positivos (total bruto); por eso se compara contra el ATS sin restarlas.' : 'Las notas de crédito se RESTAN en el total del ATS (neto) y coinciden con el talón.');
     }
     return csriCerrar(ch, ctx);
   });
@@ -30587,12 +30601,12 @@ function csriCalcular(S, C){
     if(reqs.length){ ch.falta = reqs; return ch; }
     X.concat(Y).forEach(d=>{ if(!d.nom) d.nom = nombresRuc[d.ruc] || ''; });
     const em = csriEmparejar(X, Y, tolL);
-    const sx = csriSuma(X,d=>d.base), sy = csriSuma(Y,d=>d.base);
+    const sx = csriSumaN(X,d=>d.base), sy = csriSumaN(Y,d=>d.base);
     ch.lineas.push(csriLinea('Comprobantes (nº)', X.length, Y.length, {info:true, soft:true}));
     ch.lineas.push(csriLinea('Base total compuesta (≠0 % + 0 % + no objeto + exenta + otros sin IVA)', sx, sy, {info:true, nota:'Se compara la base compuesta (= total − IVA) de cada comprobante: cuando un comprobante tiene dos bases (p. ej. 15 % y 0 %) o valores sin IVA, no se compara una sola columna.'}));
-    ch.lineas.push(csriLinea('   de la cual base ≠ 0 % (en el SRI se deriva: IVA ÷ tarifa)', csriSuma(X,d=>d.v?d.v.bG:0), csriSuma(Y,d=>d.v?d.v.bG:0), {info:true}));
-    ch.lineas.push(csriLinea('   de la cual base 0 % / no objeto / exenta / otros sin IVA', csriSuma(X,d=>d.v?d.v.base-d.v.bG:0), csriSuma(Y,d=>d.v?d.v.base-d.v.bG:0), {info:true}));
-    ch.lineas.push(csriLinea('IVA total', csriSuma(X,d=>d.iva), csriSuma(Y,d=>d.iva), {info:true}));
+    ch.lineas.push(csriLinea('   de la cual base ≠ 0 % (en el SRI se deriva: IVA ÷ tarifa)', csriSumaN(X,d=>d.v?d.v.bG:0), csriSumaN(Y,d=>d.v?d.v.bG:0), {info:true}));
+    ch.lineas.push(csriLinea('   de la cual base 0 % / no objeto / exenta / otros sin IVA', csriSumaN(X,d=>d.v?d.v.base-d.v.bG:0), csriSumaN(Y,d=>d.v?d.v.base-d.v.bG:0), {info:true}));
+    ch.lineas.push(csriLinea('IVA total', csriSumaN(X,d=>d.iva), csriSumaN(Y,d=>d.iva), {info:true}));
     ch.lineas.push(csriLinea('Comprobantes emparejados (RUC + secuencial)', em.pares.length, Math.max(X.length,Y.length), {info:true, soft:true}));
     if(opt.excl){
       ch.lineas.push(csriLinea('Apartadas: liquidaciones de viaje (sustento 05) — documentos', opt.excl.n, null, {info:true, soft:true, nota:'No se comparan documento a documento porque suelen estar a nombre de empleados; se controlan en la sección 3b y en la tarjeta «Liquidaciones de viaje».'}));
@@ -30691,8 +30705,9 @@ function csriCalcular(S, C){
       ch.lineas.push(csriLinea('IVA: total − viaje vs empresa', csriR2(P.tot.iva - P.via.iva), P.emp.iva));
       if(S.talon && S.talon.comprasTot && !S.talon.manual){
         const tt = S.talon.comprasTot;
-        ch.lineas.push(csriLinea('Total ATS (incluye sustento 05) vs talón — base (0% + ≠0% + no objeto)', csriR2(R.tot.b0+R.tot.bG+R.tot.bNo), csriR2(tt.b0+tt.bG+tt.bNo)));
-        ch.lineas.push(csriLinea('Total ATS (incluye sustento 05) vs talón — IVA', R.tot.iva, tt.iva));
+        const T = csriElegirTot(R, tt).t;
+        ch.lineas.push(csriLinea('Total ATS (incluye sustento 05) vs talón — base (0% + ≠0% + no objeto)', csriR2(T.b0+T.bG+T.bNo), csriR2(tt.b0+tt.bG+tt.bNo)));
+        ch.lineas.push(csriLinea('Total ATS (incluye sustento 05) vs talón — IVA', T.iva, tt.iva));
       }
       ch.lineas.push(csriLinea(VN+' — documentos (apartados)', VB.puente.via.n, null, {info:true, soft:true}));
       ch.lineas.push(csriLinea(VN+' — base total (apartado)', VB.puente.via.base, null, {info:true}));
@@ -31163,7 +31178,7 @@ function csriRecomendaciones(S, C, res){
   /* --- liquidaciones de viaje (sustento 05) --- */
   const VB = res.viaje;
   if(VB && VB.on && VB.hay){
-    const nV = VB.docs.length, bV = csriSuma(VB.docs,d=>d.base), iV = csriSuma(VB.docs,d=>d.iva), P = VB.puente;
+    const nV = VB.docs.length, bV = csriSumaN(VB.docs,d=>d.base), iV = csriSumaN(VB.docs,d=>d.iva), P = VB.puente;
     const nIva = VB.docs.filter(d=>d.iva>0).length;
     add('baja','via-puente','Liquidaciones de viaje (sustento 05) apartadas de la conciliación con el SRI',
       nV+' documentos con sustento 05 ('+$(bV)+' de base, IVA '+$(iV)+(nIva?'; '+nIva+' con IVA':'')+') se apartaron de la comparación con los comprobantes recibidos del SRI: respaldan liquidaciones de gastos de viaje, hospedaje y alimentación cuyas facturas suelen estar a nombre de los empleados y no de la empresa, por lo que no figuran en el SRI. '
