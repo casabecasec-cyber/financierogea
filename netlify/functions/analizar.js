@@ -247,6 +247,78 @@ function parsearRespuestaIA(textoOriginal, modo) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Modo "actualizar_normativa_tributaria" (área Impuestos): consulta a Claude CON
+// búsqueda web para detectar cambios en la normativa tributaria ecuatoriana frente
+// a los valores que tiene la app. No guarda nada: devuelve una propuesta que el
+// administrador revisa y acepta en la app.
+// Requiere que la herramienta de búsqueda web esté habilitada en la cuenta de Anthropic.
+// ---------------------------------------------------------------------------
+async function actualizarNormativaTributaria(payload, apiKey, headers) {
+  let actual = {};
+  try { actual = JSON.parse(payload.contenido || "{}"); } catch (e) { actual = {}; }
+  const hoy = new Date().toISOString().slice(0, 10);
+  const prompt = `Eres un asesor tributario de Ecuador. Hoy es ${hoy}. Usa la búsqueda de Google para verificar la normativa VIGENTE HOY del Servicio de Rentas Internas (SRI) de Ecuador, priorizando fuentes oficiales (sri.gob.ec, gob.ec, Registro Oficial) y medios/estudios jurídicos reconocidos.
+
+Estos son los valores que la aplicación tiene registrados actualmente (JSON):
+${JSON.stringify(actual).slice(0, 12000)}
+
+Tareas:
+1. Verifica la tarifa general del IVA y si hay tarifas temporales vigentes o anunciadas (por ejemplo, reducciones por feriados).
+2. Verifica los porcentajes de retención en la fuente del Impuesto a la Renta y la resolución vigente que los fija.
+3. Verifica los porcentajes de retención del IVA y la resolución vigente.
+4. Verifica la tabla del Impuesto a la Renta de personas naturales del año en curso.
+5. Lista resoluciones, circulares o decretos tributarios relevantes emitidos en los últimos 6 meses que NO estén en la lista de la aplicación.
+6. Indica cambios en procedimientos de devolución de IVA o de impuesto a la renta, si los hay.
+
+Responde SOLO con un objeto JSON válido (sin texto adicional ni bloques de código) con esta forma exacta:
+{"fecha_consulta":"AAAA-MM-DD","iva_general":15,"iva_temporales":[{"tarifa":8,"aplica_a":"...","desde":"AAAA-MM-DD","hasta":"AAAA-MM-DD","norma":"..."}],
+ "cambios":[{"seccion":"retenciones_renta|retenciones_iva|iva|tabla_ir|devoluciones|otro","clave":"id o código del concepto en la app, si aplica","descripcion":"qué cambió","valor_app":"valor que tiene la app","valor_vigente":"valor vigente verificado","vigente_desde":"AAAA-MM-DD","norma":"número de resolución/decreto","fuente":"URL"}],
+ "resoluciones_nuevas":[{"numero":"...","fecha":"AAAA-MM-DD","tema":"...","resumen":"máximo 40 palabras","fuente":"URL"}],
+ "resumen":"máximo 60 palabras con la conclusión: si los datos de la app están al día o qué hay que cambiar"}
+Reglas: incluye en "cambios" solo diferencias reales y verificadas con fuente; si un dato coincide, no lo incluyas. Si no puedes verificar algo, no lo inventes. Para "valor_vigente" de porcentajes usa solo el número (ej. 3).`;
+
+  const modelos = ["claude-sonnet-5", "claude-haiku-4-5-20251001"];
+  let ultimoError = "";
+  const inicio = Date.now();
+  for (const modelo of modelos) {
+    const restante = 25000 - (Date.now() - inicio);
+    if (restante < 5000) break;
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), restante - 500);
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: modelo, max_tokens: 6000, temperature: 0.1,
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
+          messages: [{ role: "user", content: prompt }],
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(t);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { ultimoError = (data.error && data.error.message) || ("HTTP " + resp.status); continue; }
+      const bloques = data.content || [];
+      const texto = bloques.filter(b => b.type === "text").map(b => b.text || "").join("").trim();
+      const limpio = texto.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      const ini = limpio.indexOf("{"), fin = limpio.lastIndexOf("}");
+      let resultado = null;
+      try { resultado = JSON.parse(limpio.slice(ini, fin + 1)); } catch (e) { ultimoError = "La IA no devolvió un JSON válido."; continue; }
+      const fuentes = [];
+      bloques.filter(b => b.type === "web_search_tool_result" && Array.isArray(b.content)).forEach(b =>
+        b.content.forEach(r => { if (r && r.url && !fuentes.some(f => f.url === r.url)) fuentes.push({ titulo: r.title || "", url: r.url }); }));
+      const busquedas = bloques.filter(b => b.type === "server_tool_use" && b.input && b.input.query).map(b => b.input.query);
+      return { statusCode: 200, headers, body: JSON.stringify({ resultado, fuentes: fuentes.slice(0, 15), busquedas, modelo }) };
+    } catch (e) {
+      clearTimeout(t);
+      ultimoError = e.name === "AbortError" ? "La consulta tardó demasiado." : (e.message || String(e));
+    }
+  }
+  return { statusCode: 502, headers, body: JSON.stringify({ error: "No se pudo consultar la normativa en este momento: " + ultimoError + " Intenta de nuevo en unos minutos." }) };
+}
+
 exports.handler = async function (event) {
   const headers = {
     "Access-Control-Allow-Origin": "*",
@@ -280,6 +352,9 @@ exports.handler = async function (event) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: "JSON inválido" }) };
   }
 
+  if (payload.modo === "actualizar_normativa_tributaria") {
+    return await actualizarNormativaTributaria(payload, apiKey, headers);
+  }
   const { modo, contenido: contenidoOriginal, contexto, pdfs, imagenes } = payload;
   const parteInforme = String(payload.parte || "");
   const listaPdfs = Array.isArray(pdfs) ? pdfs.filter(p => p && p.data) : [];

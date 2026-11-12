@@ -18,12 +18,13 @@
 // DATOS_UID) siempre es administrador, sin necesidad de una entrada en
 // "roles_control_documental".
 const DATOS_UID_OWNER = "s51EqDX0m9hWmo9C4Hy00dFqD0C3";
-// Respaldo por correo: si por algún motivo el UID no coincide, esto igual
-// reconoce al admin por su correo.
+// Respaldo por correo: si por algún motivo el UID no coincide (típicamente
+// por haberlo copiado mal), esto igual reconoce al admin por su correo.
 const DATOS_EMAIL_OWNER = "eberrezueta@gmail.com";
 
 // Limpia comillas envolventes y espacios de valores simples (project id,
-// client email, database URL) por si se pegaron tal cual venían del JSON.
+// client email, database URL) por si se pegaron tal cual venían del JSON
+// (con comillas incluidas) en vez de solo el contenido.
 function normalizarValorSimple(raw) {
   let val = (raw || "").trim();
   if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
@@ -118,7 +119,30 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { idToken, accion, email, password, uid, rol, areas, subareas } = JSON.parse(event.body || "{}");
+    const datosEntrada = JSON.parse(event.body || "{}");
+    const { idToken, accion, email, password, uid } = datosEntrada;
+    // Tipos de usuario: "admin" (control total) o "usuario" (permisos por área).
+    // "lectura" es el nombre antiguo de "usuario" y se acepta por compatibilidad.
+    const rol = datosEntrada.rol === "lectura" ? "usuario" : datosEntrada.rol;
+    // Niveles por área: sin_acceso | lectura | edicion. Cualquier otro valor
+    // (incluidos los antiguos "completo"/"crear") se normaliza.
+    const normalizarNivel = (v) => (v === "edicion" || v === "completo" || v === "crear") ? "edicion" : (v === "lectura" ? "lectura" : "sin_acceso");
+    const limpiarAreas = (obj) => {
+      const out = {};
+      Object.keys(obj || {}).forEach(k => { if (/^[a-zA-Z0-9_]+$/.test(k)) out[k] = normalizarNivel(obj[k]); });
+      return out;
+    };
+    const limpiarSubareas = (obj) => {
+      const out = {};
+      Object.keys(obj || {}).forEach(a => {
+        if (!/^[a-zA-Z0-9_]+$/.test(a) || typeof obj[a] !== "object" || !obj[a]) return;
+        out[a] = {};
+        Object.keys(obj[a]).forEach(sub => { if (/^[a-zA-Z0-9_]+$/.test(sub) && obj[a][sub]) out[a][sub] = normalizarNivel(obj[a][sub]); });
+      });
+      return out;
+    };
+    const areas = limpiarAreas(datosEntrada.areas);
+    const subareas = limpiarSubareas(datosEntrada.subareas);
     if (!idToken) {
       return { statusCode: 401, headers, body: JSON.stringify({ error: "Falta la sesión del administrador." }) };
     }
@@ -150,8 +174,8 @@ exports.handler = async (event) => {
       if (password.length < 6) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: "La contraseña debe tener al menos 6 caracteres." }) };
       }
-      if (rol !== "admin" && rol !== "lectura") {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: "Rol inválido." }) };
+      if (rol !== "admin" && rol !== "usuario") {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: "Tipo de usuario inválido." }) };
       }
       const nuevoUsuario = await admin.auth().createUser({ email, password });
       await admin.database().ref(`roles_control_documental/${nuevoUsuario.uid}`).set({ rol, areas: {}, subareas: {} });
@@ -159,7 +183,7 @@ exports.handler = async (event) => {
     }
 
     if (accion === "cambiarRol") {
-      if (!uid || (rol !== "admin" && rol !== "lectura")) {
+      if (!uid || (rol !== "admin" && rol !== "usuario")) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: "Faltan datos o el rol es inválido." }) };
       }
       if (uid === DATOS_UID_OWNER) {
@@ -183,10 +207,9 @@ exports.handler = async (event) => {
       if (uid === DATOS_UID_OWNER) {
         return { statusCode: 400, headers, body: JSON.stringify({ error: "El usuario dueño original de los datos siempre tiene acceso completo; no se puede restringir." }) };
       }
-      await admin.database().ref(`roles_control_documental/${uid}`).update({
-        areas: areas || {},
-        subareas: subareas || {},
-      });
+      // set (no update) para que las áreas retiradas no queden con el valor anterior
+      await admin.database().ref(`roles_control_documental/${uid}/areas`).set(areas);
+      await admin.database().ref(`roles_control_documental/${uid}/subareas`).set(subareas);
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
     }
 
@@ -219,8 +242,8 @@ exports.handler = async (event) => {
           // Normaliza: el formato antiguo era solo un texto ("admin"/"lectura");
           // el nuevo es {rol, areas, subareas}.
           const normalizado = (typeof val === "object" && val !== null)
-            ? { rol: val.rol, areas: val.areas || {}, subareas: val.subareas || {} }
-            : { rol: val, areas: {}, subareas: {} };
+            ? { rol: val.rol === "admin" ? "admin" : "usuario", areas: val.areas || {}, subareas: val.subareas || {} }
+            : { rol: val === "admin" ? "admin" : "usuario", areas: {}, subareas: {} };
           usuarios.push({ uid: u, email: userRecord.email, ...normalizado });
         } catch (e) {
           // Usuario borrado de Auth pero con registro residual en la base — se ignora.
