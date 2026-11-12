@@ -543,6 +543,11 @@ table tbody tr:hover td{background:var(--accent-soft);}
 .dbTram b{font-size:13px;} .dbTram .meta{font-size:11.5px;color:var(--muted);margin-top:2px;}
 @media(max-width:1100px){.dbKpis{grid-template-columns:repeat(2,minmax(0,1fr));}.dbGrid{grid-template-columns:1fr;}}
 @media(max-width:560px){.dbKpis{grid-template-columns:1fr;}}
+.empOpt{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--panel2);} .empOpt h4{margin:0 0 6px;font-size:14px;} .empOpt p{margin:0 0 10px;font-size:13px;line-height:1.5;}
+.empOpt.ok{border-left:4px solid var(--accent2);} .empOpt.danger{border-left:4px solid var(--danger);}
+.mktGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;}
+.mktTile{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:var(--panel2);}
+.mktNom{font-size:12px;color:var(--muted);margin-bottom:2px;} .mktPrecio{font-size:20px;font-weight:700;letter-spacing:-.01em;}
 </style>
 </head>
 <body>
@@ -1380,9 +1385,9 @@ async function guardarTramite(datos, id){
   return id;
 }
 
-async function eliminarTramite(id){
+async function eliminarTramite(id, etiqueta){
   await db.ref(`tramites/${DATOS_UID}/${id}`).remove();
-  registrarCambio("Trámites", "eliminar", `id ${id}`);
+  registrarCambio("Trámites", "eliminar", `${etiqueta?etiqueta+' ':''}(id ${id})`);
 }
 
 /* --- Documentos de revisión: órdenes de compra, roles de pago, avalúos --- */
@@ -2449,6 +2454,130 @@ function dbEmpTodas(abrir){ document.querySelectorAll('#dbEmpresas .dbEmp').forE
 function dbToggleCard(btn){ const c = btn.closest('.dbCard'); if(c) c.classList.toggle('closed'); }
 function dbAbrirEmpresa(id){ empresaSeleccionadaId = id; goTo('empresas'); }
 
+/* ═══ Panel de mercado y tasas (Dashboard) ═══ */
+let mktTimer = null, mktTab = 'bolsa', mktDatos = null, mktErr = null, mktGuardadas = { bce:null, bancos:[] }, mktEditId = null;
+const MKT_SEGS = ['Productivo Corporativo','Productivo Empresarial','Productivo PYMES','Consumo','Educativo','Vivienda de Interés Público','Inmobiliario','Microcrédito Minorista','Microcrédito de Acumulación Simple','Microcrédito de Acumulación Ampliada'];
+function mktEsAdmin(){ return !usuarioPermisos || usuarioPermisos.rol === 'admin'; }
+function mktN(n, d=2){ return (n==null || !isFinite(n)) ? '—' : Number(n).toLocaleString('es-EC',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function mktNum(v){ const x = parseFloat(String(v==null?'':v).replace(',','.')); return isFinite(x) ? x : null; }
+function mktPanelHTML(){
+  const tabs = [['bolsa','Bolsa EE.UU.'],['bce','Tasas BCE'],['bancos','Bancos privados']];
+  return `<div class="card dbCard" id="mktPanel">
+    <div class="dbCardHead"><span class="dbIc">${dbIcono('chart')||dbIcono('empresas')}</span><h3>Mercado y tasas de interés</h3>
+      <div class="dbHeadTools"><span id="mktEstado" style="font-size:12px;color:var(--muted)"></span><button class="btn small" onclick="mktCargar(true)">↻ Actualizar</button></div></div>
+    <div class="tabs" style="margin:6px 0 10px">${tabs.map(t=>`<button class="tabBtn ${mktTab===t[0]?'active':''}" onclick="mktTab='${t[0]}';mktPintar()">${t[1]}</button>`).join('')}</div>
+    <div id="mktCuerpo" class="dbCardBody">Cargando…</div></div>`;
+}
+function mktHoraTxt(ts){ return ts ? new Date(ts).toLocaleString('es-EC',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
+function mktPintar(){
+  const cont = document.getElementById('mktCuerpo'); if(!cont){ if(mktTimer){ clearInterval(mktTimer); mktTimer = null; } return; }
+  document.querySelectorAll('#mktPanel .tabBtn').forEach((b,i)=>b.classList.toggle('active', ['bolsa','bce','bancos'][i]===mktTab));
+  if(mktTab==='bolsa') cont.innerHTML = mktBolsaHTML(); else if(mktTab==='bce') cont.innerHTML = mktBceHTML(); else cont.innerHTML = mktBancosHTML();
+  const st = document.getElementById('mktEstado'); if(st) st.textContent = mktDatos ? 'Actualizado '+new Date(mktDatos.ts).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
+}
+function mktBolsaHTML(){
+  if(mktErr && !mktDatos) return `<div class="emptyState">No se pudo obtener la bolsa en este momento (${escapeHtml(mktErr)}). Verifique que la función <code>/api/mercado</code> esté desplegada en Netlify.</div>`;
+  if(!mktDatos) return 'Cargando…';
+  const lst = mktDatos.bolsa || [];
+  const abierto = lst.some(x=>x.estado==='REGULAR');
+  const tiles = lst.map(x=>{
+    if(x.error) return `<div class="mktTile"><div class="mktNom">${escapeHtml(x.nombre)}</div><div style="color:var(--muted);font-size:12px">Sin datos (${escapeHtml(x.error)})</div></div>`;
+    const up = (x.cambio||0) >= 0; const col = x.cambio==null ? 'var(--muted)' : (up ? 'var(--accent2,#10b981)' : 'var(--danger,#ef4444)');
+    return `<div class="mktTile"><div class="mktNom">${escapeHtml(x.nombre)}</div><div class="mktPrecio">${mktN(x.precio)}</div>
+      <div style="color:${col};font-weight:600;font-size:13px">${x.cambio==null?'':(up?'▲ ':'▼ ')+mktN(Math.abs(x.cambio))+' ('+(up?'+':'−')+mktN(Math.abs(x.pct))+'%)'}</div>
+      <div style="color:var(--muted);font-size:11px">${mktHoraTxt(x.hora)}</div></div>`;
+  }).join('');
+  return `<div style="margin-bottom:8px"><span class="pill ${abierto?'ok':'muted'}">${abierto?'Mercado abierto':'Mercado cerrado / fuera de horario'}</span></div>
+    <div class="mktGrid">${tiles}</div>
+    <p class="helpNote">Se actualiza solo cada 60 segundos mientras esté en el Panel. Cotizaciones públicas (Yahoo Finance; respaldo Stooq) que pueden tener un retraso de hasta ~15 minutos. Información referencial, no constituye asesoría de inversión.</p>`;
+}
+function mktBceHTML(){
+  const live = mktDatos && mktDatos.bce && mktDatos.bce.ok ? mktDatos.bce : null;
+  const man = mktGuardadas.bce && mktGuardadas.bce.filas ? mktGuardadas.bce : null;
+  const filas = live ? live.filas : (man ? Object.values(man.filas) : []);
+  const origen = live ? `Leído automáticamente del sitio del Banco Central del Ecuador${live.vigencia?' · vigencia: '+escapeHtml(live.vigencia):''}` : (man ? `Datos ingresados manualmente${man.vigencia?' · vigencia: '+escapeHtml(man.vigencia):''}` : '');
+  let html = '';
+  if(filas.length) html += `<table><thead><tr><th>Segmento de crédito</th><th style="text-align:right">Tasa referencial % anual</th><th style="text-align:right">Tasa máxima % anual</th></tr></thead><tbody>${filas.map(f=>`<tr><td>${escapeHtml(f.segmento)}</td><td style="text-align:right">${mktN(f.referencial)}</td><td style="text-align:right">${mktN(f.maxima)}</td></tr>`).join('')}</tbody></table><p class="helpNote">${origen}.</p>`;
+  else html += `<div class="emptyState">No se pudo leer automáticamente la tabla de tasas del BCE${mktDatos&&mktDatos.bce&&mktDatos.bce.error?' ('+escapeHtml(mktDatos.bce.error)+')':''}. ${mktEsAdmin()?'Puede ingresarlas manualmente abajo y quedarán guardadas.':'Consulte con el administrador.'}</div>`;
+  if(live && man) html += `<p class="helpNote">Hay también una tabla manual guardada; se muestra la lectura automática por ser más reciente.</p>`;
+  if(mktEsAdmin()){
+    const base = man ? man.filas : {};
+    html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">Ingresar / corregir tasas del BCE manualmente</summary>
+      <div class="field"><label>Vigencia (ej. noviembre 2026)</label><input id="mkBceVig" value="${escapeHtml((man&&man.vigencia)||'')}"></div>
+      <table><thead><tr><th>Segmento</th><th>Referencial %</th><th>Máxima %</th></tr></thead><tbody>${MKT_SEGS.map((s,i)=>{ const f = Object.values(base).find(x=>x.segmento===s)||{}; return `<tr><td>${s}</td><td><input id="mkBceR${i}" style="width:90px" value="${f.referencial!=null?f.referencial:''}"></td><td><input id="mkBceM${i}" style="width:90px" value="${f.maxima!=null?f.maxima:''}"></td></tr>`; }).join('')}</tbody></table>
+      <button class="btn small primary" onclick="guardarTasasBceManual()">Guardar tasas BCE</button></details>`;
+  }
+  return html;
+}
+function mktBancosHTML(){
+  const b = mktGuardadas.bancos; const adm = mktEsAdmin();
+  const min = k => { const v = b.map(x=>x[k]).filter(x=>x!=null); return v.length ? Math.min(...v) : null; };
+  const mins = { quirografario:min('quirografario'), hipotecario:min('hipotecario'), productivo:min('productivo') };
+  const cel = (x,k) => x[k]==null ? '—' : `<span ${x[k]===mins[k]&&b.length>1?'style="color:var(--accent2,#10b981);font-weight:700" title="Tasa más baja"':''}>${mktN(x[k])}%</span>`;
+  let html = b.length ? `<table><thead><tr><th>Banco</th><th style="text-align:right">Quirografario (consumo)</th><th style="text-align:right">Hipotecario (vivienda)</th><th style="text-align:right">Productivo</th><th style="text-align:right">Pasiva (DPF)</th><th>Vigencia / fuente</th>${adm?'<th></th>':''}</tr></thead><tbody>${b.map(x=>`<tr><td><b>${escapeHtml(x.banco)}</b></td><td style="text-align:right">${cel(x,'quirografario')}</td><td style="text-align:right">${cel(x,'hipotecario')}</td><td style="text-align:right">${cel(x,'productivo')}</td><td style="text-align:right">${x.pasiva==null?'—':mktN(x.pasiva)+'%'}</td><td style="font-size:12px;color:var(--muted)">${escapeHtml(x.vigencia||'')}${x.fuente?'<br>'+escapeHtml(x.fuente):''}</td>${adm?`<td style="white-space:nowrap"><button class="btn small" onclick="editarTasaBanco('${x.id}')">Editar</button> <button class="btn small danger" onclick="eliminarTasaBanco('${x.id}')">Eliminar</button></td>`:''}</tr>`).join('')}</tbody></table>`
+    : `<div class="emptyState">Aún no hay tasas de bancos privados registradas.${adm?' Agréguelas abajo desde las tablas de «tasas de interés» que cada banco publica en su sitio web.':''}</div>`;
+  html += `<p class="helpNote">Tasas efectivas anuales. En verde, la más baja de cada columna. Los bancos publican sus tasas en documentos propios (no existe una fuente única en línea para todas), por lo que estos valores los ingresa el administrador y muestran su fecha de vigencia.</p>`;
+  if(adm){
+    html += `<details id="mkBForm" ${mktEditId?'open':''} style="margin-top:8px"><summary style="cursor:pointer;font-weight:600">${mktEditId?'Editar banco':'Agregar banco'}</summary>
+      <div class="grid3"><div class="field"><label>Banco</label><input id="mkB_banco"></div><div class="field"><label>Quirografario / consumo %</label><input id="mkB_quir"></div><div class="field"><label>Hipotecario / vivienda %</label><input id="mkB_hip"></div></div>
+      <div class="grid3"><div class="field"><label>Productivo %</label><input id="mkB_prod"></div><div class="field"><label>Pasiva (DPF) %</label><input id="mkB_pas"></div><div class="field"><label>Vigencia (ej. noviembre 2026)</label><input id="mkB_vig"></div></div>
+      <div class="field"><label>Fuente (ej. «Tasas vigentes» en el sitio del banco)</label><input id="mkB_fuente"></div>
+      <button class="btn small primary" onclick="guardarTasaBanco()">Guardar banco</button> ${mktEditId?'<button class="btn small" onclick="mktEditId=null;mktPintar()">Cancelar</button>':''}</details>`;
+  }
+  return html;
+}
+async function mktCargarGuardadas(){
+  try{
+    const v = (await db.ref(`mercado_tasas/${DATOS_UID}`).once('value')).val() || {};
+    mktGuardadas.bce = v.bce || null;
+    mktGuardadas.bancos = Object.keys(v.bancos||{}).map(id=>({id, ...v.bancos[id]})).sort((a,b)=>String(a.banco).localeCompare(String(b.banco)));
+  }catch(e){ /* sin permiso o sin reglas: el panel funciona sin datos guardados */ }
+}
+async function mktCargar(manual){
+  if(!document.getElementById('mktPanel')){ if(mktTimer){ clearInterval(mktTimer); mktTimer = null; } return; }
+  try{
+    const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), 15000);
+    const r = await fetch('/api/mercado', { signal: ctl.signal }); clearTimeout(to);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    mktDatos = await r.json(); mktErr = null;
+  }catch(e){ mktErr = (e && e.message) || 'sin conexión'; }
+  mktPintar();
+}
+function mktIniciar(){
+  if(mktTimer){ clearInterval(mktTimer); mktTimer = null; }
+  mktCargarGuardadas().then(()=>mktPintar());
+  mktCargar();
+  mktTimer = setInterval(()=>{ if(!document.hidden) mktCargar(); }, 60000);
+}
+async function guardarTasaBanco(){
+  const g = id => (document.getElementById(id)||{}).value||'';
+  const banco = g('mkB_banco').trim(); if(!banco){ alert('Escriba el nombre del banco.'); return; }
+  const id = mktEditId || db.ref(`mercado_tasas/${DATOS_UID}/bancos`).push().key;
+  await db.ref(`mercado_tasas/${DATOS_UID}/bancos/${id}`).set(limpiarUndefined({ banco, quirografario:mktNum(g('mkB_quir')), hipotecario:mktNum(g('mkB_hip')), productivo:mktNum(g('mkB_prod')), pasiva:mktNum(g('mkB_pas')), vigencia:g('mkB_vig').trim(), fuente:g('mkB_fuente').trim(), actualizado:Date.now() }));
+  registrarCambio('Mercado y tasas', mktEditId?'editar':'crear', `Tasas ${banco}`);
+  mktEditId = null; await mktCargarGuardadas(); mktPintar(); toast('Tasas guardadas','success');
+}
+function editarTasaBanco(id){
+  const x = mktGuardadas.bancos.find(b=>b.id===id); if(!x) return; mktEditId = id; mktPintar();
+  const s = (k,v)=>{ const e = document.getElementById(k); if(e) e.value = v==null?'':v; };
+  s('mkB_banco',x.banco); s('mkB_quir',x.quirografario); s('mkB_hip',x.hipotecario); s('mkB_prod',x.productivo); s('mkB_pas',x.pasiva); s('mkB_vig',x.vigencia); s('mkB_fuente',x.fuente);
+  const f = document.getElementById('mkBForm'); if(f) f.scrollIntoView({behavior:'smooth',block:'center'});
+}
+async function eliminarTasaBanco(id){
+  const x = mktGuardadas.bancos.find(b=>b.id===id); if(!x) return;
+  if(!confirm(`¿Eliminar las tasas de «${x.banco}»?`)) return;
+  await db.ref(`mercado_tasas/${DATOS_UID}/bancos/${id}`).remove();
+  registrarCambio('Mercado y tasas','eliminar',`Tasas ${x.banco}`);
+  await mktCargarGuardadas(); mktPintar();
+}
+async function guardarTasasBceManual(){
+  const filas = {};
+  MKT_SEGS.forEach((s,i)=>{ const r = mktNum((document.getElementById('mkBceR'+i)||{}).value), m = mktNum((document.getElementById('mkBceM'+i)||{}).value); if(r!=null || m!=null) filas['s'+i] = { segmento:s, referencial:r, maxima:m }; });
+  await db.ref(`mercado_tasas/${DATOS_UID}/bce`).set(limpiarUndefined({ vigencia:(document.getElementById('mkBceVig')||{}).value||'', filas, actualizado:Date.now() }));
+  registrarCambio('Mercado y tasas','editar','Tasas BCE (manual)');
+  await mktCargarGuardadas(); mktPintar(); toast('Tasas del BCE guardadas','success');
+}
+
 async function renderDashboard(){
   const main = document.getElementById("main");
   let hoyTxt = new Date().toLocaleDateString('es-EC',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); hoyTxt = hoyTxt.charAt(0).toUpperCase()+hoyTxt.slice(1);
@@ -2460,6 +2589,7 @@ async function renderDashboard(){
     </div>
     <div class="dbCumple" id="dbCumple"><div class="dbCumpleHead"><span class="dbIc">${dbIcono('cake')}</span><b>Próximos cumpleaños</b></div><div id="alertasCumpleanosDashboard" class="dbCumpleBody">Cargando...</div></div>
     <div class="dbKpis" id="statRow"><div class="emptyState">Cargando...</div></div>
+    ${mktPanelHTML()}
     <div class="dbGrid">
       <div class="card dbCard dbCardEmp">
         <div class="dbCardHead"><span class="dbIc">${dbIcono('empresas')}</span><h3>Empresas y cumplimiento</h3>
@@ -2471,6 +2601,7 @@ async function renderDashboard(){
         <div id="alertasTramites" class="dbCardBody">Cargando...</div>
       </div>
     </div>`;
+  mktIniciar();
 
   cargarColaboradores().then(lista => {
     const cont = document.getElementById("alertasCumpleanosDashboard");
@@ -2560,6 +2691,7 @@ function renderEmpresas(){
       <div class="card" id="listaEmpresas"></div>
       <div id="detalleEmpresa"></div>
     </div>
+    <div id="empArchivadasHost"></div>
     <div id="modalEmpresaHost"></div>
   `;
   (async () => {
@@ -2569,6 +2701,7 @@ function renderEmpresas(){
       empresaSeleccionadaId = visibles.length ? visibles[0].id : null;
     }
     pintarListaEmpresas();
+    pintarEmpresasArchivadas();
     if(empresaSeleccionadaId) pintarDetalleEmpresa(empresaSeleccionadaId);
     else document.getElementById("detalleEmpresa").innerHTML = `<div class="card emptyState">${visibles.length?'Selecciona una empresa para ver su checklist de cumplimiento.':'No estás asignado como responsable de ninguna empresa todavía. Pide a un administrador que te asigne en "Editar empresa → Miembro(s) responsable(s)".'}</div>`;
   })();
@@ -2798,11 +2931,147 @@ async function toggleChecklist(empresaId, periodoKey, checked){
   pintarChecklistWrap(emp);
 }
 
-async function confirmarEliminarEmpresa(id){
-  if(!confirm("¿Eliminar esta empresa? Esto no borra los trámites asociados.")) return;
-  await eliminarEmpresa(id);
-  renderEmpresas();
+/* ═══ Empresas: archivar (conservar información), eliminar definitivo y recuperar ═══ */
+const EMP_RUTAS_DATOS = [
+  ['flujos_caja','Flujo de caja (Banco del Pacífico)'],['ef_internos','Estados financieros internos'],['estados_financieros','Estados financieros'],
+  ['auditoria_supercias','Auditoría Supercias'],['desglose_terceros','Desglose proveedores y clientes'],
+  ['banco_produbanco_flujo','Flujo Produbanco (histórico)'],['banco_produbanco_flujo_borrador','Flujo Produbanco (borrador)'],['banco_borradores_auto','Borradores bancarios']
+];
+let empArchivadasCache = [];
+let empArchivadasError = false;
+async function cargarEmpresasArchivadas(){
+  try{
+    const snap = await db.ref(`empresas_archivadas/${DATOS_UID}`).once('value'); const v = snap.val() || {};
+    empArchivadasCache = Object.keys(v).map(id=>({id, ...v[id]})).sort((a,b)=>(b.archivadaEn||0)-(a.archivadaEn||0)); empArchivadasError = false;
+  }catch(e){ empArchivadasCache = []; empArchivadasError = true; }
+  return empArchivadasCache;
 }
+async function empDatosAsociados(id){
+  const out = [];
+  for(const [ruta, etq] of EMP_RUTAS_DATOS){
+    try{ const v = (await db.ref(`${ruta}/${DATOS_UID}/${id}`).once('value')).val(); if(v!==null && v!==undefined) out.push({ ruta, etq, valor:v }); }catch(e){ /* sin permiso: se omite */ }
+  }
+  try{
+    const val = (await db.ref(`checklist_estado/${DATOS_UID}`).once('value')).val() || {};
+    const claves = Object.keys(val).filter(k=>val[k] && val[k].empresaId===id);
+    if(claves.length) out.push({ ruta:'checklist_estado', etq:'Checklist de cumplimiento', claves, valor: claves.reduce((o,k)=>{ o[k]=val[k]; return o; },{}) });
+  }catch(e){}
+  return out;
+}
+function empCerrarModal(){ const h = document.getElementById('modalEmpresaHost'); if(h) h.innerHTML = ''; }
+function empResumenValor(v){ return (v && typeof v==='object') ? Object.keys(v).length+' registro(s)' : '1 dato'; }
+
+/* Diálogo de borrado con dos caminos */
+function confirmarEliminarEmpresa(id){
+  const emp = empresasCache.find(e=>e.id===id) || empArchivadasCache.find(e=>e.id===id); if(!emp) return;
+  const archivada = !empresasCache.some(e=>e.id===id);
+  document.getElementById('modalEmpresaHost').innerHTML = `<div class="modalBg"><div class="modalBox" style="max-width:640px">
+    <button class="closeX" onclick="empCerrarModal()">×</button>
+    <h3 style="margin-top:0">¿Qué desea hacer con «${escapeHtml(emp.nombre)}»?</h3>
+    ${archivada ? '' : `<div class="empOpt ok"><h4>📦 Archivar (recomendado)</h4>
+      <p>La empresa sale de la lista activa, pero <b>toda su información se conserva</b> (checklist, flujos de caja, estados financieros, auditoría, desglose, etc.) y puede <b>consultarse, descargarse como respaldo o restaurarse</b> cuando la necesite.</p>
+      <button class="btn primary" onclick="guardarArchivoEmpresa('${id}')">Archivar empresa y conservar la información</button></div>`}
+    <div class="empOpt danger"><h4>🗑️ Eliminar definitivamente</h4>
+      <p><b>Se borrará la empresa y TODA la información asociada</b> a ella (checklist de cumplimiento, flujos de caja, estados financieros, auditoría Supercias, desglose de proveedores y clientes, borradores bancarios). <b>Esta acción no se puede deshacer.</b></p>
+      <div class="field"><label>Para confirmar, escriba el nombre exacto de la empresa:</label><input id="empConfirmaNombre" placeholder="${escapeHtml(emp.nombre)}" oninput="document.getElementById('empBtnDefinitivo').disabled = this.value.trim().toLowerCase()!==${JSON.stringify(String(emp.nombre||'').trim().toLowerCase()).replace(/"/g,'&quot;')}"></div>
+      <button class="btn danger" id="empBtnDefinitivo" disabled onclick="eliminarEmpresaDefinitiva('${id}')">Eliminar definitivamente con toda su información</button></div>
+    <div style="text-align:right;margin-top:10px"><button class="btn" onclick="empCerrarModal()">Cancelar</button></div>
+  </div></div>`;
+}
+async function guardarArchivoEmpresa(id){
+  const emp = empresasCache.find(e=>e.id===id); if(!emp) return;
+  const { id:_omit, ...rec } = emp;
+  try{
+    await db.ref(`empresas_archivadas/${DATOS_UID}/${id}`).set(limpiarUndefined({ ...rec, archivadaEn: Date.now(), archivadaPor: (currentUser&&currentUser.email)||'' }));
+  }catch(e){ alert('No se pudo archivar la empresa (la empresa NO fue modificada).\n\nPegue en Firebase las reglas actualizadas (ruta «empresas_archivadas») e intente de nuevo.\n\nDetalle: '+(e.message||e)); return; }
+  await db.ref(`empresas/${DATOS_UID}/${id}`).remove();
+  if(empresaSeleccionadaId===id) empresaSeleccionadaId = null;
+  registrarCambio('Empresas y Cumplimiento','archivar',`${emp.nombre||''} (id ${id}) — información conservada`);
+  await cargarEmpresas(); empCerrarModal(); toast('Empresa archivada: su información se conserva y puede consultarse en «Empresas archivadas».','success',5000); renderEmpresas();
+}
+async function eliminarEmpresaDefinitiva(id){
+  const emp = empresasCache.find(e=>e.id===id) || empArchivadasCache.find(e=>e.id===id); if(!emp) return;
+  const datos = await empDatosAsociados(id);
+  for(const d of datos){
+    if(d.ruta==='checklist_estado'){ const upd = {}; d.claves.forEach(k=>{ upd[k] = null; }); await db.ref(`checklist_estado/${DATOS_UID}`).update(upd); }
+    else await db.ref(`${d.ruta}/${DATOS_UID}/${id}`).remove();
+  }
+  await db.ref(`empresas/${DATOS_UID}/${id}`).remove();
+  try{ await db.ref(`empresas_archivadas/${DATOS_UID}/${id}`).remove(); }catch(e){}
+  if(empresaSeleccionadaId===id) empresaSeleccionadaId = null;
+  registrarCambio('Empresas y Cumplimiento','eliminar',`${emp.nombre||''} (id ${id}) — eliminación definitiva con su información`);
+  await cargarEmpresas(); empCerrarModal(); toast('Empresa eliminada definitivamente','success'); renderEmpresas();
+}
+
+/* Sección «Empresas archivadas» */
+async function pintarEmpresasArchivadas(){
+  const host = document.getElementById('empArchivadasHost'); if(!host) return;
+  await cargarEmpresasArchivadas();
+  const fi = a => a.archivadaEn ? new Date(a.archivadaEn).toLocaleDateString('es-EC') : '';
+  host.innerHTML = `<div class="card" style="margin-top:16px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <h3 style="margin:0;flex:1;">📦 Empresas archivadas <span class="pill muted">${empArchivadasCache.length}</span></h3>
+      <button class="btn small" onclick="empAbrirRecuperar()">♻️ Recuperar empresas eliminadas</button>
+    </div>
+    <p class="helpNote">Las empresas archivadas no aparecen en la lista activa, pero conservan toda su información para consultas.${empArchivadasError?' <b style="color:var(--warn)">No se pudo leer la ruta «empresas_archivadas»: actualice las reglas de Firebase.</b>':''}</p>
+    ${empArchivadasCache.length ? `<table><thead><tr><th>Empresa</th><th>RUC</th><th>Archivada</th><th></th></tr></thead><tbody>${empArchivadasCache.map(a=>`<tr><td><b>${escapeHtml(a.nombre||'')}</b></td><td>${escapeHtml(a.ruc||'')}</td><td>${fi(a)}${a.archivadaPor?' · '+escapeHtml(a.archivadaPor):''}</td>
+      <td style="white-space:nowrap"><button class="btn small" onclick="empConsultarArchivada('${a.id}')">Consultar información</button> <button class="btn small primary" onclick="guardarRestaurarEmpresa('${a.id}')">Restaurar</button> <button class="btn small danger" onclick="confirmarEliminarEmpresa('${a.id}')">Eliminar</button></td></tr>`).join('')}</tbody></table>` : '<p style="color:var(--muted);font-size:13px;">No hay empresas archivadas.</p>'}
+  </div>`;
+}
+async function empConsultarArchivada(id){
+  const a = empArchivadasCache.find(x=>x.id===id); if(!a) return;
+  document.getElementById('modalEmpresaHost').innerHTML = `<div class="modalBg"><div class="modalBox" style="max-width:720px"><button class="closeX" onclick="empCerrarModal()">×</button><h3 style="margin-top:0">${escapeHtml(a.nombre||'')}</h3><p class="helpNote">Buscando información conservada…</p></div></div>`;
+  const datos = await empDatosAsociados(id);
+  const campos = [['RUC',a.ruc],['Tipo',a.tipoContribuyente==='juridica'?'Persona jurídica':'Persona natural'],['Régimen',a.regimen],['Ciudad',a.ciudad],['Actividad',a.actividad],['Responsable',a.responsable],['Empleados',a.tieneEmpleados?(a.numEmpleados||'sí'):'no']];
+  document.getElementById('modalEmpresaHost').innerHTML = `<div class="modalBg"><div class="modalBox" style="max-width:720px"><button class="closeX" onclick="empCerrarModal()">×</button>
+    <h3 style="margin-top:0">${escapeHtml(a.nombre||'')} <span class="pill muted">archivada</span></h3>
+    <table><tbody>${campos.filter(c=>c[1]).map(c=>`<tr><th style="width:30%;text-align:left">${c[0]}</th><td>${escapeHtml(String(c[1]))}</td></tr>`).join('')}</tbody></table>
+    <h4>Información conservada</h4>
+    ${datos.length ? `<table><thead><tr><th>Módulo</th><th>Contenido</th></tr></thead><tbody>${datos.map(d=>`<tr><td>${escapeHtml(d.etq)}</td><td>${empResumenValor(d.valor)}</td></tr>`).join('')}</tbody></table>` : '<p style="color:var(--muted)">Esta empresa no tiene información adicional registrada en los módulos.</p>'}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="empDescargarRespaldo('${id}')">⬇️ Descargar respaldo (JSON)</button><button class="btn primary" onclick="guardarRestaurarEmpresa('${id}')">Restaurar a empresas activas</button><button class="btn" onclick="empCerrarModal()">Cerrar</button></div>
+    <p class="helpNote">Para ver los detalles dentro de cada módulo (flujos, estados financieros, auditoría…), restaure la empresa; todo su historial reaparece tal como estaba.</p></div></div>`;
+}
+async function empDescargarRespaldo(id){
+  const a = empArchivadasCache.find(x=>x.id===id) || empresasCache.find(x=>x.id===id); if(!a) return;
+  const datos = await empDatosAsociados(id); const obj = { empresa:a, datos:{} }; datos.forEach(d=>{ obj.datos[d.ruta] = d.valor; });
+  const blob = new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}); const url = URL.createObjectURL(blob); const el = document.createElement('a');
+  el.href = url; el.download = `respaldo_${String(a.nombre||'empresa').replace(/[^\w]+/g,'_')}.json`; el.click(); URL.revokeObjectURL(url);
+}
+async function guardarRestaurarEmpresa(id){
+  const a = empArchivadasCache.find(x=>x.id===id); if(!a) return;
+  const { id:_i, archivadaEn, archivadaPor, ...rec } = a;
+  await db.ref(`empresas/${DATOS_UID}/${id}`).set(limpiarUndefined({ ...rec, actualizado: Date.now() }));
+  await db.ref(`empresas_archivadas/${DATOS_UID}/${id}`).remove();
+  registrarCambio('Empresas y Cumplimiento','restaurar',`${a.nombre||''} (id ${id})`);
+  await cargarEmpresas(); empresaSeleccionadaId = id; empCerrarModal(); toast('Empresa restaurada con toda su información','success'); renderEmpresas();
+}
+
+/* Recuperar empresas eliminadas antes de esta versión (la información de los módulos no se había borrado: quedó desconectada) */
+async function empAbrirRecuperar(){
+  document.getElementById('modalEmpresaHost').innerHTML = `<div class="modalBg"><div class="modalBox" style="max-width:760px"><button class="closeX" onclick="empCerrarModal()">×</button><h3 style="margin-top:0">Recuperar empresas eliminadas</h3><p class="helpNote">Buscando en el historial de cambios…</p></div></div>`;
+  let log = []; try{ log = await cargarLogCambios(); }catch(e){}
+  await cargarEmpresasArchivadas();
+  const vistos = new Set(), cand = [];
+  log.filter(l=>l.modulo==='Empresas y Cumplimiento' && l.accion==='eliminar').forEach(l=>{
+    const m = String(l.detalle||'').match(/^(.*) \(id ([^)\s]+)\)/); if(!m) return; const id = m[2];
+    if(vistos.has(id) || empresasCache.some(e=>e.id===id) || empArchivadasCache.some(e=>e.id===id)) return; vistos.add(id); cand.push({ id, nombre:m[1].trim(), fecha:l.fecha, usuario:l.usuario });
+  });
+  for(const c of cand){ c.datos = await empDatosAsociados(c.id); }
+  document.getElementById('modalEmpresaHost').innerHTML = `<div class="modalBg"><div class="modalBox" style="max-width:760px"><button class="closeX" onclick="empCerrarModal()">×</button><h3 style="margin-top:0">Recuperar empresas eliminadas</h3>
+    <p class="helpNote">Al eliminar una empresa, la información de los módulos (flujos, estados financieros, auditoría, checklist…) quedaba guardada pero <b>desconectada</b>. Al restaurar la empresa con su mismo identificador, esa información vuelve a aparecer. Complete su RUC y luego edite el resto de datos con «Editar».</p>
+    ${cand.length ? cand.map(c=>`<div class="empOpt ok" style="margin-bottom:8px"><b>${escapeHtml(c.nombre)}</b> <span style="color:var(--muted);font-size:12px">eliminada ${c.fecha?new Date(c.fecha).toLocaleDateString('es-EC'):''}${c.usuario?' · '+escapeHtml(c.usuario):''}</span>
+      <div style="font-size:12px;margin:4px 0">${c.datos.length ? 'Información encontrada: '+c.datos.map(d=>escapeHtml(d.etq)).join(', ') : '<span style="color:var(--muted)">No se encontró información asociada en los módulos revisados.</span>'}</div>
+      <div style="display:flex;gap:8px;align-items:center"><input id="rec_ruc_${c.id}" maxlength="13" placeholder="RUC (13 dígitos)" style="width:190px"><button class="btn small primary" data-nombre="${escapeHtml(c.nombre)}" onclick="guardarRecuperarEmpresaEliminada('${c.id}', this.dataset.nombre)">Restaurar empresa</button></div></div>`).join('') : '<p style="color:var(--muted)">No se encontraron empresas eliminadas en el historial de cambios.</p>'}
+    <div style="text-align:right;margin-top:8px"><button class="btn" onclick="empCerrarModal()">Cerrar</button></div></div></div>`;
+}
+async function guardarRecuperarEmpresaEliminada(id, nombre){
+  const ruc = (document.getElementById('rec_ruc_'+id)?.value||'').trim();
+  if(!/^\d{10,13}$/.test(ruc)){ alert('Ingrese el RUC (10 a 13 dígitos) para restaurar la empresa.'); return; }
+  await db.ref(`empresas/${DATOS_UID}/${id}`).set(limpiarUndefined({ nombre, ruc, tipoContribuyente:'juridica', regimen:'general', clasificacionSri:'normal', ciudad:'', region:'sierra', actividad:'', responsablesIds:[], responsablesOtros:[], responsable:'', obligadaContabilidad:true, reportaUafe:false, sectorFinanciero:false, ventasCredito:false, tieneEmpleados:false, numEmpleados:0, creado: Date.now(), actualizado: Date.now() }));
+  registrarCambio('Empresas y Cumplimiento','restaurar',`${nombre} (id ${id}) — recuperada desde el historial`);
+  await cargarEmpresas(); empresaSeleccionadaId = id; empCerrarModal(); toast('Empresa recuperada. Abra «Editar» para completar sus datos.','success',6000); renderEmpresas();
+}
+
 
 /* --- Exportar CSV e imprimir el checklist del periodo seleccionado --- */
 async function exportarChecklistCSV(empresaId){
@@ -3076,12 +3345,14 @@ function pintarTablaTramites(tipo){
   if(filtroHasta) lista = lista.filter(t => t.fechaRecepcion && t.fechaRecepcion <= filtroHasta);
 
   if(!lista.length){ cont.innerHTML = `<div class="emptyState">${tramitesCache[tipo].length ? "Ningún trámite coincide con los filtros." : "Aún no hay trámites registrados."}</div>`; return; }
-  cont.innerHTML = `<table><thead><tr>
-      <th>Institución / Asunto</th><th>Recepción</th><th>Vencimiento</th><th>Estado</th><th></th>
+  cont.innerHTML = `<div id="trBarra_${tipo}" style="display:none;margin-bottom:8px;gap:8px;align-items:center"><b id="trCuenta_${tipo}"></b> <button class="btn small danger" onclick="confirmarEliminarTramitesSeleccion('${tipo}')">Eliminar seleccionados</button></div>
+    <table><thead><tr>
+      <th style="width:28px"><input type="checkbox" title="Seleccionar todos" onchange="trSeleccionarTodos('${tipo}',this.checked)"></th><th>Institución / Asunto</th><th>Recepción</th><th>Vencimiento</th><th>Estado</th><th></th>
     </tr></thead><tbody>
     ${lista.map(t => {
       const vencido = t.fechaVencimiento && new Date(t.fechaVencimiento) < hoy && t.estado!=="Resuelto";
       return `<tr>
+        <td><input type="checkbox" class="chkTr_${tipo}" value="${t.id}" onchange="trActualizarBarra('${tipo}')"></td>
         <td><b>${escapeHtml(t.institucion||'-')}</b><br><span style="color:var(--muted);font-size:12px;">${escapeHtml(t.asunto||t.numeroOficio||'')}</span></td>
         <td>${fmtFecha(t.fechaRecepcion)}</td>
         <td>${fmtFecha(t.fechaVencimiento)} ${vencido?'<span class="pill danger">Vencido</span>':''}</td>
@@ -3089,12 +3360,24 @@ function pintarTablaTramites(tipo){
         <td>
           <button class="btn small" onclick="abrirDetalleTramite('${tipo}','${t.id}')">Abrir</button>
           <button class="btn small" onclick="abrirModalTramite('${tipo}','${t.id}')">Editar</button>
+          <button class="btn small danger" onclick="confirmarEliminarTramite('${tipo}','${t.id}')">Eliminar</button>
         </td>
       </tr>`;
     }).join("")}
     </tbody></table>`;
 }
 
+function trSeleccionados(tipo){ return [...document.querySelectorAll('.chkTr_'+tipo+':checked')].map(c=>c.value); }
+function trActualizarBarra(tipo){ const n = trSeleccionados(tipo).length; const b = document.getElementById('trBarra_'+tipo), c = document.getElementById('trCuenta_'+tipo); if(b) b.style.display = n ? 'flex' : 'none'; if(c) c.textContent = n+' seleccionado'+(n===1?'':'s'); }
+function trSeleccionarTodos(tipo, v){ document.querySelectorAll('.chkTr_'+tipo).forEach(c=>{ c.checked = !!v; }); trActualizarBarra(tipo); }
+async function confirmarEliminarTramitesSeleccion(tipo){
+  const ids = trSeleccionados(tipo); if(!ids.length) return;
+  const nombres = ids.map(id=>{ const t = tramitesCache[tipo].find(x=>x.id===id); return t ? trEtiqueta(t) : id; });
+  const lista = nombres.slice(0,8).map(n=>'• '+n).join('\n') + (nombres.length>8 ? `\n… y ${nombres.length-8} más` : '');
+  if(!confirm(`¿Eliminar ${ids.length} trámite(s)?\n\n${lista}\n\nSe borrarán también su diagnóstico IA, soportes y equipo de trabajo. Esta acción no se puede deshacer.`)) return;
+  for(let k=0;k<ids.length;k++) await eliminarTramite(ids[k], nombres[k]);
+  tramitesCache[tipo] = await cargarTramites(tipo); pintarTablaTramites(tipo); toast(ids.length+' trámite(s) eliminado(s)','success');
+}
 function abrirModalTramite(tipo, id){
   const t = id ? tramitesCache[tipo].find(x=>x.id===id) : null;
   const host = document.getElementById("modalTramiteHost");
@@ -3206,9 +3489,11 @@ async function guardarTramiteForm(tipo, id){
   abrirDetalleTramite(tipo, nuevoId);
 }
 
+function trEtiqueta(t){ return [t.institucion, t.numeroOficio||t.asunto].filter(Boolean).join(' · ') || 'trámite'; }
 async function confirmarEliminarTramite(tipo, id){
-  if(!confirm("¿Eliminar este trámite?")) return;
-  await eliminarTramite(id);
+  const t = tramitesCache[tipo].find(x=>x.id===id); const et = t ? trEtiqueta(t) : '';
+  if(!confirm(`¿Eliminar el trámite «${et}»?\n\nSe borrarán también su diagnóstico IA, soportes y equipo de trabajo. Esta acción no se puede deshacer.`)) return;
+  await eliminarTramite(id, et);
   tramitesCache[tipo] = await cargarTramites(tipo);
   pintarTablaTramites(tipo);
   document.getElementById("modalDetalleHost").innerHTML = "";

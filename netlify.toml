@@ -37,3 +37,8 @@
   from = "/api/crear-usuario"
   to = "/.netlify/functions/crear_usuario"
   status = 200
+
+[[redirects]]
+  from = "/api/mercado"
+  to = "/.netlify/functions/mercado"
+  status = 200
