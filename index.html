@@ -429,6 +429,7 @@ table.efEst .r-blank td{height:6px;border:0;padding:0;}
     <button class="navBtn" data-view="tomafisica" onclick="goTo('tomafisica')">📦 Toma Física</button>
     <button class="navBtn" data-view="cajachica" onclick="goTo('cajachica')">🧾 Liquidación Caja Chica</button>
     <button class="navBtn" data-view="desgloseterceros" onclick="goTo('desgloseterceros')">🧮 Desglose Proveedores y Clientes</button>
+    <button class="navBtn" data-view="impuestos" onclick="goTo('impuestos')">📑 Impuestos</button>
     <button class="navBtn" data-view="reuniones" onclick="goTo('reuniones')">📅 Reuniones y Eventos</button>
     <button class="navBtn" data-view="actasjunta" onclick="goTo('actasjunta')">🏛️ Actas de Junta</button>
     <button class="navBtn" data-view="cesiones" onclick="goTo('cesiones')">📜 Cesión de Acciones</button>
@@ -577,6 +578,7 @@ const AREAS_APP = {
   tomafisica:   { label:"📦 Toma Física" },
   cajachica:    { label:"🧾 Liquidación Caja Chica" },
   desgloseterceros: { label:"🧮 Desglose Proveedores y Clientes" },
+  impuestos:    { label:"📑 Impuestos" },
   reuniones:    { label:"📅 Reuniones y Eventos" },
   actasjunta:   { label:"🏛️ Actas de Junta" },
   cesiones:     { label:"📜 Cesión de Acciones" },
@@ -798,6 +800,7 @@ function goTo(view){
     tomafisica: renderTomaFisica,
     cajachica: renderCajaChica,
     desgloseterceros: renderDesgloseTerceros,
+    impuestos: renderImpuestos,
     reuniones: renderReunionesEventos,
     actasjunta: renderActasJuntas,
     cesiones: renderCesiones,
@@ -22846,6 +22849,787 @@ function imprimirDesglose(){
     </tbody></table>`;
   bpAbrirVentanaImpresion(cont, `Desglose de ${t.titulo} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape:labels.length>2, logo:'📄 DESGLOSE '+t.titulo.toUpperCase(), pie:'Documento generado a partir del Excel cargado en Control Documental.'});
 }
+
+/* =========================================================================
+   MÓDULO: IMPUESTOS › RENTA PERSONAS NATURALES
+   - Carga mensual del Formulario 104 (IVA): originales y sustitutivas, 12 meses.
+   - Resúmenes mensuales y anuales (ventas, compras, IVA, retenciones).
+   - Liquidación referencial del impuesto a la renta (tabla progresiva SRI).
+   - Informes ejecutivo / mensual / general, impresión y Excel.
+   ⚠️ Es una ayuda de cálculo: verifique casilleros y valores contra el SRI en línea.
+   Firebase: impuestos_pn/{uid}/{contribuyenteId} = { meta, anios:{ AAAA:{ iva:{ MM:{docs:[..]} }, renta:{..} } } }
+   ========================================================================= */
+const IMP_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+/* Tabla progresiva IR personas naturales [desde, hasta, impuesto fracción básica, % excedente]. Fuente: resoluciones SRI NAC-DGERCGC24-00000041 (2025) y NAC-DGERCGC25-00000043 (2026). */
+const IMP_TABLAS_RENTA = {
+  '2025': [[0,12081,0,0],[12081,15387,0,5],[15387,19978,165,10],[19978,26422,624,12],[26422,34770,1398,15],[34770,46089,2650,20],[46089,61359,4914,25],[61359,81817,8731,30],[81817,108810,14869,35],[108810,Infinity,24316,37]],
+  '2026': [[0,12208,0,0],[12208,15549,0,5],[15549,20188,167,10],[20188,26700,631,12],[26700,35136,1412,15],[35136,46575,2678,20],[46575,62005,4965,25],[62005,82679,8823,30],[82679,109956,15025,35],[109956,Infinity,24572,37]]
+};
+/* Rebaja por gastos personales: % × menor entre gastos y (n × canasta familiar básica). n según cargas familiares. */
+const IMP_GP_CANASTAS = [7,9,11,14,17,20];
+const IMP_GP_CATASTROFICA = 100;
+const IMP_PARAMS_ANIO = { '2025':{ cfb:798.31, rebaja:18 }, '2026':{ cfb:821.80, rebaja:18 } };
+const IMP_GP_CATS = [['vivienda','Vivienda'],['educacion','Educación'],['salud','Salud'],['alimentacion','Alimentación'],['vestimenta','Vestimenta'],['turismo','Turismo'],['arte','Arte y cultura']];
+
+let impDatos = {};          // { [cid]: {meta, anios} }
+let impContribId = null;
+let impAnio = new Date().getFullYear() - 1;
+let impTab = 'iva';         // iva | resumen | renta | informes
+let impPendientes = [];     // archivos leídos, por confirmar
+let impForzar = null;       // {mes, tipo} cuando se pulsó «subir original/sustitutiva» de un mes
+let impMesInforme = 1;
+
+function impR2(n){ return Math.round((Number(n)||0)*100)/100; }
+function impArr(v){ return Array.isArray(v) ? v : (v && typeof v==='object' ? Object.values(v) : []); }
+function impMM(m){ return String(m).padStart(2,'0'); }
+function impCasDescMap(){
+  const m = {}; (typeof CSRI_104_DEF!=='undefined' ? CSRI_104_DEF : []).forEach(r=>{ m[r[0]] = { d:r[1], g:r[4] }; });
+  return m;
+}
+
+/* ---------------- Datos / Firebase ---------------- */
+async function impCargar(){
+  const snap = await db.ref(`impuestos_pn/${DATOS_UID}`).once('value');
+  const v = snap.val() || {};
+  impDatos = {};
+  Object.keys(v).forEach(cid=>{
+    const o = v[cid] || {};
+    const anios = {};
+    Object.keys(o.anios||{}).forEach(a=>{
+      const an = o.anios[a] || {}; const iva = {};
+      Object.keys(an.iva||{}).forEach(mm=>{ iva[mm] = { docs: impArr(an.iva[mm]?.docs).map(d=>({ ...d, c: d.c||{} })) }; });
+      anios[a] = { iva, renta: an.renta || {} };
+    });
+    impDatos[cid] = { meta: o.meta || { nombre:'(sin nombre)' }, anios };
+  });
+  if(!impContribId || !impDatos[impContribId] || impTipoActual()!==impSeccion) impContribId = Object.keys(impDatos).find(i=>(impDatos[i].meta.tipo||'pn')===impSeccion) || null;
+}
+function impAnioData(crear){
+  if(!impContribId) return null;
+  const c = impDatos[impContribId]; const k = String(impAnio);
+  if(!c.anios[k]){ if(!crear) return { iva:{}, renta:{} }; c.anios[k] = { iva:{}, renta:{} }; }
+  return c.anios[k];
+}
+async function impPersistir(){
+  if(!impContribId) return;
+  const c = impDatos[impContribId];
+  await db.ref(`impuestos_pn/${DATOS_UID}/${impContribId}`).set(limpiarUndefined({ meta:c.meta, anios:c.anios }));
+}
+
+/* ---------------- Documento efectivo del mes ---------------- */
+function impDocEfectivo(mesNode){
+  const docs = impArr(mesNode?.docs); if(!docs.length) return null;
+  const sust = docs.filter(d=>d.tipo==='sustitutiva').sort((a,b)=>(a.n||1)-(b.n||1));
+  if(sust.length) return sust[sust.length-1];
+  const ori = docs.filter(d=>d.tipo!=='sustitutiva');
+  return ori.length ? ori[ori.length-1] : docs[docs.length-1];
+}
+
+/* ---------------- Métricas de un 104 ---------------- */
+function impMetricasMes(c){
+  c = c || {};
+  const g = k => (c[k]===undefined || c[k]===null || c[k]==='') ? null : Number(c[k]);
+  const sum = ks => ks.reduce((s,k)=>s+(g(k)||0),0);
+  const tiene = ks => ks.some(k=>g(k)!==null);
+  const o = {};
+  o.ventasBrutas = g('409')!==null ? g('409') : sum(['401','402','403','405','431']);
+  o.ventasNetas  = g('419')!==null ? g('419') : sum(['411','412','413','415','441']);
+  o.ivaGenerado  = g('429')!==null ? g('429') : sum(['421','422']);
+  o.ventasGravadas = sum(['411']); o.ventas0 = sum(['413']); o.ventasNoObjeto = sum(['441']);
+  o.comprasNetas = sum(['510','512','517','531','532','513','514']);
+  o.comprasAF    = sum(['511','515']);
+  o.comprasBrutas= sum(['500','502','507','503','504','501','505']);
+  o.ivaCredito   = sum(['520','521','523','524','525']);
+  o.ivaSinCredito= sum(['522']);
+  o.retIvaEfectuadas = g('799')!==null ? g('799') : sum(['721','723','725','727','729','731']);
+  o.retIvaRecibidas  = g('609')!==null ? g('609') : 0;
+  o.ivaNeto = o.ivaGenerado - o.ivaCredito - o.retIvaRecibidas;
+  Object.keys(o).forEach(k=>o[k]=impR2(o[k]));
+  return o;
+}
+const IMP_METRICAS_COLS = [
+  ['ventasBrutas','Ventas brutas'],['ventasNetas','Ventas netas'],['ivaGenerado','IVA generado'],
+  ['comprasNetas','Compras netas (bienes y serv.)'],['comprasAF','Compras activos fijos'],['ivaCredito','IVA crédito tributario'],
+  ['retIvaEfectuadas','Ret. IVA efectuadas'],['retIvaRecibidas','Ret. IVA recibidas'],['ivaNeto','IVA neto referencial']
+];
+function impResumenAnual(an){
+  const meses = []; const tot = {}; IMP_METRICAS_COLS.forEach(([k])=>tot[k]=0);
+  let nDecl = 0, nSust = 0;
+  for(let m=1;m<=12;m++){
+    const node = (an.iva||{})[impMM(m)]; const docs = impArr(node?.docs); const ef = impDocEfectivo(node);
+    if(!ef){ meses.push({ mes:m, doc:null, docs, mt:null }); continue; }
+    const mt = impMetricasMes(ef.c);
+    nDecl++; if(ef.tipo==='sustitutiva') nSust++;
+    IMP_METRICAS_COLS.forEach(([k])=>tot[k]+=mt[k]);
+    meses.push({ mes:m, doc:ef, docs, mt });
+  }
+  IMP_METRICAS_COLS.forEach(([k])=>tot[k]=impR2(tot[k]));
+  return { meses, tot, nDecl, nSust, faltan: meses.filter(x=>!x.doc).map(x=>x.mes) };
+}
+
+/* ---------------- Liquidación del impuesto a la renta ---------------- */
+function impTablaDe(anio, r){
+  const k = String(anio);
+  if((r.tabla||'auto')==='custom' && r.tablaCustom){
+    const filas = String(r.tablaCustom).split(/\n+/).map(l=>l.trim()).filter(Boolean).map(l=>l.split(/[\s;|]+/).map(x=>x==='-'||/^(inf|en adelante)/i.test(x)?Infinity:parseFloat(x.replace(/,/g,'')))).filter(f=>f.length>=4 && f.slice(0,4).every(x=>!isNaN(x)));
+    if(filas.length) return { filas, nombre:'tabla personalizada' };
+  }
+  if(IMP_TABLAS_RENTA[k]) return { filas:IMP_TABLAS_RENTA[k], nombre:`tabla SRI ${k}` };
+  const ult = Object.keys(IMP_TABLAS_RENTA).sort().pop();
+  return { filas:IMP_TABLAS_RENTA[ult], nombre:`tabla SRI ${ult} (no hay tabla para ${k}; use «tabla personalizada»)`, aviso:true };
+}
+function impImpuestoTabla(base, filas){
+  for(const f of filas){ if(base>f[0] && base<=f[1]) return { impuesto: f[2] + (base-f[0])*f[3]/100, fila:f }; }
+  if(base<=0) return { impuesto:0, fila:filas[0] };
+  const u = filas[filas.length-1]; return { impuesto: u[2] + (base-u[0])*u[3]/100, fila:u };
+}
+function impCalcularRentaPN(an, anio){
+  const r = an.renta || {}; const res = impResumenAnual(an);
+  const n = k => Number(r[k])||0;
+  const L = {};
+  L.ingresosVentas = res.tot.ventasNetas;
+  L.ajusteIngresos = n('ajusteIngresos'); L.otrosIngresos = n('otrosIngresos');
+  L.totalIngresos = impR2(L.ingresosVentas + L.ajusteIngresos + L.otrosIngresos);
+  L.comprasBase = impR2(res.tot.comprasNetas + (r.incluirAF ? res.tot.comprasAF : 0));
+  L.gastosAdic = n('gastosAdic'); L.noDeducibles = n('noDeducibles');
+  L.totalGastos = impR2(L.comprasBase + L.gastosAdic - L.noDeducibles);
+  L.utilidad = impR2(L.totalIngresos - L.totalGastos);
+  L.deduccionesEsp = n('deduccionesEsp');
+  L.base = impR2(Math.max(0, L.utilidad - L.deduccionesEsp));
+  const tb = impTablaDe(anio, r); L.tabla = tb;
+  const it = impImpuestoTabla(L.base, tb.filas); L.impuestoTabla = impR2(it.impuesto); L.fila = it.fila;
+  const par = IMP_PARAMS_ANIO[String(anio)] || { cfb:0, rebaja:18 };
+  const cfb = r.cfb!==undefined && r.cfb!=='' ? Number(r.cfb) : par.cfb; const pct = r.rebajaPct!==undefined && r.rebajaPct!=='' ? Number(r.rebajaPct) : par.rebaja;
+  const gp = r.gp || {}; L.gpTotal = impR2(IMP_GP_CATS.reduce((s,[k])=>s+(Number(gp[k])||0),0));
+  const cargas = Math.min(5, Math.max(0, parseInt(r.cargas||0,10)||0));
+  const canastas = r.catastrofica ? IMP_GP_CATASTROFICA : IMP_GP_CANASTAS[cargas];
+  L.cfb = cfb; L.rebajaPct = pct; L.canastas = canastas; L.gpTope = impR2(canastas*cfb);
+  L.gpBase = impR2(Math.min(L.gpTotal, L.gpTope)); L.rebajaGP = impR2(L.gpBase*pct/100);
+  L.otrasRebajas = n('otrasRebajas');
+  L.causadoCalc = impR2(Math.max(0, L.impuestoTabla - L.rebajaGP - L.otrasRebajas));
+  L.anticipoDet = n('anticipoDet');
+  L.causado = L.anticipoDet > L.causadoCalc ? impR2(L.anticipoDet) : L.causadoCalc;
+  L.anticipoMinimo = L.anticipoDet > L.causadoCalc;
+  L.retRenta = n('retRenta'); L.creditoAnt = n('creditoAnt'); L.anticipoPagado = n('anticipoPagado');
+  L.creditos = impR2(L.retRenta + L.creditoAnt + L.anticipoPagado);
+  L.saldo = impR2(L.causado - L.creditos);
+  L.tasaEfectiva = L.totalIngresos>0 ? L.causado/L.totalIngresos*100 : 0;
+  L.margen = L.totalIngresos>0 ? L.utilidad/L.totalIngresos*100 : 0;
+  L.resumen = res;
+  return L;
+}
+
+/* ---------------- Renta Sociedades (empresas) ---------------- */
+let impSeccion = 'pn';   // pn | soc
+function impTipoActual(){ return (impDatos[impContribId]?.meta?.tipo) || 'pn'; }
+function impNomSec(){ return impTipoActual()==='soc' ? 'Renta Sociedades' : 'Renta Personas Naturales'; }
+const IMP_SOC_TARIFAS = [['25','25% — tarifa general'],['22','22% — micro y pequeña empresa / exportador habitual (verificar condiciones)'],['28','28% — con accionistas en paraísos fiscales'],['custom','Otra tarifa (digitar)']];
+function impCalcularRentaSoc(an, anio){
+  const r = an.renta || {}; const res = impResumenAnual(an); const n = k => Number(r[k])||0;
+  const L = { soc:true, resumen:res };
+  L.ingresosVentas = res.tot.ventasNetas; L.ajusteIngresos = n('ajusteIngresos'); L.otrosIngresos = n('otrosIngresos');
+  L.totalIngresos = impR2(L.ingresosVentas + L.ajusteIngresos + L.otrosIngresos);
+  L.comprasBase = impR2(res.tot.comprasNetas + (r.incluirAF ? res.tot.comprasAF : 0));
+  L.gastosAdic = n('gastosAdic');
+  L.totalGastos = impR2(L.comprasBase + L.gastosAdic);
+  L.utilidad = impR2(L.totalIngresos - L.totalGastos);               // utilidad contable antes de 15% e IR
+  L.ptPct = r.ptPct!==undefined && r.ptPct!=='' ? Number(r.ptPct) : 15;
+  L.pt = L.utilidad>0 ? impR2(L.utilidad*L.ptPct/100) : 0;           // participación trabajadores
+  L.exentos = n('ingExentos'); L.noDeducibles = n('noDeducibles'); L.deduccionesEsp = n('deduccionesEsp');
+  const pre = L.utilidad - L.pt - L.exentos + L.noDeducibles - L.deduccionesEsp;
+  L.perdidasAnt = Math.min(n('perdidasAnt'), Math.max(0, pre)*0.25);  // amortización pérdidas: máx. 25% de la utilidad gravable
+  L.base = impR2(Math.max(0, pre - L.perdidasAnt));
+  const tSel = r.tarifa || '25'; const tb = tSel==='custom' ? (Number(r.tarifaCustom)||25) : Number(tSel);
+  const pp = Math.min(100, Math.max(0, n('pctParaiso')));
+  L.tarifaBase = tb; L.pctParaiso = pp;
+  L.reinvertida = Math.min(n('reinvertida'), L.base); L.reinvPts = r.reinvPts!==undefined && r.reinvPts!=='' ? Number(r.reinvPts) : 10;
+  const baseRef = L.base - L.reinvertida;
+  let imp;
+  if(pp>=50) imp = L.base*0.28 - L.reinvertida*0;                     // ≥50% paraísos: toda la base al 28%
+  else imp = (L.base*(pp/100))*0.28 + (baseRef*(1-pp/100))*tb/100 + (L.reinvertida*(1-pp/100))*Math.max(0,tb-L.reinvPts)/100;
+  L.impuestoTabla = impR2(imp);
+  L.tarifaEfectivaTxt = pp>=50 ? '28% (≥50% accionistas en paraísos fiscales)' : (pp>0 ? `mixta: ${pp}% al 28% y resto al ${tb}%` : `${tb}%`);
+  L.otrasRebajas = n('otrasRebajas'); L.rebajaGP = 0;
+  L.causadoCalc = impR2(Math.max(0, L.impuestoTabla - L.otrasRebajas));
+  L.anticipoDet = n('anticipoDet');
+  L.causado = L.anticipoDet > L.causadoCalc ? impR2(L.anticipoDet) : L.causadoCalc; L.anticipoMinimo = L.anticipoDet > L.causadoCalc;
+  L.retRenta = n('retRenta'); L.creditoAnt = n('creditoAnt'); L.anticipoPagado = n('anticipoPagado');
+  L.creditos = impR2(L.retRenta + L.creditoAnt + L.anticipoPagado);
+  L.saldo = impR2(L.causado - L.creditos);
+  L.utilidadNeta = impR2(L.utilidad - L.pt - L.causado);
+  L.reservaLegal = L.utilidadNeta>0 ? impR2(L.utilidadNeta*0.10) : 0;
+  L.distribuible = impR2(L.utilidadNeta - L.reservaLegal);
+  L.tasaEfectiva = L.totalIngresos>0 ? L.causado/L.totalIngresos*100 : 0;
+  L.margen = L.totalIngresos>0 ? L.utilidad/L.totalIngresos*100 : 0;
+  L.tabla = { nombre:'tarifa '+L.tarifaEfectivaTxt };
+  return L;
+}
+function impLineasLiqSoc(L){
+  const T = (txt,v,neg,tot)=>`<tr${tot?' style="font-weight:700;background:#eef2f7;"':''}><td>${txt}</td><td class="num">${neg?'(':''}${bpUSD(v)}${neg?')':''}</td></tr>`;
+  return `<table><tbody>
+    ${T('Ingresos por ventas (formularios 104, netos)', L.ingresosVentas)}
+    ${L.ajusteIngresos?T('(±) Ajuste a los ingresos', L.ajusteIngresos):''}${L.otrosIngresos?T('(+) Otros ingresos', L.otrosIngresos):''}
+    ${T('TOTAL INGRESOS', L.totalIngresos, false, true)}
+    ${T('Compras de bienes y servicios (104)', L.comprasBase, true)}${L.gastosAdic?T('(+) Otros costos y gastos (sueldos, depreciación, intereses…)', L.gastosAdic, true):''}
+    ${T('TOTAL COSTOS Y GASTOS', L.totalGastos, true, true)}
+    ${T(L.utilidad>=0?'UTILIDAD CONTABLE ANTES DE PARTICIPACIÓN E IMPUESTO':'PÉRDIDA CONTABLE', L.utilidad, false, true)}
+    ${T(`(−) ${L.ptPct}% participación de trabajadores`, L.pt, true)}
+    ${L.exentos?T('(−) Ingresos exentos / no gravados', L.exentos, true):''}${L.noDeducibles?T('(+) Gastos no deducibles', L.noDeducibles):''}${L.deduccionesEsp?T('(−) Deducciones adicionales', L.deduccionesEsp, true):''}${L.perdidasAnt?T('(−) Amortización de pérdidas de años anteriores (máx. 25%)', L.perdidasAnt, true):''}
+    ${T('UTILIDAD GRAVABLE (BASE IMPONIBLE)', L.base, false, true)}
+    ${T(`Impuesto a la renta con tarifa ${L.tarifaEfectivaTxt}${L.reinvertida?` (utilidad reinvertida ${bpUSD(L.reinvertida)} con ${L.reinvPts} puntos menos)`:''}`, L.impuestoTabla)}
+    ${L.otrasRebajas?T('(−) Otras rebajas / exoneraciones', L.otrasRebajas, true):''}
+    ${L.anticipoMinimo?T(`El anticipo determinado (${bpUSD(L.anticipoDet)}) supera el impuesto calculado (${bpUSD(L.causadoCalc)}): pasa a ser impuesto mínimo`, L.causado):''}
+    ${T('IMPUESTO A LA RENTA CAUSADO', L.causado, false, true)}
+    ${L.retRenta?T('(−) Retenciones en la fuente de renta que le efectuaron', L.retRenta, true):''}${L.creditoAnt?T('(−) Crédito tributario de años anteriores', L.creditoAnt, true):''}${L.anticipoPagado?T('(−) Anticipo pagado', L.anticipoPagado, true):''}
+    ${T(L.saldo>=0?'IMPUESTO A PAGAR':'SALDO A FAVOR DE LA SOCIEDAD', Math.abs(L.saldo), false, true)}
+    ${T('Utilidad neta (después de participación e impuesto)', L.utilidadNeta, false, true)}
+    ${T('Reserva legal estimada (10%)', L.reservaLegal, true)}
+    ${T('Utilidad disponible para distribución (referencial)', L.distribuible, false, true)}
+  </tbody></table>`;
+}
+function impHtmlRentaSoc(an){
+  const r = an.renta || {}; const L = impCalcularRentaSoc(an, impAnio);
+  return `<div class="card"><h4 style="margin-top:0;">🏢 Datos para la liquidación de la sociedad — ${impAnio}</h4>
+    <p class="helpNote">Ingresos y compras salen de los 104. Valores recomendados por defecto: <b>tarifa 25%</b>, <b>15% participación de trabajadores</b>, <b>10% reserva legal</b>, amortización de pérdidas hasta 25% de la utilidad gravable. Complete lo que no está en el IVA (sueldos, depreciación, intereses, retenciones recibidas, anticipos). Es un <b>borrador referencial</b>: verifique con el Formulario 101 del SRI y su contador.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      ${impInput('impR_ajusteIngresos','(±) Ajuste a ingresos de ventas',r.ajusteIngresos)}
+      ${impInput('impR_otrosIngresos','(+) Otros ingresos (financieros, dividendos gravados…)',r.otrosIngresos)}
+      ${impInput('impR_gastosAdic','(+) Otros costos y gastos (sueldos, IESS, depreciación, intereses…)',r.gastosAdic)}
+      ${impInput('impR_ingExentos','(−) Ingresos exentos / no gravados',r.ingExentos)}
+      ${impInput('impR_noDeducibles','(+) Gastos no deducibles (conciliación tributaria)',r.noDeducibles)}
+      ${impInput('impR_deduccionesEsp','(−) Deducciones adicionales (empleo, discapacidad…)',r.deduccionesEsp)}
+      ${impInput('impR_perdidasAnt','Pérdidas de años anteriores por amortizar',r.perdidasAnt)}
+      ${impInput('impR_ptPct','% participación trabajadores',r.ptPct!==undefined?r.ptPct:'','number','Por defecto 15%')}
+    </div>
+    <label style="display:flex;gap:6px;align-items:center;margin:8px 0;font-size:13px;"><input type="checkbox" id="impR_incluirAF" ${r.incluirAF?'checked':''}> Incluir compras de activos fijos como gasto (normalmente se deprecian; déjelo desmarcado)</label>
+    <h4>Tarifa</h4>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+      <div class="field" style="margin:0;"><label>Tarifa del impuesto</label><select id="impR_tarifa">${IMP_SOC_TARIFAS.map(([v,l])=>`<option value="${v}" ${(r.tarifa||'25')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      ${impInput('impR_tarifaCustom','Otra tarifa %',r.tarifaCustom)}
+      ${impInput('impR_pctParaiso','% de accionistas en paraísos fiscales',r.pctParaiso,'number','≥50% → 28% sobre toda la base; menos → proporcional')}
+      ${impInput('impR_reinvertida','Utilidad reinvertida (si califica)',r.reinvertida,'number','Reducción de puntos de tarifa solo para sectores que la ley permite')}
+      ${impInput('impR_reinvPts','Puntos de reducción por reinversión',r.reinvPts!==undefined?r.reinvPts:'','number','Por defecto 10')}
+    </div>
+    <h4>Créditos y pagos</h4>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      ${impInput('impR_retRenta','Retenciones en la fuente de renta que le efectuaron (año)',r.retRenta)}
+      ${impInput('impR_creditoAnt','Crédito tributario de años anteriores',r.creditoAnt)}
+      ${impInput('impR_anticipoPagado','Anticipo de renta pagado',r.anticipoPagado)}
+      ${impInput('impR_anticipoDet','Anticipo determinado (mínimo), si aplica',r.anticipoDet)}
+      ${impInput('impR_otrasRebajas','Otras rebajas / exoneraciones',r.otrasRebajas)}
+    </div>
+    <button class="btn primary" onclick="guardarRentaImp()">💾 Guardar y recalcular</button></div>
+  <div class="card"><h4 style="margin-top:0;">Liquidación del impuesto a la renta — Sociedad ${impAnio}</h4>
+    ${!L.resumen.nDecl?'<div class="helpNote">⚠️ Aún no hay formularios 104 cargados para este año: ingresos y compras en cero.</div>':''}
+    ${impLineasLiqSoc(L)}
+    <p class="helpNote">Tasa efectiva sobre ingresos: <b>${L.tasaEfectiva.toFixed(2)}%</b> · Margen contable: <b>${L.margen.toFixed(1)}%</b>. Las ventas netas del 104 incluyen solo operaciones gravadas en IVA y el IVA no entra como ingreso; la conciliación contable (inventarios, depreciaciones, provisiones) la define su contador.</p>
+    <button class="btn" onclick="imprimirLiquidacionRentaImp()">🖨️ Imprimir borrador de liquidación</button></div>`;
+}
+function impCalcularRenta(an, anio){ return impTipoActual()==='soc' ? impCalcularRentaSoc(an, anio) : impCalcularRentaPN(an, anio); }
+
+/* ---------------- Lectura de casilleros desde PDF / Excel ---------------- */
+function impNumero(t){
+  let s = String(t==null?'':t).trim().replace(/[$\s]/g,'');
+  let neg = false;
+  if(/^\(.*\)$/.test(s)){ neg = true; s = s.slice(1,-1); }
+  if(s[0]==='-'){ neg = true; s = s.slice(1); }
+  if(!/^\d[\d.,]*$/.test(s)) return null;
+  const ld = s.lastIndexOf('.'), lc = s.lastIndexOf(',');
+  if(ld>=0 && lc>=0){ if(lc>ld) s = s.replace(/\./g,'').replace(',','.'); else s = s.replace(/,/g,''); }
+  else if(lc>=0){ s = /,\d{1,2}$/.test(s) && (s.match(/,/g)||[]).length===1 ? s.replace(',','.') : s.replace(/,/g,''); }
+  else if(ld>=0 && (s.match(/\./g)||[]).length>1) s = s.replace(/\./g,'');
+  const n = parseFloat(s); if(!isFinite(n)) return null;
+  return neg ? -n : n;
+}
+function impExtraerCasilleros(filas){
+  const c = {}; const textos = [];
+  for(const fila of filas){
+    const cells = (Array.isArray(fila)?fila:[fila]).map(x=>String(x==null?'':x).trim()).filter(x=>x!=='');
+    if(!cells.length) continue;
+    textos.push(cells.join(' '));
+    const toks = []; cells.forEach(cl=>cl.split(/\s+/).forEach(t=>toks.push(t)));
+    for(let i=0;i<toks.length-1;i++){
+      const cod = toks[i].replace(/[:.\-)(]+$/,'').replace(/^\(/,'');
+      if(!/^[4-9]\d{2}$/.test(cod)) continue;
+      let j = i+1; if(toks[j]==='$' && toks[j+1]) j++;
+      let raw = toks[j]; let v = impNumero(raw);
+      if(v===null && typeof CSRI_104_DEF!=='undefined' && CSRI_104_DEF.some(r=>r[0]===cod)){
+        for(let k=j; k<Math.min(toks.length, j+14); k++){ if(/^\(?-?\$?\d[\d.,]*[.,]\d{2}\)?$/.test(toks[k])){ raw = toks[k]; v = impNumero(raw); j = k; break; } }
+      }
+      if(v===null) continue;
+      const conDec = /[.,]\d{2}$/.test(raw||'');
+      if(!conDec && /^\d{7,}$/.test(String(raw).replace(/\D/g,''))) continue;
+      c[cod] = impR2(v); i = j;
+    }
+  }
+  const txt = textos.join('\n');
+  const meta = { es104:/(?:formulario|form\.?)\s*(?:n[°º.o]*\s*)?104|declaraci[oó]n\s+del?\s+iva|impuesto al valor agregado/i.test(txt) };
+  let m;
+  if((m = txt.match(/(?:per[ií]odo(?:\s+fiscal)?|mes\s+y\s+a[ñn]o)[^\d\n]{0,25}(\d{1,2})\s*[\/\-]\s*(20\d{2})/i))){ meta.mes = +m[1]; meta.anio = +m[2]; }
+  else if((m = txt.match(/(20\d{2})\s*[\/\-]\s*(\d{1,2})\b/)) && /per[ií]odo/i.test(txt)){ meta.anio = +m[1]; meta.mes = +m[2]; }
+  if(!meta.mes){
+    const nombres = IMP_MESES.map(x=>x.toLowerCase());
+    const mm = txt.toLowerCase().match(new RegExp('\\b('+nombres.join('|')+')\\b[^\\d\\n]{0,12}(20\\d{2})'));
+    if(mm){ meta.mes = nombres.indexOf(mm[1])+1; meta.anio = +mm[2]; }
+  }
+  if(meta.mes && (meta.mes<1 || meta.mes>12)) delete meta.mes;
+  meta.tipo = /sustitutiv/i.test(txt) ? 'sustitutiva' : 'original';
+  return { c, meta };
+}
+async function impLeerArchivo(file){
+  const nombre = file.name; const ext = (nombre.split('.').pop()||'').toLowerCase();
+  let filas = [];
+  if(ext==='pdf'){ filas = await csriPdfLineas(file, 12); }
+  else if(ext==='xlsx' || ext==='xls' || ext==='csv'){
+    const buf = await csriLeerBuffer(file);
+    const wb = ext==='csv' ? XLSX.read(new TextDecoder('utf-8').decode(buf), {type:'string', raw:true}) : XLSX.read(buf, {type:'array'});
+    wb.SheetNames.forEach(n=>{ XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, defval:''}).forEach(f=>filas.push(f)); });
+  } else if(ext==='txt'){ (await csriLeerTexto(file)).split(/\r?\n/).forEach(l=>filas.push([l])); }
+  else throw new Error('Formato no admitido (use PDF, Excel o CSV).');
+  const r = impExtraerCasilleros(filas);
+  // del nombre del archivo: «104 03 2025», «2025-03»…
+  if(!r.meta.mes || !r.meta.anio){
+    const m = nombre.match(/(20\d{2})[\s_\-.]*(0?[1-9]|1[0-2])\b|(0?[1-9]|1[0-2])[\s_\-.]+(20\d{2})/);
+    if(m){ if(m[1]){ r.meta.anio = r.meta.anio||+m[1]; r.meta.mes = r.meta.mes||+m[2]; } else { r.meta.mes = r.meta.mes||+m[3]; r.meta.anio = r.meta.anio||+m[4]; } }
+  }
+  if(/sustitutiv/i.test(nombre)) r.meta.tipo = 'sustitutiva';
+  return r;
+}
+
+/* ---------------- Pantalla principal ---------------- */
+async function renderImpuestos(){
+  const main = document.getElementById('main');
+  main.innerHTML = `<div class="pageTitle"><div><h2>📑 Impuestos</h2><p>Renta de personas naturales y sociedades a partir de los formularios 104 mensuales (IVA)</p></div></div><div class="card emptyState">Cargando…</div>`;
+  try{ await impCargar(); }catch(e){ main.innerHTML = `<div class="card emptyState">No se pudieron cargar los datos: ${escapeHtml(e.message||String(e))}</div>`; return; }
+  pintarImpuestos();
+}
+function impAniosOpciones(){
+  const ya = new Set(Object.keys(impDatos[impContribId]?.anios||{}).map(Number));
+  const y0 = new Date().getFullYear(); for(let y=y0-4;y<=y0+1;y++) ya.add(y); ya.add(impAnio);
+  return [...ya].sort((a,b)=>b-a);
+}
+function pintarImpuestos(){
+  const main = document.getElementById('main');
+  const c = impContribId ? impDatos[impContribId] : null;
+  const tabs = [['iva','📥 Formularios 104'],['resumen','📊 Resumen mensual y anual'],['renta','🧾 Liquidación de renta'],['informes','🖨️ Informes']];
+  main.innerHTML = `
+    <div class="pageTitle"><div><h2>📑 Impuestos</h2><p>Renta de personas naturales y sociedades a partir de los formularios 104 mensuales (IVA)</p></div></div>
+    <div class="card">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${[['pn','👤 Renta Personas Naturales'],['soc','🏢 Renta Sociedades']].map(([k,l])=>`<button class="btn ${impSeccion===k?'primary':''}" onclick="impCambiarSeccion('${k}')">${l}</button>`).join('')}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div class="field" style="margin:0;min-width:240px;"><label>${impSeccion==='soc'?'Empresa (sociedad)':'Contribuyente (persona natural)'}</label>
+          <select id="impSelContrib" onchange="impCambiarContrib(this.value)"><option value="">-- selecciona --</option>
+          ${Object.keys(impDatos).filter(id=>(impDatos[id].meta.tipo||'pn')===impSeccion).map(id=>`<option value="${id}" ${id===impContribId?'selected':''}>${escapeHtml(impDatos[id].meta.nombre||'(sin nombre)')}${impDatos[id].meta.ruc?' — '+escapeHtml(impDatos[id].meta.ruc):''}</option>`).join('')}</select></div>
+        <div class="field" style="margin:0;"><label>Año fiscal</label><select id="impSelAnio" onchange="impCambiarAnio(this.value)">${impContribId?impAniosOpciones().map(y=>`<option value="${y}" ${y===impAnio?'selected':''}>${y}</option>`).join(''):`<option>${impAnio}</option>`}</select></div>
+        <button class="btn primary" onclick="crearContribuyenteImp()">➕ ${impSeccion==='soc'?'Nueva empresa':'Nuevo contribuyente'}</button>
+        ${c?`<button class="btn" onclick="editarContribuyenteImp()">✏️ Editar</button><button class="btn" onclick="eliminarContribuyenteImp()">🗑 Eliminar</button>`:''}
+      </div>
+    </div>
+    ${c ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;">${tabs.map(([k,l])=>`<button class="btn ${impTab===k?'primary':''}" onclick="impCambiarTab('${k}')">${l}</button>`).join('')}</div><div id="impContenido"></div>`
+        : `<div class="card emptyState">Crea ${impSeccion==='soc'?'una empresa':'un contribuyente'} para empezar a cargar sus formularios 104.</div>`}
+    <div id="impModalHost"></div>`;
+  if(c) impPintarTab();
+}
+function impCambiarSeccion(k){ impSeccion = k; impContribId = Object.keys(impDatos).find(i=>(impDatos[i].meta.tipo||'pn')===k) || null; impPendientes = []; pintarImpuestos(); }
+function impCambiarContrib(id){ impContribId = id||null; impPendientes = []; pintarImpuestos(); }
+function impCambiarAnio(y){ impAnio = parseInt(y,10)||impAnio; impPendientes = []; pintarImpuestos(); }
+function impCambiarTab(t){ impTab = t; pintarImpuestos(); }
+function impPintarTab(){
+  const h = document.getElementById('impContenido'); if(!h) return;
+  const an = impAnioData(false);
+  if(impTab==='iva') h.innerHTML = impHtmlIVA(an);
+  else if(impTab==='resumen') h.innerHTML = impHtmlResumen(an);
+  else if(impTab==='renta') h.innerHTML = impHtmlRenta(an);
+  else h.innerHTML = impHtmlInformes(an);
+}
+
+/* ---- contribuyentes ---- */
+async function crearContribuyenteImp(){
+  const nombre = (prompt(impSeccion==='soc'?'Razón social de la empresa:':'Nombre completo del contribuyente (persona natural):')||'').trim(); if(!nombre) return;
+  const ruc = (prompt('RUC (13 dígitos) — opcional:')||'').trim();
+  const id = 'c'+Date.now().toString(36);
+  impDatos[id] = { meta:{ nombre, ruc, obligado:false, tipo:impSeccion }, anios:{} }; impContribId = id;
+  try{ await impPersistir(); registrarCambio('Impuestos','crear',`Contribuyente ${nombre}`); toast('Contribuyente creado','success'); }catch(e){ toast('No se pudo guardar: '+(e.message||e),'error'); }
+  pintarImpuestos();
+}
+async function editarContribuyenteImp(){
+  const c = impDatos[impContribId]; if(!c) return;
+  const nombre = prompt('Nombre del contribuyente:', c.meta.nombre||''); if(nombre===null) return;
+  const ruc = prompt('RUC:', c.meta.ruc||''); if(ruc===null) return;
+  c.meta = { ...c.meta, nombre:nombre.trim()||c.meta.nombre, ruc:ruc.trim() };
+  try{ await impPersistir(); registrarCambio('Impuestos','editar',`Contribuyente ${c.meta.nombre}`); }catch(e){ toast('No se pudo guardar: '+(e.message||e),'error'); }
+  pintarImpuestos();
+}
+async function eliminarContribuyenteImp(){
+  const c = impDatos[impContribId]; if(!c) return;
+  if(!confirm(`¿Eliminar a «${c.meta.nombre}» y TODAS sus declaraciones cargadas? No se puede deshacer.`)) return;
+  try{ await db.ref(`impuestos_pn/${DATOS_UID}/${impContribId}`).remove(); registrarCambio('Impuestos','eliminar',`Contribuyente ${c.meta.nombre}`); }catch(e){ toast('No se pudo eliminar: '+(e.message||e),'error'); return; }
+  delete impDatos[impContribId]; impContribId = Object.keys(impDatos)[0]||null; pintarImpuestos();
+}
+
+/* ---- pestaña Formularios 104 ---- */
+function impHtmlIVA(an){
+  const res = impResumenAnual(an);
+  const filas = res.meses.map(x=>{
+    const mm = impMM(x.mes);
+    const ori = x.docs.filter(d=>d.tipo!=='sustitutiva'), sus = x.docs.filter(d=>d.tipo==='sustitutiva').sort((a,b)=>(a.n||1)-(b.n||1));
+    const chip = (d)=>{ const i = x.docs.indexOf(d); return `<div style="margin:2px 0;font-size:12px;">${d===x.doc?'✅':'▫️'} <b>${d.tipo==='sustitutiva'?'Sustitutiva '+(d.n||1):'Original'}</b> · ${Object.keys(d.c||{}).length} casilleros${d.archivo?` · <span style="color:var(--muted);">${escapeHtml(d.archivo)}</span>`:''}
+        <button class="btn small" onclick="impVerDoc('${mm}',${i})">👁 Ver/editar</button><button class="btn small" onclick="eliminarDocImp('${mm}',${i})">🗑</button></div>`; };
+    return `<tr>
+      <td style="white-space:nowrap;"><b>${IMP_MESES[x.mes-1]}</b></td>
+      <td>${ori.length?ori.map(chip).join(''):'<span style="color:var(--muted);">— sin original —</span>'}</td>
+      <td>${sus.length?sus.map(chip).join(''):'<span style="color:var(--muted);">—</span>'}</td>
+      <td class="num">${x.mt?bpUSD(x.mt.ventasNetas):'—'}</td><td class="num">${x.mt?bpUSD(x.mt.comprasNetas):'—'}</td>
+      <td style="white-space:nowrap;"><button class="btn small" onclick="impAbrirSelector(${x.mes},'original')">⬆ Original</button> <button class="btn small" onclick="impAbrirSelector(${x.mes},'sustitutiva')">⬆ Sustitutiva</button> <button class="btn small" onclick="agregarDocManualImp('${mm}')">✍️ Manual</button></td></tr>`;
+  }).join('');
+  return `<div class="card">
+    <h4 style="margin-top:0;">📥 Cargar formularios 104 de ${impAnio}</h4>
+    <p class="helpNote">Sube el PDF del formulario 104 que descargas del SRI (o un Excel/CSV con «casillero» y «valor»). Puedes seleccionar <b>varios archivos a la vez</b>: la app detecta el mes, el año y si es <b>original o sustitutiva</b>, y tú confirmas antes de guardar. Para cada mes se usa en los cálculos la <b>última sustitutiva</b>; si no hay, la original.</p>
+    <input type="file" id="impArchivos" accept=".pdf,.xlsx,.xls,.csv,.txt" multiple onchange="impLeerArchivos(this)">
+    <div id="impPendientesHost">${impHtmlPendientes()}</div>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    <h4 style="margin-top:0;">Declaraciones por mes — ${impAnio} <span style="font-weight:400;font-size:12px;color:var(--muted);">(${res.nDecl}/12 meses con declaración${res.nSust?`, ${res.nSust} con sustitutiva`:''})</span></h4>
+    <table><thead><tr><th>Mes</th><th>Original</th><th>Sustitutivas</th><th class="num">Ventas netas</th><th class="num">Compras netas</th><th>Cargar</th></tr></thead><tbody>${filas}</tbody></table>
+    ${res.faltan.length?`<div class="helpNote" style="margin-top:8px;">⚠️ Faltan: ${res.faltan.map(m=>IMP_MESES[m-1]).join(', ')}.</div>`:''}
+    <input type="file" id="impArchivoMes" accept=".pdf,.xlsx,.xls,.csv,.txt" style="display:none;" onchange="impLeerArchivos(this,true)">
+  </div>`;
+}
+function impAbrirSelector(mes, tipo){ impForzar = { mes, tipo }; const i = document.getElementById('impArchivoMes'); if(i){ i.value=''; i.click(); } }
+async function impLeerArchivos(input, forzado){
+  const files = Array.from(input.files||[]); if(!files.length) return;
+  const host = document.getElementById('impPendientesHost');
+  const fz = forzado ? impForzar : null; impForzar = null;
+  if(host) host.innerHTML = `<div class="helpNote">Leyendo ${files.length} archivo(s)…</div>`;
+  const nuevos = [];
+  for(const f of files){
+    try{
+      const r = await impLeerArchivo(f);
+      const p = { archivo:f.name, c:r.c, nCas:Object.keys(r.c).length, mes:r.meta.mes||0, anio:r.meta.anio||impAnio, tipo:r.meta.tipo||'original', es104:r.meta.es104, error:'' };
+      if(fz){ if(r.meta.mes && r.meta.mes!==fz.mes) p.aviso = `El archivo parece ser del mes ${r.meta.mes}; se asignó a ${IMP_MESES[fz.mes-1]} como indicaste.`; p.mes = fz.mes; p.tipo = fz.tipo; p.anio = impAnio; }
+      if(!p.nCas) p.error = 'No se encontraron casilleros (verifique que sea el formulario 104 con texto seleccionable).';
+      nuevos.push(p);
+    }catch(e){ nuevos.push({ archivo:f.name, c:{}, nCas:0, mes:fz?fz.mes:0, anio:impAnio, tipo:fz?fz.tipo:'original', error:e.message||String(e) }); }
+  }
+  impPendientes = impPendientes.concat(nuevos);
+  input.value = '';
+  const h2 = document.getElementById('impPendientesHost'); if(h2) h2.innerHTML = impHtmlPendientes();
+}
+function impHtmlPendientes(){
+  if(!impPendientes.length) return '';
+  const filas = impPendientes.map((p,i)=>`<tr>
+    <td><input type="checkbox" ${p.incluir===false||p.error?'':'checked'} ${p.error?'disabled':''} onchange="impPendientes[${i}].incluir=this.checked"></td>
+    <td style="font-size:12px;">${escapeHtml(p.archivo)}${p.error?`<div style="color:var(--danger);">${escapeHtml(p.error)}</div>`:''}${p.aviso?`<div style="color:#b36b00;">${escapeHtml(p.aviso)}</div>`:''}${p.es104===false&&!p.error?`<div style="color:#b36b00;">No se vio «104» en el texto: revise que sea el formulario correcto.</div>`:''}</td>
+    <td><select onchange="impPendientes[${i}].mes=+this.value"><option value="0">—</option>${IMP_MESES.map((m,k)=>`<option value="${k+1}" ${p.mes===k+1?'selected':''}>${m}</option>`).join('')}</select></td>
+    <td><input type="number" style="width:80px;" value="${p.anio}" onchange="impPendientes[${i}].anio=+this.value"></td>
+    <td><select onchange="impPendientes[${i}].tipo=this.value"><option value="original" ${p.tipo==='original'?'selected':''}>Original</option><option value="sustitutiva" ${p.tipo==='sustitutiva'?'selected':''}>Sustitutiva</option></select></td>
+    <td class="num">${p.nCas}</td><td class="num">${p.nCas?bpUSD(impMetricasMes(p.c).ventasNetas):'—'}</td></tr>`).join('');
+  return `<div style="margin-top:10px;overflow-x:auto;"><b>Archivos leídos — confirma mes, año y tipo:</b>
+    <table><thead><tr><th></th><th>Archivo</th><th>Mes</th><th>Año</th><th>Tipo</th><th class="num">Casilleros</th><th class="num">Ventas netas</th></tr></thead><tbody>${filas}</tbody></table>
+    <div style="margin-top:8px;display:flex;gap:8px;"><button class="btn primary" onclick="guardarPendientesImp()">💾 Guardar seleccionados</button><button class="btn" onclick="impPendientes=[];document.getElementById('impPendientesHost').innerHTML=''">Cancelar</button></div></div>`;
+}
+async function guardarPendientesImp(){
+  const sel = impPendientes.filter(p=>p.incluir!==false && !p.error && p.nCas);
+  if(!sel.length){ toast('No hay archivos seleccionados','warning'); return; }
+  const sinMes = sel.filter(p=>!p.mes); if(sinMes.length){ toast(`Indica el mes de: ${sinMes.map(p=>p.archivo).join(', ')}`,'warning',6000); return; }
+  const c = impDatos[impContribId];
+  sel.forEach(p=>{
+    const k = String(p.anio); if(!c.anios[k]) c.anios[k] = { iva:{}, renta:{} };
+    const mm = impMM(p.mes); const node = c.anios[k].iva[mm] || (c.anios[k].iva[mm] = { docs:[] });
+    if(p.tipo==='original'){ node.docs = node.docs.filter(d=>d.tipo==='sustitutiva'); node.docs.unshift({ tipo:'original', n:0, c:p.c, archivo:p.archivo, subido:Date.now() }); }
+    else { const n = node.docs.filter(d=>d.tipo==='sustitutiva').length + 1; node.docs.push({ tipo:'sustitutiva', n, c:p.c, archivo:p.archivo, subido:Date.now() }); }
+  });
+  try{
+    await impPersistir();
+    registrarCambio('Impuestos','cargar',`${c.meta.nombre} — ${sel.length} formulario(s) 104`);
+    toast(`${sel.length} formulario(s) guardado(s)`,'success'); impPendientes = [];
+  }catch(e){ toast('No se pudo guardar: '+(e.message||e),'error'); return; }
+  const anios = [...new Set(sel.map(p=>p.anio))]; if(anios.length && !anios.includes(impAnio)) impAnio = anios[0];
+  pintarImpuestos();
+}
+async function eliminarDocImp(mm, idx){
+  const an = impAnioData(true); const node = an.iva[mm]; if(!node) return;
+  const d = node.docs[idx]; if(!d) return;
+  if(!confirm(`¿Eliminar la declaración ${d.tipo==='sustitutiva'?'sustitutiva '+(d.n||1):'original'} de ${IMP_MESES[+mm-1]} ${impAnio}?`)) return;
+  node.docs.splice(idx,1); if(!node.docs.length) delete an.iva[mm];
+  try{ await impPersistir(); registrarCambio('Impuestos','eliminar',`104 ${mm}/${impAnio} ${impDatos[impContribId].meta.nombre}`); }catch(e){ toast('No se pudo eliminar: '+(e.message||e),'error'); }
+  pintarImpuestos();
+}
+async function agregarDocManualImp(mm){
+  const an = impAnioData(true); const node = an.iva[mm] || (an.iva[mm] = { docs:[] });
+  const tipo = node.docs.some(d=>d.tipo!=='sustitutiva') ? 'sustitutiva' : 'original';
+  const n = tipo==='sustitutiva' ? node.docs.filter(d=>d.tipo==='sustitutiva').length+1 : 0;
+  node.docs.push({ tipo, n, c:{}, archivo:'(ingreso manual)', subido:Date.now() });
+  impVerDoc(mm, node.docs.length-1);
+}
+
+/* ---- modal: ver / editar casilleros ---- */
+function impVerDoc(mm, idx){
+  const an = impAnioData(true); const d = (an.iva[mm]||{}).docs?.[idx]; if(!d) return;
+  const desc = impCasDescMap();
+  const cods = [...new Set([...Object.keys(desc), ...Object.keys(d.c||{})])].filter(k=>/^\d{3}$/.test(k)).sort((a,b)=>+a-+b);
+  const conValor = cods.filter(k=>d.c[k]!==undefined), sinValor = cods.filter(k=>d.c[k]===undefined);
+  const fila = k=>`<tr><td><b>${k}</b></td><td style="font-size:12px;">${escapeHtml((desc[k]||{}).d||'Casillero leído del archivo')}</td><td><input type="number" step="0.01" id="impCas_${k}" value="${d.c[k]!==undefined?d.c[k]:''}" style="width:130px;text-align:right;"></td></tr>`;
+  document.getElementById('impModalHost').innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:20px;">
+    <div class="card" style="max-width:900px;width:100%;background:var(--card,#fff);">
+      <h3 style="margin-top:0;">Formulario 104 — ${IMP_MESES[+mm-1]} ${impAnio} · ${d.tipo==='sustitutiva'?'Sustitutiva '+(d.n||1):'Original'}</h3>
+      <p class="helpNote">Revisa o corrige los valores leídos. Deja vacío un casillero para quitarlo. ${escapeHtml(d.archivo||'')}</p>
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:end;"><div class="field" style="margin:0;"><label>Agregar casillero</label><input id="impNuevoCod" placeholder="Ej.: 405" style="width:110px;"></div><div class="field" style="margin:0;"><label>Valor</label><input id="impNuevoVal" type="number" step="0.01" style="width:130px;"></div><button class="btn small" onclick="impAnadirCasillero()">Agregar</button></div>
+      <div style="max-height:55vh;overflow:auto;"><table id="impTablaCas"><thead><tr><th>Cas.</th><th>Descripción</th><th class="num">Valor</th></tr></thead><tbody>${conValor.map(fila).join('')}<tr><td colspan="3" style="background:#f3f5f9;color:#555;font-size:12px;">Sin valor en este formulario (catálogo)</td></tr>${sinValor.map(fila).join('')}</tbody></table></div>
+      <div style="margin-top:10px;display:flex;gap:8px;"><button class="btn primary" onclick="guardarCasillerosImp('${mm}',${idx})">💾 Guardar</button><button class="btn" onclick="document.getElementById('impModalHost').innerHTML='';pintarImpuestos()">Cerrar</button></div>
+    </div></div>`;
+}
+function impAnadirCasillero(){
+  const cod = (document.getElementById('impNuevoCod').value||'').trim(), val = document.getElementById('impNuevoVal').value;
+  if(!/^[4-9]\d{2}$/.test(cod)){ toast('Casillero de 3 dígitos (400–999)','warning'); return; }
+  let inp = document.getElementById('impCas_'+cod);
+  if(!inp){ const tb = document.querySelector('#impTablaCas tbody'); const tr = document.createElement('tr'); tr.innerHTML = `<td><b>${cod}</b></td><td style="font-size:12px;">Casillero agregado</td><td><input type="number" step="0.01" id="impCas_${cod}" style="width:130px;text-align:right;"></td>`; tb.insertBefore(tr, tb.firstChild); inp = tr.querySelector('input'); }
+  inp.value = val; inp.focus();
+}
+async function guardarCasillerosImp(mm, idx){
+  const an = impAnioData(true); const d = (an.iva[mm]||{}).docs?.[idx]; if(!d) return;
+  const c = {};
+  document.querySelectorAll('#impTablaCas input[id^="impCas_"]').forEach(i=>{ const v = i.value; if(v!=='' && !isNaN(+v)) c[i.id.slice(7)] = impR2(+v); });
+  d.c = c;
+  try{ await impPersistir(); registrarCambio('Impuestos','editar',`104 ${mm}/${impAnio} ${impDatos[impContribId].meta.nombre}`); toast('Casilleros guardados','success'); }catch(e){ toast('No se pudo guardar: '+(e.message||e),'error'); return; }
+  document.getElementById('impModalHost').innerHTML=''; pintarImpuestos();
+}
+
+/* ---- pestaña Resumen ---- */
+function impTablaResumenHTML(res, conDoc){
+  const fila = (nombre, mt, extra)=>`<tr><td style="white-space:nowrap;">${nombre}</td>${IMP_METRICAS_COLS.map(([k])=>`<td class="num">${mt?bpUSD(mt[k]):'—'}</td>`).join('')}${extra||''}</tr>`;
+  return `<table><thead><tr><th>Mes</th>${IMP_METRICAS_COLS.map(([,l])=>`<th class="num">${l}</th>`).join('')}${conDoc?'<th>Declaración usada</th>':''}</tr></thead><tbody>
+    ${res.meses.map(x=>fila(IMP_MESES[x.mes-1], x.mt, conDoc?`<td style="font-size:12px;">${x.doc?(x.doc.tipo==='sustitutiva'?'Sustitutiva '+(x.doc.n||1):'Original'):'<span style="color:var(--danger);">sin declarar</span>'}</td>`:''))}
+    <tr class="tot" style="font-weight:700;background:#eef2f7;"><td>TOTAL ${impAnio}</td>${IMP_METRICAS_COLS.map(([k])=>`<td class="num">${bpUSD(res.tot[k])}</td>`).join('')}${conDoc?'<td></td>':''}</tr></tbody></table>`;
+}
+function impBarrasHTML(res){
+  const max = Math.max(1, ...res.meses.map(x=>x.mt?Math.max(x.mt.ventasNetas, x.mt.comprasNetas):0));
+  return `<div style="display:flex;align-items:flex-end;gap:6px;height:150px;border-bottom:1px solid #999;padding:6px 4px 0;margin:6px 0;">${res.meses.map(x=>{
+      const v = x.mt?x.mt.ventasNetas:0, c = x.mt?x.mt.comprasNetas:0;
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;"><div style="display:flex;align-items:flex-end;gap:2px;height:120px;"><div title="Ventas ${bpUSD(v)}" style="width:12px;height:${Math.max(0,v/max*118).toFixed(0)}px;background:#2e8b57;${DESGLOSE_PRINT_COLOR}"></div><div title="Compras ${bpUSD(c)}" style="width:12px;height:${Math.max(0,c/max*118).toFixed(0)}px;background:#d6791f;${DESGLOSE_PRINT_COLOR}"></div></div><div style="font-size:10px;margin-top:3px;">${IMP_MESES[x.mes-1].slice(0,3)}</div></div>`; }).join('')}</div>
+    <div style="font-size:11px;"><span style="color:#2e8b57;">■</span> Ventas netas &nbsp; <span style="color:#d6791f;">■</span> Compras netas</div>`;
+}
+function impHtmlResumen(an){
+  const res = impResumenAnual(an);
+  if(!res.nDecl) return `<div class="card emptyState">Aún no hay formularios 104 cargados para ${impAnio}.</div>`;
+  const trim = [0,1,2,3].map(q=>{ const t = {}; IMP_METRICAS_COLS.forEach(([k])=>t[k]=0); res.meses.slice(q*3,q*3+3).forEach(x=>{ if(x.mt) IMP_METRICAS_COLS.forEach(([k])=>t[k]+=x.mt[k]); }); return t; });
+  return `<div class="card" style="overflow-x:auto;"><h4 style="margin-top:0;">Resumen mensual y anual — ${impAnio}</h4>${impTablaResumenHTML(res,true)}
+    <p class="helpNote" style="margin-top:8px;">Ventas/compras netas según los casilleros del 104 (netas de notas de crédito). «IVA neto referencial» = IVA generado − crédito tributario − retenciones de IVA recibidas; no incluye crédito de meses anteriores ni factor de proporcionalidad.</p></div>
+  <div class="card"><h4 style="margin-top:0;">Ventas vs. compras por mes</h4>${impBarrasHTML(res)}</div>
+  <div class="card" style="overflow-x:auto;"><h4 style="margin-top:0;">Por trimestre</h4><table><thead><tr><th>Trimestre</th>${IMP_METRICAS_COLS.map(([,l])=>`<th class="num">${l}</th>`).join('')}</tr></thead><tbody>${trim.map((t,q)=>`<tr><td>T${q+1}</td>${IMP_METRICAS_COLS.map(([k])=>`<td class="num">${bpUSD(impR2(t[k]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+/* ---- pestaña Liquidación de renta ---- */
+function impInput(id, label, val, tipo, ayuda){
+  return `<div class="field" style="margin:0;min-width:180px;flex:1;"><label>${label}</label><input type="${tipo||'number'}" step="0.01" id="${id}" value="${val===undefined||val===null?'':escapeHtml(String(val))}" style="text-align:${tipo==='text'?'left':'right'};">${ayuda?`<div style="font-size:10px;color:var(--muted);">${ayuda}</div>`:''}</div>`;
+}
+function impLineasLiquidacion(L){
+  if(L.soc) return impLineasLiqSoc(L);
+  const T = (txt,v,neg,tot)=>`<tr${tot?' style="font-weight:700;background:#eef2f7;"':''}><td>${txt}</td><td class="num">${neg?'(':''}${bpUSD(v)}${neg?')':''}</td></tr>`;
+  const f = L.fila;
+  return `<table><tbody>
+    ${T('Ingresos por ventas (formularios 104, netos)', L.ingresosVentas)}
+    ${L.ajusteIngresos?T('(±) Ajuste a los ingresos', L.ajusteIngresos):''}
+    ${L.otrosIngresos?T('(+) Otros ingresos gravados', L.otrosIngresos):''}
+    ${T('TOTAL INGRESOS GRAVADOS', L.totalIngresos, false, true)}
+    ${T('Compras de bienes y servicios (104)', L.comprasBase, true)}
+    ${L.gastosAdic?T('(+) Otros costos y gastos deducibles', L.gastosAdic, true):''}
+    ${L.noDeducibles?T('(−) Gastos no deducibles', L.noDeducibles):''}
+    ${T('TOTAL COSTOS Y GASTOS DEDUCIBLES', L.totalGastos, true, true)}
+    ${T(L.utilidad>=0?'UTILIDAD ANTES DE DEDUCCIONES':'PÉRDIDA DEL EJERCICIO', L.utilidad, false, true)}
+    ${L.deduccionesEsp?T('(−) Deducciones especiales', L.deduccionesEsp, true):''}
+    ${T('BASE IMPONIBLE', L.base, false, true)}
+    ${T(`Impuesto según ${L.tabla.nombre}: fracción básica ${bpUSD(f[0])} + ${f[3]}% del excedente (impuesto de la fracción ${bpUSD(f[2])})`, L.impuestoTabla)}
+    ${T(`(−) Rebaja por gastos personales: ${L.rebajaPct}% × ${bpUSD(L.gpBase)} (gastos ${bpUSD(L.gpTotal)}; tope ${L.canastas} canastas × ${bpUSD(L.cfb)} = ${bpUSD(L.gpTope)})`, L.rebajaGP, true)}
+    ${L.otrasRebajas?T('(−) Otras rebajas', L.otrasRebajas, true):''}
+    ${L.anticipoMinimo?T(`El anticipo determinado (${bpUSD(L.anticipoDet)}) supera el impuesto calculado (${bpUSD(L.causadoCalc)}): pasa a ser impuesto mínimo`, L.causado):''}
+    ${T('IMPUESTO A LA RENTA CAUSADO', L.causado, false, true)}
+    ${L.retRenta?T('(−) Retenciones en la fuente de renta que le efectuaron', L.retRenta, true):''}
+    ${L.creditoAnt?T('(−) Crédito tributario de años anteriores', L.creditoAnt, true):''}
+    ${L.anticipoPagado?T('(−) Anticipo de impuesto a la renta pagado', L.anticipoPagado, true):''}
+    ${T(L.saldo>=0?'IMPUESTO A PAGAR':'SALDO A FAVOR DEL CONTRIBUYENTE', Math.abs(L.saldo), false, true)}
+  </tbody></table>`;
+}
+function impHtmlRenta(an){
+  if(impTipoActual()==="soc") return impHtmlRentaSoc(an);
+  const r = an.renta || {}; const gp = r.gp || {};
+  const par = IMP_PARAMS_ANIO[String(impAnio)] || {};
+  const L = impCalcularRenta(an, impAnio);
+  const sinDatos = !L.resumen.nDecl;
+  return `<div class="card">
+    <h4 style="margin-top:0;">🧾 Datos para la liquidación — ${impAnio}</h4>
+    <p class="helpNote">Los <b>ingresos</b> y <b>compras</b> se toman automáticamente de los 104. Complete lo que no está en el IVA (otros ingresos, gastos de sueldos/depreciación, gastos personales, retenciones recibidas, anticipos). Es un <b>borrador referencial</b>: verifique contra el SRI en línea antes de declarar.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      ${impInput('impR_ajusteIngresos','(±) Ajuste a ingresos de ventas',r.ajusteIngresos)}
+      ${impInput('impR_otrosIngresos','(+) Otros ingresos gravados (dependencia, arriendos, financieros)',r.otrosIngresos)}
+      ${impInput('impR_gastosAdic','(+) Otros costos y gastos deducibles (sueldos, depreciación, intereses…)',r.gastosAdic)}
+      ${impInput('impR_noDeducibles','(−) Gastos no deducibles incluidos en compras',r.noDeducibles)}
+      ${impInput('impR_deduccionesEsp','(−) Deducciones especiales',r.deduccionesEsp)}
+    </div>
+    <label style="display:flex;gap:6px;align-items:center;margin:8px 0;font-size:13px;"><input type="checkbox" id="impR_incluirAF" ${r.incluirAF?'checked':''}> Incluir las compras de activos fijos como gasto (normalmente se deprecian; déjelo desmarcado)</label>
+    <h4>Gastos personales (rebaja del impuesto)</h4>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">${IMP_GP_CATS.map(([k,l])=>impInput('impR_gp_'+k, l, gp[k])).join('')}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;align-items:end;">
+      <div class="field" style="margin:0;"><label>Cargas familiares</label><select id="impR_cargas">${[0,1,2,3,4,5].map(n=>`<option value="${n}" ${(+r.cargas||0)===n?'selected':''}>${n===5?'5 o más':n}</option>`).join('')}</select></div>
+      <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" id="impR_catastrofica" ${r.catastrofica?'checked':''}> Enfermedad catastrófica, rara o huérfana (contribuyente o carga)</label>
+      ${impInput('impR_cfb','Canasta familiar básica (USD)', r.cfb!==undefined&&r.cfb!==''?r.cfb:'', 'number', par.cfb?`Por defecto ${par.cfb} (${impAnio})`:'Ingrese el valor de enero del año')}
+      ${impInput('impR_rebajaPct','% de rebaja', r.rebajaPct!==undefined&&r.rebajaPct!==''?r.rebajaPct:'', 'number', par.rebaja?`Por defecto ${par.rebaja}%`:'')}
+    </div>
+    <h4>Créditos y pagos</h4>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      ${impInput('impR_retRenta','Retenciones en la fuente de renta que le efectuaron (año)',r.retRenta)}
+      ${impInput('impR_creditoAnt','Crédito tributario de años anteriores',r.creditoAnt)}
+      ${impInput('impR_anticipoPagado','Anticipo de renta pagado en el año',r.anticipoPagado)}
+      ${impInput('impR_anticipoDet','Anticipo determinado (mínimo), si aplica',r.anticipoDet)}
+      ${impInput('impR_otrasRebajas','Otras rebajas del impuesto',r.otrasRebajas)}
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;align-items:end;">
+      <div class="field" style="margin:0;"><label>Tabla progresiva</label><select id="impR_tabla"><option value="auto" ${(r.tabla||'auto')==='auto'?'selected':''}>Tabla SRI del año ${impAnio}${IMP_TABLAS_RENTA[String(impAnio)]?'':' (no disponible → última)'}</option><option value="custom" ${r.tabla==='custom'?'selected':''}>Tabla personalizada</option></select></div>
+    </div>
+    <div class="field" style="margin-top:6px;"><label>Tabla personalizada (una fila por línea: desde hasta impuesto_fracción_básica %excedente; use «-» en el último «hasta»)</label><textarea id="impR_tablaCustom" rows="3" style="width:100%;font-family:monospace;font-size:12px;">${escapeHtml(r.tablaCustom||'')}</textarea></div>
+    <button class="btn primary" onclick="guardarRentaImp()">💾 Guardar y recalcular</button>
+  </div>
+  <div class="card"><h4 style="margin-top:0;">Liquidación del impuesto a la renta — ${impAnio}</h4>
+    ${sinDatos?'<div class="helpNote">⚠️ Aún no hay formularios 104 cargados para este año: los ingresos y compras están en cero.</div>':''}
+    ${L.tabla.aviso?`<div class="helpNote">⚠️ ${escapeHtml(L.tabla.nombre)}</div>`:''}
+    ${impLineasLiquidacion(L)}
+    <p class="helpNote">Tasa efectiva sobre ingresos: <b>${L.tasaEfectiva.toFixed(2)}%</b> · Margen sobre ingresos: <b>${L.margen.toFixed(1)}%</b>. Referencia: ${escapeHtml(L.tabla.nombre)}; rebaja por gastos personales del ${L.rebajaPct}% con tope por cargas familiares.</p>
+    <button class="btn" onclick="imprimirLiquidacionRentaImp()">🖨️ Imprimir borrador de liquidación</button></div>`;
+}
+async function guardarRentaImp(){
+  const an = impAnioData(true); const g = id=>document.getElementById(id);
+  const num = id=>{ const v = g(id)?.value; return v===''||v===undefined ? undefined : impR2(+v); };
+  const r = {};
+  if(impTipoActual()==='soc'){
+    ['ajusteIngresos','otrosIngresos','gastosAdic','ingExentos','noDeducibles','deduccionesEsp','perdidasAnt','ptPct','tarifaCustom','pctParaiso','reinvertida','reinvPts','retRenta','creditoAnt','anticipoPagado','anticipoDet','otrasRebajas'].forEach(k=>{ const v = num('impR_'+k); if(v!==undefined) r[k] = v; });
+    r.incluirAF = !!g('impR_incluirAF').checked; r.tarifa = g('impR_tarifa').value;
+  } else {
+  ['ajusteIngresos','otrosIngresos','gastosAdic','noDeducibles','deduccionesEsp','retRenta','creditoAnt','anticipoPagado','anticipoDet','otrasRebajas','cfb','rebajaPct'].forEach(k=>{ const v = num('impR_'+k); if(v!==undefined) r[k] = v; });
+  r.incluirAF = !!g('impR_incluirAF').checked; r.catastrofica = !!g('impR_catastrofica').checked;
+  r.cargas = parseInt(g('impR_cargas').value,10)||0; r.tabla = g('impR_tabla').value; r.tablaCustom = g('impR_tablaCustom').value||'';
+  r.gp = {}; IMP_GP_CATS.forEach(([k])=>{ const v = num('impR_gp_'+k); if(v!==undefined) r.gp[k] = v; });
+  }
+  an.renta = r;
+  try{ await impPersistir(); registrarCambio('Impuestos','editar',`Liquidación renta ${impAnio} ${impDatos[impContribId].meta.nombre}`); toast('Datos guardados','success'); }catch(e){ toast('No se pudo guardar: '+(e.message||e),'error'); }
+  pintarImpuestos();
+}
+
+/* ---- pestaña Informes ---- */
+function impHtmlInformes(an){
+  const res = impResumenAnual(an);
+  return `<div class="card"><h4 style="margin-top:0;">🖨️ Informes — ${impAnio}</h4>
+    <p class="helpNote">Todos usan, por mes, la última sustitutiva (o la original). ${res.nDecl}/12 meses con declaración.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+      <button class="btn primary" onclick="imprimirInformeImp('ejecutivo')">📋 Informe ejecutivo anual</button>
+      <button class="btn" onclick="imprimirInformeImp('general')">📚 Informe general anual (detalle)</button>
+      <button class="btn" onclick="imprimirLiquidacionRentaImp()">🧾 Borrador de liquidación de renta</button>
+      <button class="btn" onclick="exportarExcelImp()">📗 Exportar todo a Excel</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:12px;">
+      <div class="field" style="margin:0;"><label>Informe mensual</label><select id="impSelMes" onchange="impMesInforme=+this.value">${IMP_MESES.map((m,k)=>`<option value="${k+1}" ${impMesInforme===k+1?'selected':''}>${m}</option>`).join('')}</select></div>
+      <button class="btn" onclick="imprimirInformeImp('mensual')">🗓️ Informe del mes</button>
+    </div></div>`;
+}
+function impCabeceraInforme(titulo){
+  const c = impDatos[impContribId].meta;
+  return `<div class="doc-header"><div class="doc-title">${titulo}</div><div class="doc-subtitle">${escapeHtml(c.nombre||'')}${c.ruc?' · RUC '+escapeHtml(c.ruc):''} · Año fiscal ${impAnio}</div></div>`;
+}
+function impKpis(items){
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;">${items.map(([t,v,s,col])=>desgloseKpi(t,v,s,col)).join('')}</div>`;
+}
+function impHtmlEjecutivo(an){
+  const L = impCalcularRenta(an, impAnio); const res = L.resumen;
+  const conMt = res.meses.filter(x=>x.mt);
+  const mejor = conMt.slice().sort((a,b)=>b.mt.ventasNetas-a.mt.ventasNetas)[0], peor = conMt.slice().sort((a,b)=>a.mt.ventasNetas-b.mt.ventasNetas)[0];
+  const prom = conMt.length ? res.tot.ventasNetas/conMt.length : 0;
+  const obs = [];
+  obs.push(`Se cuenta con <b>${res.nDecl} de 12</b> formularios 104${res.faltan.length?` (faltan: ${res.faltan.map(m=>IMP_MESES[m-1]).join(', ')})`:''}${res.nSust?`; en <b>${res.nSust}</b> mes(es) se usó la declaración sustitutiva`:''}.`);
+  if(conMt.length) obs.push(`Ventas netas del año <b>${bpUSD(res.tot.ventasNetas)}</b> (promedio mensual ${bpUSD(prom)}); mejor mes <b>${IMP_MESES[mejor.mes-1]}</b> (${bpUSD(mejor.mt.ventasNetas)}) y menor mes <b>${IMP_MESES[peor.mes-1]}</b> (${bpUSD(peor.mt.ventasNetas)}).`);
+  if(res.tot.ventasNetas>0) obs.push(`Las compras netas representan el <b>${(res.tot.comprasNetas/res.tot.ventasNetas*100).toFixed(1)}%</b> de las ventas netas.`);
+  obs.push(`IVA generado ${bpUSD(res.tot.ivaGenerado)}, crédito tributario ${bpUSD(res.tot.ivaCredito)}, retenciones de IVA recibidas ${bpUSD(res.tot.retIvaRecibidas)}: IVA neto referencial <b>${bpUSD(res.tot.ivaNeto)}</b>.`);
+  if(res.tot.retIvaEfectuadas) obs.push(`Como agente de retención se retuvo IVA por ${bpUSD(res.tot.retIvaEfectuadas)}.`);
+  obs.push(`Utilidad estimada ${bpUSD(L.utilidad)} (margen ${L.margen.toFixed(1)}%); base imponible ${bpUSD(L.base)}; impuesto a la renta causado <b>${bpUSD(L.causado)}</b> (tasa efectiva ${L.tasaEfectiva.toFixed(2)}%), ${L.saldo>=0?'impuesto a pagar':'saldo a favor'} <b>${bpUSD(Math.abs(L.saldo))}</b>.`);
+  return `${impCabeceraInforme('Informe ejecutivo — '+impNomSec())}
+    ${impKpis([['Ventas netas',bpUSD(res.tot.ventasNetas),`${res.nDecl}/12 meses`,'#1e7e34'],['Compras netas',bpUSD(res.tot.comprasNetas),'bienes y servicios','#b36b00'],['IVA neto referencial',bpUSD(res.tot.ivaNeto),`generado ${bpUSD(res.tot.ivaGenerado)}`,'#1f3a5f'],['Impuesto a la renta',bpUSD(L.causado),`${L.saldo>=0?'a pagar':'a favor'} ${bpUSD(Math.abs(L.saldo))}`,'#a02020']])}
+    <h4 style="margin:10px 0 2px;">Lectura ejecutiva</h4><ul style="margin:6px 0 10px 18px;padding:0;line-height:1.55;">${obs.map(o=>`<li>${o}</li>`).join('')}</ul>
+    <h4 style="margin:10px 0 2px;">Ventas vs. compras por mes</h4>${impBarrasHTML(res)}
+    <h4 style="margin:10px 0 2px;">Resumen mensual</h4>${impTablaResumenHTML(res,false)}
+    <div style="page-break-before:always;"></div>${impCabeceraInforme('Liquidación referencial del impuesto a la renta')}${impLineasLiquidacion(L)}`;
+}
+function impMatrizCasilleros(an){
+  const desc = impCasDescMap(); const res = impResumenAnual(an);
+  const cods = new Set(); res.meses.forEach(x=>{ if(x.doc) Object.keys(x.doc.c||{}).forEach(k=>cods.add(k)); });
+  return [...cods].sort((a,b)=>+a-+b).map(k=>{
+    const vals = res.meses.map(x=>x.doc && x.doc.c[k]!==undefined ? x.doc.c[k] : null);
+    return { cod:k, desc:(desc[k]||{}).d||'(sin descripción en el catálogo)', vals, total: impR2(vals.reduce((s,v)=>s+(v||0),0)) };
+  });
+}
+function impHtmlGeneral(an){
+  const L = impCalcularRenta(an, impAnio); const res = L.resumen; const mat = impMatrizCasilleros(an);
+  return `${impCabeceraInforme('Informe general — Formularios 104 y '+impNomSec())}
+    <h4 style="margin:6px 0 2px;">1. Resumen mensual y anual</h4>${impTablaResumenHTML(res,true)}
+    <h4 style="margin:12px 0 2px;">2. Declaraciones cargadas</h4>
+    <table><thead><tr><th>Mes</th><th>Declaraciones</th><th>Usada en el cálculo</th></tr></thead><tbody>${res.meses.map(x=>`<tr><td>${IMP_MESES[x.mes-1]}</td><td>${x.docs.length?x.docs.map(d=>d.tipo==='sustitutiva'?'Sustitutiva '+(d.n||1):'Original').join(', '):'—'}</td><td>${x.doc?(x.doc.tipo==='sustitutiva'?'Sustitutiva '+(x.doc.n||1):'Original'):'sin declarar'}</td></tr>`).join('')}</tbody></table>
+    <div style="page-break-before:always;"></div>
+    <h4 style="margin:6px 0 2px;">3. Detalle por casillero (valores de la declaración usada en cada mes)</h4>
+    <table style="font-size:9px;"><thead><tr><th>Cas.</th><th>Descripción</th>${IMP_MESES.map(m=>`<th class="num">${m.slice(0,3)}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>
+      ${mat.map(r=>`<tr><td>${r.cod}</td><td>${escapeHtml(r.desc)}</td>${r.vals.map(v=>`<td class="num">${v===null?'':v.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`).join('')}<td class="num"><b>${r.total.toLocaleString('es-EC',{minimumFractionDigits:2,maximumFractionDigits:2})}</b></td></tr>`).join('')}
+    </tbody></table>
+    <p style="font-size:9px;color:#666;">Los totales por casillero son la suma aritmética de los 12 meses (no aplica a casilleros de saldos arrastrados o porcentajes).</p>
+    <div style="page-break-before:always;"></div>${impCabeceraInforme('Liquidación referencial del impuesto a la renta')}${impLineasLiquidacion(L)}`;
+}
+function impHtmlMensual(an, mes){
+  const mm = impMM(mes); const node = (an.iva||{})[mm]; const ef = impDocEfectivo(node);
+  if(!ef) return `${impCabeceraInforme('Informe mensual — '+IMP_MESES[mes-1])}<p>No hay formulario 104 cargado para este mes.</p>`;
+  const mt = impMetricasMes(ef.c); const desc = impCasDescMap();
+  const ant = mes>1 ? impDocEfectivo((an.iva||{})[impMM(mes-1)]) : null; const mtA = ant ? impMetricasMes(ant.c) : null;
+  const docs = impArr(node.docs);
+  const orig = docs.find(d=>d.tipo!=='sustitutiva');
+  let dif = '';
+  if(orig && ef!==orig){
+    const cods = [...new Set([...Object.keys(orig.c), ...Object.keys(ef.c)])].sort((a,b)=>+a-+b).filter(k=>impR2((orig.c[k]||0)-(ef.c[k]||0))!==0);
+    dif = `<h4 style="margin:12px 0 2px;">Cambios de la sustitutiva frente a la original</h4>${cods.length?`<table><thead><tr><th>Cas.</th><th>Descripción</th><th class="num">Original</th><th class="num">Sustitutiva</th><th class="num">Diferencia</th></tr></thead><tbody>${cods.map(k=>`<tr><td>${k}</td><td>${escapeHtml((desc[k]||{}).d||'')}</td><td class="num">${bpUSD(orig.c[k]||0)}</td><td class="num">${bpUSD(ef.c[k]||0)}</td><td class="num">${bpUSD(impR2((ef.c[k]||0)-(orig.c[k]||0)))}</td></tr>`).join('')}</tbody></table>`:'<p>Sin diferencias en los valores.</p>'}`;
+  }
+  const grupos = {}; Object.keys(ef.c).sort((a,b)=>+a-+b).forEach(k=>{ const g = (desc[k]||{}).g || 'otros'; (grupos[g]=grupos[g]||[]).push(k); });
+  const tit = { ventas:'Ventas y otras operaciones', compras:'Adquisiciones y pagos', importaciones:'Importaciones', retenciones:'Retenciones', otros:'Otros casilleros' };
+  return `${impCabeceraInforme('Informe mensual del Formulario 104 — '+IMP_MESES[mes-1]+' '+impAnio)}
+    <p style="font-size:11px;">Declaración usada: <b>${ef.tipo==='sustitutiva'?'Sustitutiva '+(ef.n||1):'Original'}</b>${ef.archivo?' · '+escapeHtml(ef.archivo):''}</p>
+    ${impKpis([['Ventas netas',bpUSD(mt.ventasNetas),mtA?`mes anterior ${bpUSD(mtA.ventasNetas)}`:'','#1e7e34'],['Compras netas',bpUSD(mt.comprasNetas),mtA?`mes anterior ${bpUSD(mtA.comprasNetas)}`:'','#b36b00'],['IVA generado',bpUSD(mt.ivaGenerado),'','#1f3a5f'],['IVA neto referencial',bpUSD(mt.ivaNeto),`crédito ${bpUSD(mt.ivaCredito)} · ret. recibidas ${bpUSD(mt.retIvaRecibidas)}`,'#a02020']])}
+    <table><thead><tr><th>Concepto</th><th class="num">Mes</th>${mtA?'<th class="num">Mes anterior</th><th class="num">Variación</th>':''}</tr></thead><tbody>${IMP_METRICAS_COLS.map(([k,l])=>`<tr><td>${l}</td><td class="num">${bpUSD(mt[k])}</td>${mtA?`<td class="num">${bpUSD(mtA[k])}</td><td class="num">${mtA[k]?((mt[k]-mtA[k])/Math.abs(mtA[k])*100).toFixed(1)+'%':'—'}</td>`:''}</tr>`).join('')}</tbody></table>
+    ${Object.keys(grupos).map(g=>`<h4 style="margin:12px 0 2px;">${tit[g]||g}</h4><table><thead><tr><th>Cas.</th><th>Descripción</th><th class="num">Valor</th></tr></thead><tbody>${grupos[g].map(k=>`<tr><td>${k}</td><td>${escapeHtml((desc[k]||{}).d||'Casillero leído del archivo')}</td><td class="num">${bpUSD(ef.c[k])}</td></tr>`).join('')}</tbody></table>`).join('')}
+    ${dif}`;
+}
+function imprimirInformeImp(tipo){
+  const an = impAnioData(false); const res = impResumenAnual(an);
+  if(!res.nDecl){ toast('No hay formularios 104 cargados para este año','warning'); return; }
+  let html, nombre;
+  if(tipo==='ejecutivo'){ html = impHtmlEjecutivo(an); nombre = 'Informe ejecutivo'; }
+  else if(tipo==='general'){ html = impHtmlGeneral(an); nombre = 'Informe general'; }
+  else { html = impHtmlMensual(an, impMesInforme); nombre = 'Informe mensual '+IMP_MESES[impMesInforme-1]; }
+  bpAbrirVentanaImpresion(html, `${nombre} — ${impDatos[impContribId].meta.nombre} ${impAnio}`, { banco:'neutro', landscape:tipo!=='mensual', logo:'📑 IMPUESTOS — '+impNomSec().toUpperCase(), pie:'Documento de apoyo generado internamente a partir de los formularios 104 cargados; no reemplaza la declaración oficial del SRI.' });
+}
+function imprimirLiquidacionRentaImp(){
+  const an = impAnioData(false); const L = impCalcularRenta(an, impAnio);
+  bpAbrirVentanaImpresion(`${impCabeceraInforme('Borrador de liquidación del impuesto a la renta — '+(impTipoActual()==='soc'?'sociedades':'personas naturales'))}${impLineasLiquidacion(L)}<p style="font-size:10px;color:#666;">Cálculo referencial basado en los formularios 104 cargados y los datos ingresados; verifique casilleros y valores en el Formulario 102 del SRI antes de declarar.</p>`, `Liquidación de renta — ${impDatos[impContribId].meta.nombre} ${impAnio}`, { banco:'neutro', landscape:false, logo:'📑 IMPUESTOS — '+impNomSec().toUpperCase(), pie:'Borrador referencial; no reemplaza la declaración oficial del SRI.' });
+}
+function exportarExcelImp(){
+  const an = impAnioData(false); const L = impCalcularRenta(an, impAnio); const res = L.resumen;
+  if(!res.nDecl){ toast('No hay formularios 104 cargados para este año','warning'); return; }
+  const meta = impDatos[impContribId].meta; const wb = XLSX.utils.book_new();
+  const h1 = [['Mes', ...IMP_METRICAS_COLS.map(c=>c[1]), 'Declaración usada']];
+  res.meses.forEach(x=>h1.push([IMP_MESES[x.mes-1], ...IMP_METRICAS_COLS.map(([k])=>x.mt?x.mt[k]:''), x.doc?(x.doc.tipo==='sustitutiva'?'Sustitutiva '+(x.doc.n||1):'Original'):'sin declarar']));
+  h1.push(['TOTAL '+impAnio, ...IMP_METRICAS_COLS.map(([k])=>res.tot[k]), '']);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[`${meta.nombre} — RUC ${meta.ruc||''} — Año ${impAnio}`],[],...h1]), 'Resumen mensual');
+  const mat = impMatrizCasilleros(an);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Casillero','Descripción',...IMP_MESES,'Total'],...mat.map(r=>[r.cod,r.desc,...r.vals.map(v=>v===null?'':v),r.total])]), 'Casilleros 104');
+  const liq = L.soc ? [['Concepto','Valor'],['Ingresos por ventas (104 netos)',L.ingresosVentas],['Ajuste / otros ingresos',impR2(L.ajusteIngresos+L.otrosIngresos)],['Total ingresos',L.totalIngresos],['Compras de bienes y servicios',L.comprasBase],['Otros costos y gastos',L.gastosAdic],['Utilidad contable',L.utilidad],['Participación trabajadores',L.pt],['Ingresos exentos',L.exentos],['Gastos no deducibles',L.noDeducibles],['Deducciones adicionales',L.deduccionesEsp],['Amortización pérdidas',L.perdidasAnt],['Base imponible',L.base],['Tarifa',L.tarifaEfectivaTxt],['Impuesto a la renta causado',L.causado],['Retenciones de renta',L.retRenta],['Crédito tributario anterior',L.creditoAnt],['Anticipo pagado',L.anticipoPagado],[L.saldo>=0?'Impuesto a pagar':'Saldo a favor',Math.abs(L.saldo)],['Utilidad neta',L.utilidadNeta],['Reserva legal 10%',L.reservaLegal],['Utilidad distribuible',L.distribuible]] : [['Concepto','Valor'],['Ingresos por ventas (104 netos)',L.ingresosVentas],['Ajuste a ingresos',L.ajusteIngresos],['Otros ingresos gravados',L.otrosIngresos],['Total ingresos gravados',L.totalIngresos],['Compras de bienes y servicios',L.comprasBase],['Otros costos y gastos deducibles',L.gastosAdic],['Gastos no deducibles',L.noDeducibles],['Total costos y gastos',L.totalGastos],['Utilidad / (pérdida)',L.utilidad],['Deducciones especiales',L.deduccionesEsp],['Base imponible',L.base],['Impuesto según tabla',L.impuestoTabla],['Rebaja por gastos personales',L.rebajaGP],['Otras rebajas',L.otrasRebajas],['Impuesto a la renta causado',L.causado],['Retenciones de renta',L.retRenta],['Crédito tributario anterior',L.creditoAnt],['Anticipo pagado',L.anticipoPagado],[L.saldo>=0?'Impuesto a pagar':'Saldo a favor',Math.abs(L.saldo)]];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(liq), 'Liquidación renta');
+  const dl = [['Mes','Tipo','N°','Archivo','Casilleros','Usada']]; res.meses.forEach(x=>x.docs.forEach(d=>dl.push([IMP_MESES[x.mes-1], d.tipo, d.n||'', d.archivo||'', Object.keys(d.c||{}).length, d===x.doc?'Sí':''])));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dl), 'Declaraciones');
+  XLSX.writeFile(wb, `Renta_PN_${String(meta.nombre||'contribuyente').replace(/[^\w]+/g,'_')}_${impAnio}.xlsx`);
+}
+
+
 
 /* =========================================================================
    MÓDULO: HISTORIAL DE CAMBIOS (auditoría de quién hizo qué)
