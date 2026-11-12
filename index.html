@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Control Documental</title>
+<title>Gestión Financiera y de Auditoría</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -501,6 +501,48 @@ table tbody tr:hover td{background:var(--accent-soft);}
   #main{padding:18px 16px 40px;}
 }
 @media print{#sidebar{display:none !important;}}
+/* ── Dashboard profesional ── */
+.dbCumple{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(120deg,var(--accent-soft),transparent 80%),var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;box-shadow:var(--shadow);}
+.dbCumpleHead{display:flex;align-items:center;gap:10px;font-size:13.5px;white-space:nowrap;}
+.dbIc{width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;}
+.dbIc svg{width:18px;height:18px;}
+.dbCumpleBody{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0;}
+.dbChips{display:flex;gap:8px;flex-wrap:wrap;}
+.dbChip{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--border);border-radius:30px;padding:5px 14px 5px 5px;}
+.dbChip .av{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;}
+.dbChip .tx{display:flex;flex-direction:column;line-height:1.2;} .dbChip .tx b{font-size:12.5px;} .dbChip .tx span{font-size:11px;color:var(--muted);}
+.dbChip.hoy{border-color:var(--accent2);background:rgba(16,185,129,.12);} .dbChip.hoy .av{background:var(--accent2);}
+.dbKpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px;}
+.dbKpi{display:flex;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);position:relative;overflow:hidden;}
+.dbKpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--kc,var(--accent));}
+.dbKpiIc{width:46px;height:46px;border-radius:13px;background:color-mix(in srgb,var(--kc,var(--accent)) 16%,transparent);color:var(--kc,var(--accent));display:flex;align-items:center;justify-content:center;flex:0 0 46px;}
+.dbKpiIc svg{width:23px;height:23px;}
+.dbKpi .n{font-size:28px;font-weight:800;line-height:1.05;letter-spacing:-.02em;} .dbKpi .l{font-size:12.5px;color:var(--muted);font-weight:500;margin-top:2px;} .dbKpi .s{font-size:11px;color:var(--muted);opacity:.85;margin-top:2px;}
+.dbKpi.kBlue{--kc:#3b82f6;} .dbKpi.kIndigo{--kc:#7c3aed;} .dbKpi.kRed{--kc:var(--danger);} .dbKpi.kAmber{--kc:var(--warn);}
+.dbGrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start;}
+.dbCardHead{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;} .dbCardHead h3{margin:0;font-size:15.5px;font-weight:700;flex:1;min-width:140px;}
+.dbHeadTools{display:flex;gap:6px;}
+.dbChev{width:18px;height:18px;color:var(--muted);display:inline-flex;transition:transform .2s;flex:0 0 18px;} .dbChev svg{width:18px;height:18px;}
+.dbCard.closed .dbCardBody{display:none;} .dbCard.closed .dbChev{transform:rotate(-90deg);}
+.dbEmp{border:1px solid var(--border);border-left:4px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--panel2);overflow:hidden;}
+.dbEmp.rojo{border-left-color:var(--danger);} .dbEmp.ambar{border-left-color:var(--warn);} .dbEmp.verde{border-left-color:var(--accent2);}
+.dbEmpHead{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:0;color:var(--text);padding:11px 14px;cursor:pointer;text-align:left;}
+.dbEmpHead:hover{background:var(--accent-soft);}
+.dbEmp .dbChev{transform:rotate(-90deg);} .dbEmp.open .dbChev{transform:rotate(0);}
+.dbEmpName{display:flex;flex-direction:column;flex:1;min-width:0;line-height:1.25;} .dbEmpName b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .dbEmpName small{color:var(--muted);font-size:11px;}
+.dbBadges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.dbBadge{font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px;white-space:nowrap;}
+.dbBadge.rojo{background:rgba(240,82,79,.16);color:var(--danger);} .dbBadge.ambar{background:rgba(245,158,11,.16);color:var(--warn);} .dbBadge.verde{background:rgba(16,185,129,.16);color:var(--accent2);}
+.dbEmpBody{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s ease;} .dbEmpBody>div{overflow:hidden;min-height:0;padding:0 14px;}
+.dbEmp.open .dbEmpBody{grid-template-rows:1fr;} .dbEmp.open .dbEmpBody>div{padding:2px 14px 12px;}
+.dbItem{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:5px 0;border-top:1px dashed var(--border);} .dbItem:first-child{border-top:0;}
+.dbItem span:nth-child(2){flex:1;} .dbItem em{font-style:normal;color:var(--muted);font-size:11.5px;white-space:nowrap;}
+.dbItem .dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;} .dbItem.rojo .dot{background:var(--danger);} .dbItem.ambar .dot{background:var(--warn);}
+.dbMas{font-size:12px;color:var(--muted);padding:4px 0;}
+.dbTram{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border);} .dbTram:first-child{border-top:0;padding-top:0;}
+.dbTram b{font-size:13px;} .dbTram .meta{font-size:11.5px;color:var(--muted);margin-top:2px;}
+@media(max-width:1100px){.dbKpis{grid-template-columns:repeat(2,minmax(0,1fr));}.dbGrid{grid-template-columns:1fr;}}
+@media(max-width:560px){.dbKpis{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -509,13 +551,13 @@ table tbody tr:hover td{background:var(--accent-soft);}
 <!-- LOGIN -->
 <div id="loginScreen">
   <div class="loginHero">
-    <div class="lhBrand"><div class="sbLogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>Control Documental</div>
+    <div class="lhBrand"><div class="sbLogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>Gestión Financiera y de Auditoría</div>
     <div class="lhMain"><h2>Gestión de auditoría y cumplimiento en Ecuador</h2><p>Oficios, plazos, información financiera y obligaciones con el SRI y la Superintendencia de Compañías, con orden y respaldo.</p>
       <ul class="lhList"><li><span class="lhi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span><span>Alertas de plazos y oficios: nada vence sin que lo veas.</span></li><li><span class="lhi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span><span>Cumplimiento tributario y societario en un solo lugar.</span></li><li><span class="lhi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg></span><span>Estados financieros, conciliaciones e impuestos con informes listos para imprimir.</span></li><li><span class="lhi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span>Permisos por área y trazabilidad de cada cambio.</span></li></ul></div>
     <div class="lhFoot">Acceso restringido a usuarios autorizados.</div>
   </div>
   <div class="loginPane"><div class="loginBox">
-    <h1>Control Documental</h1>
+    <h1>Gestión Financiera y de Auditoría</h1>
     <p class="sub">Oficios, plazos, cumplimiento tributario y societario en Ecuador</p>
     <input id="authEmail" type="email" placeholder="Correo electrónico" autocomplete="username">
     <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password">
@@ -529,7 +571,7 @@ table tbody tr:hover td{background:var(--accent-soft);}
 <!-- APP -->
 <div id="app">
   <div id="sidebar">
-    <div class="sbBrand"><div class="sbLogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div><h1>Control Documental<span id="userEmailLabel">Gestión de Auditoría</span></h1></div>
+    <div class="sbBrand"><div class="sbLogo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div><h1>Gestión Financiera y de Auditoría<span id="userEmailLabel">Plataforma corporativa · Ecuador</span></h1></div>
     <div class="sbTools"><button type="button" onclick="navTodos(true)" title="Abrir todos los grupos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg> Expandir</button><button type="button" onclick="navTodos(false)" title="Cerrar todos los grupos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg> Contraer</button></div>
     <div id="sbNav">
     <div class="navSolo"><button class="navBtn active" data-view="dashboard" onclick="goTo('dashboard')"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span><span class="nt">Dashboard</span></button></div>
@@ -2401,20 +2443,34 @@ function toast(msg, type="info", duration=3500){
 /* =========================================================================
    DASHBOARD
    ========================================================================= */
+function dbIcono(n){ return (typeof NAV_ICONOS!=='undefined' && NAV_ICONOS[n]) ? NAV_ICONOS[n] : ''; }
+function dbToggleEmp(btn){ const w = btn.closest('.dbEmp'); if(w) w.classList.toggle('open'); }
+function dbEmpTodas(abrir){ document.querySelectorAll('#dbEmpresas .dbEmp').forEach(e=>e.classList.toggle('open', !!abrir)); }
+function dbToggleCard(btn){ const c = btn.closest('.dbCard'); if(c) c.classList.toggle('closed'); }
+function dbAbrirEmpresa(id){ empresaSeleccionadaId = id; goTo('empresas'); }
+
 async function renderDashboard(){
   const main = document.getElementById("main");
-  main.innerHTML = `<div class="pageTitle"><div><h2>Dashboard</h2><p>Resumen general de trámites y cumplimiento</p></div>
+  let hoyTxt = new Date().toLocaleDateString('es-EC',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); hoyTxt = hoyTxt.charAt(0).toUpperCase()+hoyTxt.slice(1);
+  main.innerHTML = `<div class="pageTitle"><div><h2>Panel de control</h2><p>${hoyTxt} · Resumen de trámites y cumplimiento</p></div>
       <div class="themeToggle">
-        <button class="btn small ${temaActual==='oscuro'?'active':''}" onclick="cambiarTema('oscuro')">🌙 Oscuro</button>
-        <button class="btn small ${temaActual==='claro'?'active':''}" onclick="cambiarTema('claro')">☀️ Claro</button>
+        <button class="btn small ${temaActual==='oscuro'?'active':''}" onclick="cambiarTema('oscuro')">Oscuro</button>
+        <button class="btn small ${temaActual==='claro'?'active':''}" onclick="cambiarTema('claro')">Claro</button>
       </div>
     </div>
-    <div class="statRow" id="statRow"><div class="emptyState">Cargando...</div></div>
-    <div class="grid2">
-      <div class="card"><h3 style="margin-top:0">⚠️ Alertas de cumplimiento</h3><div id="alertasCumplimiento">Cargando...</div></div>
-      <div class="card"><h3 style="margin-top:0">📨 Trámites próximos a vencer</h3><div id="alertasTramites">Cargando...</div></div>
-    </div>
-    <div class="card"><h3 style="margin-top:0">🎂 Próximos cumpleaños</h3><div id="alertasCumpleanosDashboard">Cargando...</div></div>`;
+    <div class="dbCumple" id="dbCumple"><div class="dbCumpleHead"><span class="dbIc">${dbIcono('cake')}</span><b>Próximos cumpleaños</b></div><div id="alertasCumpleanosDashboard" class="dbCumpleBody">Cargando...</div></div>
+    <div class="dbKpis" id="statRow"><div class="emptyState">Cargando...</div></div>
+    <div class="dbGrid">
+      <div class="card dbCard dbCardEmp">
+        <div class="dbCardHead"><span class="dbIc">${dbIcono('empresas')}</span><h3>Empresas y cumplimiento</h3>
+          <div class="dbHeadTools"><button class="btn small" onclick="dbEmpTodas(true)">Expandir todas</button><button class="btn small" onclick="dbEmpTodas(false)">Contraer todas</button></div></div>
+        <div id="dbEmpresas" class="dbCardBody">Cargando...</div>
+      </div>
+      <div class="card dbCard">
+        <div class="dbCardHead" onclick="dbToggleCard(this)" style="cursor:pointer"><span class="dbIc">${dbIcono('mail')}</span><h3>Trámites próximos a vencer</h3><span class="dbChev">${dbIcono('chev')}</span></div>
+        <div id="alertasTramites" class="dbCardBody">Cargando...</div>
+      </div>
+    </div>`;
 
   cargarColaboradores().then(lista => {
     const cont = document.getElementById("alertasCumpleanosDashboard");
@@ -2425,13 +2481,12 @@ async function renderDashboard(){
       .filter(c=>c.dias<=30)
       .sort((a,b)=>a.dias-b.dias);
     cont.innerHTML = !proximos.length
-      ? `<p style="color:var(--muted);">No hay cumpleaños en los próximos 30 días. <button class="btn small" onclick="goTo('cumpleanos')">Ver todos</button></p>`
-      : proximos.map(c => `<p>${c.dias===0?'🎉 <b>¡Hoy!</b>':`en ${c.dias} día(s)`} — <b>${escapeHtml(c.nombre)}</b> ${c.cargo?`(${escapeHtml(c.cargo)})`:''} cumple ${edadQueCumple(c.fechaNacimiento)} años</p>`).join("") + `<button class="btn small" onclick="goTo('cumpleanos')">Ver todos</button>`;
-  }).catch(()=>{ const c=document.getElementById("alertasCumpleanosDashboard"); if(c) c.innerHTML = `<p style="color:var(--muted);">No se pudo cargar.</p>`; });
+      ? `<span style="color:var(--muted);font-size:13px;">No hay cumpleaños en los próximos 30 días.</span> <button class="btn small" onclick="goTo('cumpleanos')">Ver todos</button>`
+      : `<div class="dbChips">${proximos.map(c => `<div class="dbChip ${c.dias===0?'hoy':''}"><div class="av">${escapeHtml((c.nombre||'?').trim().charAt(0).toUpperCase())}</div><div class="tx"><b>${escapeHtml(c.nombre)}</b><span>${c.dias===0?'¡Hoy! ':(c.dias===1?'Mañana · ':'en '+c.dias+' días · ')}cumple ${edadQueCumple(c.fechaNacimiento)} años${c.cargo?' · '+escapeHtml(c.cargo):''}</span></div></div>`).join('')}</div><button class="btn small" onclick="goTo('cumpleanos')">Ver todos</button>`;
+  }).catch(()=>{ const c=document.getElementById("alertasCumpleanosDashboard"); if(c) c.innerHTML = `<span style="color:var(--muted);">No se pudo cargar.</span>`; });
 
   const [pub, priv] = await Promise.all([cargarTramites("publico"), cargarTramites("privado")]);
   const hoy = new Date();
-
   const vencidosTramites = [...pub, ...priv].filter(t => t.fechaVencimiento && new Date(t.fechaVencimiento) < hoy && t.estado!=="Resuelto");
   const proximosTramites = [...pub, ...priv].filter(t => {
     if(!t.fechaVencimiento || t.estado==="Resuelto") return false;
@@ -2442,7 +2497,7 @@ async function renderDashboard(){
   if(!colaboradoresCache.length){ try{ colaboradoresCache = await cargarColaboradores(); }catch(e){} }
   const empresasVisiblesDashboard = empresasVisiblesParaUsuarioActual();
   let totalTareasVencidas = 0, totalTareasProximas = 0;
-  let alertasHtml = "";
+  const filasEmp = [];
   for(const emp of empresasVisiblesDashboard){
     const tareas = generarChecklistEmpresa(emp);
     const estados = await obtenerEstadosChecklist(emp.id);
@@ -2454,35 +2509,41 @@ async function renderDashboard(){
     });
     totalTareasVencidas += vencidas.length;
     totalTareasProximas += proximas.length;
-    if(vencidas.length || proximas.length){
-      alertasHtml += `<div style="margin-bottom:10px;"><b>${escapeHtml(emp.nombre)}</b><br>`;
-      vencidas.slice(0,3).forEach(t => alertasHtml += `<span class="pill danger" style="margin:3px 3px 0 0;display:inline-block;">🔴 ${escapeHtml(t.obligacion.nombre)} - venció ${fmtFecha(t.vencimiento)}</span>`);
-      proximas.slice(0,3).forEach(t => alertasHtml += `<span class="pill warn" style="margin:3px 3px 0 0;display:inline-block;">🟡 ${escapeHtml(t.obligacion.nombre)} - vence ${fmtFecha(t.vencimiento)}</span>`);
-      alertasHtml += `</div>`;
-    }
+    filasEmp.push({ emp, vencidas, proximas });
   }
+  filasEmp.sort((a,b)=> (b.vencidas.length-a.vencidas.length) || (b.proximas.length-a.proximas.length) || String(a.emp.nombre).localeCompare(String(b.emp.nombre)));
 
-  // Si el usuario ya navegó a otra pantalla mientras esto cargaba, no hay
-  // nada que actualizar (evita el error "Cannot set properties of null").
   if(currentView!=="dashboard" || !document.getElementById("statRow")) return;
 
-  document.getElementById("statRow").innerHTML = `
-    <div class="statCard"><div class="n">${empresasVisiblesDashboard.length}</div><div class="l">Empresas registradas</div></div>
-    <div class="statCard"><div class="n">${pub.length + priv.length}</div><div class="l">Trámites totales</div></div>
-    <div class="statCard" style="border-color:var(--danger)"><div class="n" style="color:var(--danger)">${vencidosTramites.length + totalTareasVencidas}</div><div class="l">Vencidos sin cumplir</div></div>
-    <div class="statCard" style="border-color:var(--warn)"><div class="n" style="color:var(--warn)">${proximosTramites.length + totalTareasProximas}</div><div class="l">Próximos a vencer (7 días)</div></div>
-  `;
+  const kpi = (n,l,ic,cls,sub) => `<div class="dbKpi ${cls||''}"><div class="dbKpiIc">${dbIcono(ic)}</div><div><div class="n">${n}</div><div class="l">${l}</div>${sub?`<div class="s">${sub}</div>`:''}</div></div>`;
+  document.getElementById("statRow").innerHTML =
+    kpi(empresasVisiblesDashboard.length,'Empresas registradas','empresas','kBlue') +
+    kpi(pub.length + priv.length,'Trámites totales','mail','kIndigo',`${pub.length} públicos · ${priv.length} privados`) +
+    kpi(vencidosTramites.length + totalTareasVencidas,'Vencidos sin cumplir','bell','kRed',`${vencidosTramites.length} trámites · ${totalTareasVencidas} obligaciones`) +
+    kpi(proximosTramites.length + totalTareasProximas,'Próximos a vencer (7 días)','calendar','kAmber',`${proximosTramites.length} trámites · ${totalTareasProximas} obligaciones`);
 
-  document.getElementById("alertasCumplimiento").innerHTML = alertasHtml || `<p style="color:var(--muted)">Sin alertas de cumplimiento pendientes. ${empresasVisiblesDashboard.length===0?'Registra una empresa para generar tu checklist automático.':''}</p>`;
+  document.getElementById("dbEmpresas").innerHTML = !filasEmp.length
+    ? `<p style="color:var(--muted)">Registra una empresa para generar su checklist automático.</p>`
+    : filasEmp.map(f => {
+        const nV = f.vencidas.length, nP = f.proximas.length;
+        const estado = nV ? 'rojo' : (nP ? 'ambar' : 'verde');
+        const pills = f.vencidas.slice(0,5).map(t=>`<div class="dbItem rojo"><span class="dot"></span><span>${escapeHtml(t.obligacion.nombre)}</span><em>venció ${fmtFecha(t.vencimiento)}</em></div>`).join('')
+          + f.proximas.slice(0,5).map(t=>`<div class="dbItem ambar"><span class="dot"></span><span>${escapeHtml(t.obligacion.nombre)}</span><em>vence ${fmtFecha(t.vencimiento)}</em></div>`).join('');
+        const extra = (nV>5||nP>5) ? `<div class="dbMas">y ${Math.max(0,nV-5)+Math.max(0,nP-5)} más en el checklist de la empresa</div>` : '';
+        return `<div class="dbEmp ${estado} ${nV?'open':''}">
+          <button type="button" class="dbEmpHead" onclick="dbToggleEmp(this)"><span class="dbChev">${dbIcono('chev')}</span><span class="dbEmpName"><b>${escapeHtml(f.emp.nombre)}</b><small>RUC ${escapeHtml(f.emp.ruc||'')}</small></span>
+            <span class="dbBadges">${nV?`<span class="dbBadge rojo">${nV} vencida${nV>1?'s':''}</span>`:''}${nP?`<span class="dbBadge ambar">${nP} por vencer</span>`:''}${(!nV&&!nP)?'<span class="dbBadge verde">Al día</span>':''}</span></button>
+          <div class="dbEmpBody"><div>${pills||'<div class="dbMas">Sin pendientes en los próximos 7 días.</div>'}${extra}<button type="button" class="btn small" style="margin:8px 0 2px;" onclick="dbAbrirEmpresa('${f.emp.id}')">Abrir checklist de la empresa</button></div></div>
+        </div>`; }).join('');
 
   document.getElementById("alertasTramites").innerHTML = (vencidosTramites.length+proximosTramites.length===0)
     ? `<p style="color:var(--muted)">No hay trámites próximos a vencer.</p>`
     : [...vencidosTramites, ...proximosTramites].slice(0,8).map(t => {
         const vencido = new Date(t.fechaVencimiento) < hoy;
-        return `<div style="margin-bottom:8px;">
+        return `<div class="dbTram ${vencido?'rojo':'ambar'}">
           <span class="pill ${vencido?'danger':'warn'}">${vencido?'Vencido':'Próximo'}</span>
-          <b style="margin-left:6px;">${escapeHtml(t.asunto||t.numeroOficio||'Trámite')}</b>
-          <div class="meta" style="font-size:12px;color:var(--muted)">${escapeHtml(t.institucion||'')} · vence ${fmtFecha(t.fechaVencimiento)} · ${t.tipo==='publico'?'Público':'Privado'}</div>
+          <div><b>${escapeHtml(t.asunto||t.numeroOficio||'Trámite')}</b>
+          <div class="meta">${escapeHtml(t.institucion||'')} · vence ${fmtFecha(t.fechaVencimiento)} · ${t.tipo==='publico'?'Público':'Privado'}</div></div>
         </div>`;
       }).join("");
 }
@@ -6317,7 +6378,7 @@ function generarIngresoCaja() {
       </div>
     </div>
     <div class="doc-footer">
-      Documento generado por Control Documental · ${new Date().toLocaleDateString('es-EC')} · Comprobante de control interno — consérvese como respaldo contable.
+      Documento generado por Gestión Financiera y de Auditoría · ${new Date().toLocaleDateString('es-EC')} · Comprobante de control interno — consérvese como respaldo contable.
     </div>
   `;
   toast('Ingreso de caja generado', 'success');
@@ -10080,7 +10141,7 @@ function audsupExportarPDF(){
     tr.fila-detalle > td{background:#fafcfe;padding:2px 4px 6px;} .det-wrap{display:flex;gap:8px;} .det-col{flex:1;}
     table.det{margin:2px 0;} table.det td{font-size:8.5px;padding:1px 4px;border-color:#e1e6ec;} td.cod{white-space:nowrap;color:#5c6b7a;}
   </style></head><body>${audsupHtmlInforme(audsupInforme, audsupAnalisisIA, true)}
-  <div class="pie">Informe generado con Control Documental — Auditoría Supercias. Las cifras provienen de los PDF oficiales cargados; el análisis narrativo fue asistido por IA y debe ser revisado por el responsable financiero.</div>
+  <div class="pie">Informe generado con Gestión Financiera y de Auditoría — Auditoría Supercias. Las cifras provienen de los PDF oficiales cargados; el análisis narrativo fue asistido por IA y debe ser revisado por el responsable financiero.</div>
   <script>setTimeout(function(){ window.focus(); window.print(); }, 400);<\/script></body></html>`);
   win.document.close();
 }
@@ -11190,7 +11251,7 @@ function efiDocumentoInforme(paraImprimir){
     ${Tc ? ok(Math.abs(Tc.cuadre) <= 1, `Activo = Pasivo + Patrimonio en ${c} (diferencia ${efiFmt(Tc.cuadre)}).`) : ''}
     ${ok(!sinCl.length, sinCl.length ? `${sinCl.length} cuenta(s) con valor sin clasificar (no incluidas en los estados): ${sinCl.slice(0, 15).map(k => escapeHtml(efiPlan[k].c + ' ' + efiPlan[k].n)).join('; ')}${sinCl.length > 15 ? '…' : ''}.` : 'Todas las cuentas con valor están clasificadas.')}
     ${creadas.length ? `<li>ℹ️ ${creadas.length} cuenta(s) con valor se crearon automáticamente al importar; verificar su clasificación.</li>` : ''}
-  </ul><div class="pie">Estados financieros internos preparados con Control Documental. Cifras expresadas en USD. Las cuentas de grupo corresponden a la suma de sus subcuentas.</div></div>`;
+  </ul><div class="pie">Estados financieros internos preparados con Gestión Financiera y de Auditoría. Cifras expresadas en USD. Las cuentas de grupo corresponden a la suma de sus subcuentas.</div></div>`;
   h += `</div>${paraImprimir ? '<script>setTimeout(function(){ window.focus(); window.print(); }, 450);<\/script>' : ''}</body></html>`;
   return h;
 }
@@ -12266,7 +12327,7 @@ function imprimirReporteActivos(modo){
       <table><thead><tr><th>Código</th><th>Activo</th><th>Categoría</th><th>Compra</th><th class="num">Costo</th><th>Vida útil</th><th class="num">Dep. acumulada</th><th class="num">Valor en libros</th><th>Responsable</th></tr></thead>
       <tbody>${activosFijosCache.map(a=>{ const dep=calcularDepreciacionActivo(a); const val=calcularValorLibrosConMejoras(a); return `<tr><td>${escapeHtml(a.codigo||'-')}</td><td>${escapeHtml(a.nombre)}</td><td>${escapeHtml(a.categoria||'-')}</td><td>${fmtFecha(a.fechaCompra)}</td><td class="num">$${Number(a.costoCompra||0).toFixed(2)}</td><td>${a.vidaUtilAnios} años</td><td class="num">$${dep.depreciacionAcumulada.toFixed(2)}</td><td class="num">$${val.total.toFixed(2)}${val.mejorasDetalle.length?` (incl. ${val.mejorasDetalle.length} mejora(s))`:''}</td><td>${escapeHtml(a.responsable||'-')}</td></tr>`; }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;">Sin activos</td></tr>'}</tbody>
       </table>
-      <div class="pie">Reporte generado por Control Documental.</div>
+      <div class="pie">Reporte generado por Gestión Financiera y de Auditoría.</div>
       </body></html>`);
   }
   win.document.close(); win.focus(); win.print();
@@ -19098,7 +19159,7 @@ function abxCargarExcelJS(){
 }
 function abxLibro(EJS, meta){
   const wb = new EJS.Workbook();
-  wb.creator = 'Control Documental'; wb.lastModifiedBy = 'Control Documental';
+  wb.creator = 'Gestión Financiera y de Auditoría'; wb.lastModifiedBy = 'Gestión Financiera y de Auditoría';
   wb.created = new Date(); wb.modified = new Date();
   if(meta && meta.titulo) wb.title = meta.titulo;
   if(meta && meta.empresa) wb.company = meta.empresa;
@@ -19171,7 +19232,7 @@ function abxImpresion(ws, o){
   if(o.area) ws.pageSetup.printArea = o.area;
   ws.headerFooter = {
     oddHeader: `&L&"Arial,Bold"&9${esc(o.empresa)}&R&"Arial,Regular"&9${esc(o.hoja||ws.name)}`,
-    oddFooter: `&L&"Arial,Regular"&8Generado por Control Documental&C&"Arial,Regular"&8Página &P de &N&R&"Arial,Regular"&8&D`,
+    oddFooter: `&L&"Arial,Regular"&8Generado por Gestión Financiera y de Auditoría&C&"Arial,Regular"&8Página &P de &N&R&"Arial,Regular"&8&D`,
   };
 }
 function abxFirmas(ws, fila, o){
@@ -19235,7 +19296,7 @@ function abxCaratula(wb, o){
     });
   }
   f += 2;
-  ctr(f, o.pie || ('Generado por Control Documental el '+new Date().toLocaleString('es-EC')), { i:true, sz:9, color:ABX.muted });
+  ctr(f, o.pie || ('Generado por Gestión Financiera y de Auditoría el '+new Date().toLocaleString('es-EC')), { i:true, sz:9, color:ABX.muted });
   f += 2;
   for(let c=2;c<=3;c++) ws.getCell(f,c).fill = { type:'pattern', pattern:'solid', fgColor:{ argb:ABX.navy } };
   ws.getRow(f).height = 10;
@@ -19898,7 +19959,7 @@ function efConstruirHtmlPDF(opc){
         <table class="pt-datos">${lineasDatos.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`).join('')}</table>
         <div class="pt-indice"><div class="pt-ind-t">Contenido</div><ol>${indiceItems.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ol></div>
       </div>
-      <div class="pt-pie">Generado con Control Documental</div>
+      <div class="pt-pie">Generado con Gestión Financiera y de Auditoría</div>
     </section>`;
   // ---- resumen ejecutivo
   const tarjeta = k => {
@@ -19945,7 +20006,7 @@ function efConstruirHtmlPDF(opc){
     @page { size: A4 ${land?'landscape':'portrait'}; margin: 20mm 14mm 18mm 14mm;
       @top-left { content: "${efCssStr(emp.nombre)}"; font: bold 8.5px Arial, Helvetica, sans-serif; color:#1f3a5f; }
       @top-right { content: "Estados Financieros${t.corte?' · '+efCssStr(t.corte):''}"; font: 8.5px Arial, Helvetica, sans-serif; color:#5f6b7a; }
-      @bottom-left { content: "Generado con Control Documental"; font: 8px Arial, Helvetica, sans-serif; color:#5f6b7a; }
+      @bottom-left { content: "Generado con Gestión Financiera y de Auditoría"; font: 8px Arial, Helvetica, sans-serif; color:#5f6b7a; }
       @bottom-center { content: "Página " counter(page) " de " counter(pages); font: 8px Arial, Helvetica, sans-serif; color:#5f6b7a; }
       @bottom-right { content: "${hoy}"; font: 8px Arial, Helvetica, sans-serif; color:#5f6b7a; } }
     @page portada { size: A4 portrait; margin: 0; @top-left{content:none} @top-right{content:none} @bottom-left{content:none} @bottom-center{content:none} @bottom-right{content:none} }
@@ -20697,7 +20758,7 @@ function generarICSReunion(r){
   const escaparICS = s => (s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
   const ahora = new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
   return [
-    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Control Documental//Reuniones y Eventos//ES",
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Gestion Financiera y de Auditoria//Reuniones y Eventos//ES",
     "BEGIN:VEVENT",
     `UID:${r.id}@control-documental`,
     `DTSTAMP:${ahora}`,
@@ -23129,7 +23190,7 @@ function imprimirInformesDesglose(){
   if(tipoInf!=="ejecutivo") carteras.forEach(c=>secs.push(desgloseHtmlGeneral(c)));
   const cont = secs.map((s,i)=> i ? `<div style="page-break-before:always;"></div>${s}` : s).join("");
   const nombre = (tipoInf==="ejecutivo"?"Informe ejecutivo":tipoInf==="general"?"Informe general":"Informe ejecutivo y general") + " de cartera";
-  bpAbrirVentanaImpresion(cont, `${nombre} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape: tipoInf!=="ejecutivo", logo:'📊 INFORME DE CARTERA', pie:'Documento generado internamente a partir de los listados cargados en Control Documental.'});
+  bpAbrirVentanaImpresion(cont, `${nombre} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape: tipoInf!=="ejecutivo", logo:'📊 INFORME DE CARTERA', pie:'Documento generado internamente a partir de los listados cargados en Gestión Financiera y de Auditoría.'});
 }
 
 function agregarFilaDesglose(){ abrirEditorFilaDesglose(-1); }
@@ -23212,7 +23273,7 @@ function imprimirDesglose(){
       ${items.map((x,n)=>`<tr><td>${n+1}</td><td>${escapeHtml(x.ruc||'')}</td><td>${escapeHtml(x.nombre||'')}</td><td class="num">${bpUSD(x.valor)}</td><td class="num">${total?((Number(x.valor)||0)/total*100).toFixed(2):'0.00'}%</td>${labels.map((_,k)=>`<td class="num">${Array.isArray(x.edades)&&Number(x.edades[k])?bpUSD(x.edades[k]):''}</td>`).join("")}</tr>`).join("")}
       <tr class="tot"><td colspan="3">TOTAL (${items.length} ${t.plural})</td><td class="num">${bpUSD(total)}</td><td class="num">100.00%</td>${totE.map(v=>`<td class="num">${bpUSD(v)}</td>`).join("")}</tr>
     </tbody></table>`;
-  bpAbrirVentanaImpresion(cont, `Desglose de ${t.titulo} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape:labels.length>2, logo:'📄 DESGLOSE '+t.titulo.toUpperCase(), pie:'Documento generado a partir del Excel cargado en Control Documental.'});
+  bpAbrirVentanaImpresion(cont, `Desglose de ${t.titulo} — ${desgloseNombreEmpresa()}`, {banco:'neutro', landscape:labels.length>2, logo:'📄 DESGLOSE '+t.titulo.toUpperCase(), pie:'Documento generado a partir del Excel cargado en Gestión Financiera y de Auditoría.'});
 }
 
 /* =========================================================================
@@ -27145,7 +27206,7 @@ function construirHtmlInformeComparativo(){
     </table>
 
     <div class="pie">
-      <span>${escapeHtml(nombreEmpresa)} — Informe generado automáticamente por Control Documental</span>
+      <span>${escapeHtml(nombreEmpresa)} — Informe generado automáticamente por Gestión Financiera y de Auditoría</span>
       <span>Página <span class="pageNumber"></span></span>
     </div>
     </body></html>`;
@@ -27300,7 +27361,7 @@ function construirHtmlInformeResumenes(){
     </tbody></table>` : `<p style="color:#8ea2b3;">Sin años para comparar.</p>`}
 
     <div class="pie">
-      <span>${escapeHtml(nombreEmpresa)} — Informe generado automáticamente por Control Documental</span>
+      <span>${escapeHtml(nombreEmpresa)} — Informe generado automáticamente por Gestión Financiera y de Auditoría</span>
       <span>Página <span class="pageNumber"></span></span>
     </div>
     </body></html>`;
