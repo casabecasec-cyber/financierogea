@@ -12966,6 +12966,13 @@ function bpFlujoCajaFormHTML(){
       <div style="display:flex;gap:8px"><select id="fc2-capex-mes" style="width:90px">${meses.map(m=>`<option value="${m}">Mes ${m}</option>`).join('')}</select>
       <input type="number" id="fc2-capex-monto" placeholder="Monto USD" step="0.01" oninput="bpFlujoCajaLive()"></div></div>
 
+    <h3>5.1 Parámetros del Estado de Resultados proyectado</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div class="form-group"><label>Vida útil de las inversiones (años)</label><input type="number" id="fc2-er-depvida" value="10" step="1" min="1" oninput="bpFlujoCajaLive()"></div>
+      <div class="form-group"><label>% Participación de trabajadores</label><input type="number" id="fc2-er-pt" value="15" step="0.01" oninput="bpFlujoCajaLive()"></div>
+      <div class="form-group"><label>% Impuesto a la renta</label><input type="number" id="fc2-er-ir" value="25" step="0.01" oninput="bpFlujoCajaLive()"></div>
+    </div>
+
     <h3>6. Tablas de Amortización (hasta 3 préstamos)</h3>
     ${[1,2,3].map(n=>`
       <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
@@ -13082,6 +13089,50 @@ const BP_FC_ESCENARIOS = {
 function bpFcCerca(a,b,tol){ return Math.abs((Number(a)||0)-(Number(b)||0)) <= (tol||0.01); }
 function bpFcSemaforo(e){ return e==='ok' ? '<span class="fcTag ok">✔ Conforme</span>' : (e==='warn' ? '<span class="fcTag warn">⚠ Revisar</span>' : (e==='err' ? '<span class="fcTag err">✖ Error</span>' : '<span class="fcTag info">ℹ Informativo</span>')); }
 
+/* ═══ Estado de Resultados proyectado por año ═══ */
+function bpFcEstadoResultados(r){
+  const vida = Math.max(1, bpN('fc2-er-depvida')||10), ptP = bpN('fc2-er-pt'), irP = bpN('fc2-er-ir');
+  const capex = r.egrInvM.reduce((a,b)=>a+b,0);
+  const mesCapex = Math.max(1, r.egrInvM.findIndex(v=>v>0)+1 || 1);
+  const out = [];
+  for(let k=0;k<5;k++){
+    const ingresos = r.ingresosAnios[k], costos = r.costosAnios[k], gastos = r.gastosAnios[k];
+    let dep = 0; if(capex>0){ const anual = capex/vida; if(k===0) dep = anual*(13-mesCapex)/12; else if(k < vida) dep = anual; }
+    const bruta = ingresos-costos, ebitda = bruta-gastos, ebit = ebitda-dep;
+    const interes = bpSumaRango(r.interesAbsTotal, k*12, k*12+11);
+    const uai = ebit-interes, pt = uai>0 ? uai*ptP/100 : 0, base = uai-pt, ir = base>0 ? base*irP/100 : 0, neta = base-ir;
+    out.push({ ingresos, costos, bruta, gastos, ebitda, dep, ebit, interes, uai, pt, base, ir, neta,
+      mBruto: ingresos>0?bruta/ingresos*100:0, mOper: ingresos>0?ebit/ingresos*100:0, mNeto: ingresos>0?neta/ingresos*100:0, cobInt: interes>0?ebit/interes:null });
+  }
+  return { anios:out, ptP, irP, vida, capex };
+}
+function bpFcEstadoResultadosHTML(er){
+  const A = er.anios; const f = (arr,key)=>arr.map(x=>x[key]);
+  const pct = (v,i)=> A[i].ingresos>0 ? (v/A[i].ingresos*100).toFixed(1)+'%' : '—';
+  const row = (lbl,key,cl,neg)=>`<tr class="${cl||''}"><td>${lbl}</td>${A.map((x,i)=>`<td class="num">${neg?'(':''}${bpUSD(Math.abs(x[key])===0?0:(neg?Math.abs(x[key]):x[key]))}${neg?')':''}</td><td class="num fcPc">${pct(x[key],i)}</td>`).join('')}</tr>`;
+  return `<table class="fcER"><thead><tr><th rowspan="2">Concepto (USD)</th>${A.map((_,i)=>`<th class="num" colspan="2" style="text-align:center">Año ${i+1}</th>`).join('')}</tr><tr>${A.map(()=>'<th class="num">Valor</th><th class="num">% ing.</th>').join('')}</tr></thead><tbody>
+    ${row('Ingresos por ventas','ingresos','tot')}
+    ${row('(−) Costos de ventas','costos','',true)}
+    ${row('UTILIDAD BRUTA','bruta','tot')}
+    ${row('(−) Gastos administrativos y de ventas','gastos','',true)}
+    ${row('EBITDA','ebitda','tot')}
+    ${row('(−) Depreciación de activos adquiridos','dep','',true)}
+    ${row('UTILIDAD OPERACIONAL (EBIT)','ebit','tot')}
+    ${row('(−) Gastos financieros (intereses)','interes','',true)}
+    ${row('UTILIDAD ANTES DE PARTICIPACIÓN E IMPUESTOS','uai','tot')}
+    ${row(`(−) ${er.ptP}% participación de trabajadores`,'pt','',true)}
+    ${row(`(−) ${er.irP}% impuesto a la renta`,'ir','',true)}
+    ${row('UTILIDAD NETA DEL EJERCICIO','neta','tot')}
+    </tbody></table>
+    <table class="fcER" style="margin-top:8px"><thead><tr><th>Indicadores</th>${A.map((_,i)=>`<th class="num">Año ${i+1}</th>`).join('')}</tr></thead><tbody>
+      <tr><td>Margen bruto</td>${A.map(x=>`<td class="num">${bpPct(x.mBruto)}</td>`).join('')}</tr>
+      <tr><td>Margen operacional (EBIT)</td>${A.map(x=>`<td class="num">${bpPct(x.mOper)}</td>`).join('')}</tr>
+      <tr><td>Margen neto</td>${A.map(x=>`<td class="num">${bpPct(x.mNeto)}</td>`).join('')}</tr>
+      <tr><td>Cobertura de intereses (EBIT / intereses)</td>${A.map(x=>`<td class="num">${x.cobInt===null?'—':x.cobInt.toFixed(2)+'×'}</td>`).join('')}</tr>
+    </tbody></table>
+    <p style="font-size:9px;color:#667;margin:4px 0 0">Depreciación lineal a ${er.vida} años de las inversiones del flujo (${bpUSD(er.capex)}); intereses según las tablas de amortización; participación de trabajadores e impuesto a la renta sobre la utilidad antes de impuestos. Es un estado proyectado referencial y no incluye ajustes de conciliación tributaria.</p>`;
+}
+
 /* Controles de revisión (cuadre aritmético, coherencia y razonabilidad) */
 function bpFcControles(r){
   const it = []; const add = (grupo, nombre, estado, detalle) => it.push({ grupo, nombre, estado, detalle });
@@ -13143,6 +13194,13 @@ function bpFcControles(r){
   const ic = bpN('fc2-ing-crec'), cc = bpN('fc2-costo-crec'), gc = bpN('fc2-gasto-crec');
   add('C. Razonabilidad','Crecimiento anual de ingresos proyectado (Años 2–5)', ic>15?'warn':'ok', `${bpPct(ic)}${ic>15?' — crecimiento alto: requiere sustento (contratos, capacidad instalada, mercado)':''}`);
   add('C. Razonabilidad','Coherencia de crecimientos: costos vs. ingresos', (cc < ic-2)?'warn':'ok', `Ingresos ${bpPct(ic)}, costos ${bpPct(cc)}, gastos ${bpPct(gc)}${cc<ic-2?' — los costos crecen menos que las ventas: mejora de margen que debe justificarse':''}`);
+  /* D. Estado de resultados proyectado */
+  const er = bpFcEstadoResultados(r);
+  const neg = er.anios.map((x,i)=>x.neta<0?'Año '+(i+1):null).filter(Boolean);
+  add('D. Estado de resultados','Utilidad neta proyectada positiva en los 5 años', neg.length?'warn':'ok', neg.length?'Pérdida en: '+neg.join(', ')+'.':er.anios.map((x,i)=>`A${i+1} ${bpUSD(x.neta)}`).join(' · '));
+  const ci = er.anios.filter(x=>x.cobInt!==null); if(ci.length){ const mn = Math.min(...ci.map(x=>x.cobInt)); add('D. Estado de resultados','Cobertura de intereses (EBIT / intereses) ≥ 1,5×', mn<1?'err':(mn<1.5?'warn':'ok'), 'Mínimo '+mn.toFixed(2)+'×.'); }
+  const impA1 = er.anios[0].pt + er.anios[0].ir;
+  if(impA1>0) add('D. Estado de resultados','Participación e impuesto a la renta del Año 1 reflejados en el flujo de caja', 'warn', `El estado de resultados calcula ${bpUSD(impA1)} (15% trabajadores + impuesto a la renta) que no se descuentan en el flujo de caja: confirme que ya están incluidos en costos/gastos o considere su pago.`);
   const nErr = it.filter(x=>x.estado==='err').length, nWarn = it.filter(x=>x.estado==='warn').length, nOk = it.filter(x=>x.estado==='ok').length;
   const dictamen = nErr ? 'CON ERRORES — corregir antes de presentar al banco' : (nWarn ? 'CONFORME CON OBSERVACIONES — revisar los puntos marcados' : 'CONFORME — el flujo cuadra y es razonable');
   return { items:it, nErr, nWarn, nOk, dictamen, dscr, claseDictamen: nErr?'err':(nWarn?'warn':'ok') };
@@ -13198,28 +13256,18 @@ function generarBPFlujoCaja(){
   const ctrl = bpFcControles(r);
   const headMeses = r.meses.map(m=>`<th class="num">Mes ${m}</th>`).join('');
   const headAnios = [1,2,3,4,5].map(a=>`<th class="num">Total Año ${a}</th>`).join('');
-  const fila = (...a) => bpTablaFilaMesesAnios(...a);
+  const fN = v => Math.round(Number(v)||0).toLocaleString('es-EC');
+  const defs = [['sec','ACTIVIDADES OPERACIONALES'],['Ingresos por Ventas','ingresosM','ingresosAnios'],['TOTAL INGRESO OPERACIONAL','totalIngOpM','totalIngOpAnios','tot'],['Costos de Ventas','costosM','costosAnios'],['Gastos Adm. y Ventas','gastosM','gastosAnios'],['TOTAL EGRESOS OPERACIONALES','totalEgrOpM','totalEgrOpAnios','tot'],['FLUJO OPERACIONAL','flujoOpM','flujoOpAnios','tot'],
+    ['sec','ACTIVIDADES DE INVERSIÓN'],['Egresos por Actividades de Inversión','egrInvM','egrInvAnios'],['FLUJO POR ACTIVIDADES DE INVERSIÓN','flujoInvM','flujoInvAnios','tot'],
+    ['sec','ACTIVIDADES DE FINANCIAMIENTO'],['Ingresos por Actividades de Financiamiento','ingFinM','ingFinAnios'],['Egresos por Financiamiento (capital + interés)','egrFinM','egrFinAnios'],['FLUJO POR ACTIVIDADES DE FINANCIAMIENTO','flujoFinM','flujoFinAnios','tot'],
+    ['sec','CONSOLIDADO'],['FLUJO NETO DE CAJA','flujoNetoM','flujoNetoAnios','tot'],['Saldo Inicial de Caja','saldoInicialM','saldoInicialAnios'],['FLUJO ACUMULADO','flujoAcumM','flujoAcumAnios','tot']];
+  const filasM = defs.map(d=> d[0]==='sec' ? `<tr class="fcSec"><td colspan="14">${d[1]}</td></tr>` : `<tr class="${d[3]||''}"><td>${d[0]}</td>${r[d[1]].map(v=>`<td class="num">${fN(v)}</td>`).join('')}<td class="num"><b>${fN(r[d[2]][0])}</b></td></tr>`).join('');
+  const filasA = defs.map(d=> d[0]==='sec' ? `<tr class="fcSec"><td colspan="6">${d[1]}</td></tr>` : `<tr class="${d[3]||''}"><td>${d[0]}</td>${r[d[2]].map(v=>`<td class="num">${bpUSD(v)}</td>`).join('')}</tr>`).join('');
   const tablaFlujo = `
-    <table><thead><tr><th>Concepto</th>${headMeses}${headAnios}</tr></thead><tbody>
-      <tr class="fcSec"><td colspan="18">ACTIVIDADES OPERACIONALES</td></tr>
-      ${fila('Ingresos por Ventas', r.ingresosM, r.ingresosAnios)}
-      ${fila('TOTAL INGRESO OPERACIONAL', r.totalIngOpM, r.totalIngOpAnios,'tot')}
-      ${fila('Costos de Ventas', r.costosM, r.costosAnios)}
-      ${fila('Gastos Adm. y Ventas', r.gastosM, r.gastosAnios)}
-      ${fila('TOTAL EGRESOS OPERACIONALES', r.totalEgrOpM, r.totalEgrOpAnios,'tot')}
-      ${fila('FLUJO OPERACIONAL', r.flujoOpM, r.flujoOpAnios,'tot')}
-      <tr class="fcSec"><td colspan="18">ACTIVIDADES DE INVERSIÓN</td></tr>
-      ${fila('Egresos por Actividades de Inversión', r.egrInvM, r.egrInvAnios)}
-      ${fila('FLUJO POR ACTIVIDADES DE INVERSIÓN', r.flujoInvM, r.flujoInvAnios,'tot')}
-      <tr class="fcSec"><td colspan="18">ACTIVIDADES DE FINANCIAMIENTO</td></tr>
-      ${fila('Ingresos por Actividades de Financiamiento', r.ingFinM, r.ingFinAnios)}
-      ${fila('Egresos por Actividades de Financiamiento (capital + interés)', r.egrFinM, r.egrFinAnios)}
-      ${fila('FLUJO POR ACTIVIDADES DE FINANCIAMIENTO', r.flujoFinM, r.flujoFinAnios,'tot')}
-      <tr class="fcSec"><td colspan="18">CONSOLIDADO</td></tr>
-      ${fila('FLUJO NETO DE CAJA', r.flujoNetoM, r.flujoNetoAnios,'tot')}
-      ${fila('Saldo Inicial de Caja', r.saldoInicialM, r.saldoInicialAnios)}
-      ${fila('FLUJO ACUMULADO', r.flujoAcumM, r.flujoAcumAnios,'tot')}
-    </tbody></table>`;
+    <div class="fcNB"><div class="fcSub">2.1 Flujo mensual — Año 1 (USD, sin decimales)</div>
+    <table class="fcMes"><thead><tr><th>Concepto</th>${r.meses.map(m=>`<th class="num">${BP_FC_MESES[m-1]}</th>`).join('')}<th class="num">Total Año 1</th></tr></thead><tbody>${filasM}</tbody></table></div>
+    <div class="fcNB" style="margin-top:12px"><div class="fcSub">2.2 Flujo anual — Años 1 a 5 (USD)</div>
+    <table class="fcAnio"><thead><tr><th>Concepto</th>${[1,2,3,4,5].map(a=>`<th class="num">Año ${a}</th>`).join('')}</tr></thead><tbody>${filasA}</tbody></table></div>`;
   const tablasAmort = r.dist.map(p => {
     if(!p.filas.length) return '';
     return `<h4 style="margin:14px 0 6px;">Tabla de Amortización — ${escapeHtml(p.nombre)} (Monto ${bpUSD(p.monto)}, ${p.tasa}% anual, ${p.plazo} meses, cuota ${bpUSD(bpAmortizacionFrancesa(p.monto,p.tasa,p.plazo).cuota)})</h4>
@@ -13230,7 +13278,13 @@ function generarBPFlujoCaja(){
   const kpi = (t,v,s,c) => `<div class="fcKpi" style="border-top-color:${c}"><div class="t">${t}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
   const premisas = [['Ingresos operacionales','fc2-premisas-ing'],['Egresos operacionales','fc2-premisas-egr'],['Ingresos no operacionales','fc2-premisas-ingno'],['Egresos no operacionales','fc2-premisas-egrno']].filter(p=>bpV(p[1]).trim());
   const fecha = new Date().toLocaleDateString('es-EC',{day:'2-digit',month:'long',year:'numeric'});
-  document.getElementById('flujocaja-preview').innerHTML = `<style>.fcKpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:6px 0 14px;}.fcKpi{border:1px solid #cfd8e3;border-top:4px solid #2563eb;border-radius:6px;padding:7px 10px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.fcKpi .t{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#667;font-weight:700;} .fcKpi .v{font-size:15px;font-weight:800;color:#111;margin:2px 0;} .fcKpi .s{font-size:9px;color:#667;}h4.fcH{margin:16px 0 6px;padding:5px 10px;background:#0057A3;color:#fff;font-size:11.5px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}tr.fcSec td{background:#e8f2fa !important;color:#0057A3;font-weight:800;font-size:9px;letter-spacing:.06em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}table.fcPrem th{width:18%;text-align:left;} table.fcPrem td{font-size:10px;line-height:1.5;}.fcChart{display:flex;align-items:flex-end;gap:6px;height:130px;margin:6px 0 4px;border-bottom:1px solid #889;padding:0 4px;}.fcBarW{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;} .fcBarArea{width:100%;flex:1;display:flex;align-items:flex-end;justify-content:center;}.fcBar{width:70%;background:#2563eb;border-radius:3px 3px 0 0;min-height:1px;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcBar.neg{background:#dc2626;}.fcBarL{font-size:9px;margin-top:3px;} .fcBarV{font-size:8px;color:#667;}.fcDictamen{padding:9px 12px;border-radius:6px;margin:4px 0 8px;font-size:11px;border:1px solid;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcDictamen span{font-size:10px;opacity:.85;}.fcDictamen.ok{background:#e7f6ee;border-color:#8fd0ad;color:#0b5d36;} .fcDictamen.warn{background:#fff6e0;border-color:#ecc86b;color:#7a4c00;} .fcDictamen.err{background:#fde9e8;border-color:#e89a96;color:#8a1f19;}.fcTag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcTag.ok{background:#d9f2e4;color:#0b5d36;} .fcTag.warn{background:#fdebc0;color:#7a4c00;} .fcTag.err{background:#fbd5d2;color:#8a1f19;} .fcTag.info{background:#e3e9f0;color:#445;}table.fcCtrl td{font-size:9.5px;} tr.fcGrp td{background:#f1f4f8 !important;font-weight:800;color:#1f3a5f;font-size:9.5px;}table.fcFirmas{margin-top:34px;border:none;} table.fcFirmas td{border:none;text-align:center;font-size:10px;width:33%;color:#333;}@media(max-width:800px){.fcKpis{grid-template-columns:repeat(2,1fr);}}</style>
+  const n1 = premisas.length ? 2 : 1;
+  document.getElementById('flujocaja-preview').innerHTML = `<style>.fcKpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:6px 0 14px;}.fcKpi{border:1px solid #cfd8e3;border-top:4px solid #2563eb;border-radius:6px;padding:7px 10px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.fcKpi .t{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#667;font-weight:700;} .fcKpi .v{font-size:15px;font-weight:800;color:#111;margin:2px 0;} .fcKpi .s{font-size:9px;color:#667;}h4.fcH{margin:16px 0 6px;padding:5px 10px;background:#0057A3;color:#fff;font-size:11.5px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}tr.fcSec td{background:#e8f2fa !important;color:#0057A3;font-weight:800;font-size:9px;letter-spacing:.06em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}table.fcPrem th{width:18%;text-align:left;} table.fcPrem td{font-size:10px;line-height:1.5;}.fcChart{display:flex;align-items:flex-end;gap:6px;height:130px;margin:6px 0 4px;border-bottom:1px solid #889;padding:0 4px;}.fcBarW{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;} .fcBarArea{width:100%;flex:1;display:flex;align-items:flex-end;justify-content:center;}.fcBar{width:70%;background:#2563eb;border-radius:3px 3px 0 0;min-height:1px;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcBar.neg{background:#dc2626;}.fcBarL{font-size:9px;margin-top:3px;} .fcBarV{font-size:8px;color:#667;}.fcDictamen{padding:9px 12px;border-radius:6px;margin:4px 0 8px;font-size:11px;border:1px solid;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcDictamen span{font-size:10px;opacity:.85;}.fcDictamen.ok{background:#e7f6ee;border-color:#8fd0ad;color:#0b5d36;} .fcDictamen.warn{background:#fff6e0;border-color:#ecc86b;color:#7a4c00;} .fcDictamen.err{background:#fde9e8;border-color:#e89a96;color:#8a1f19;}.fcTag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .fcTag.ok{background:#d9f2e4;color:#0b5d36;} .fcTag.warn{background:#fdebc0;color:#7a4c00;} .fcTag.err{background:#fbd5d2;color:#8a1f19;} .fcTag.info{background:#e3e9f0;color:#445;}table.fcCtrl td{font-size:9.5px;} tr.fcGrp td{background:#f1f4f8 !important;font-weight:800;color:#1f3a5f;font-size:9.5px;}table.fcFirmas{margin-top:34px;border:none;} table.fcFirmas td{border:none;text-align:center;font-size:10px;width:33%;color:#333;}@media(max-width:800px){.fcKpis{grid-template-columns:repeat(2,1fr);}}
+.fcSub{font-size:10.5px;font-weight:700;color:#1f3a5f;margin:4px 0;} .fcNB{break-inside:avoid;page-break-inside:avoid;}
+table.fcMes td,table.fcMes th{font-size:8.5px !important;padding:3px 3px !important;} table.fcMes th:first-child,table.fcMes td:first-child{width:21% !important;}
+table.fcER td.fcPc{color:#667;font-size:8.5px;} table.fcER th{text-align:center;} table.fcER td:first-child{width:24%;}
+h4.fcPB{break-before:page;page-break-before:always;}
+</style>
     <div class="doc-header"><div class="doc-title">Flujo de Caja Proyectado</div><div class="doc-subtitle">${escapeHtml(cliente)} · Guía Metodológica Banco del Pacífico v2.0 · Proyección a 5 años · ${fecha}</div></div>
     <div class="fcKpis">
       ${kpi('Ingresos Año 1', bpUSD(r.ingresosAnios[0]), 'Año 5: '+bpUSD(r.ingresosAnios[4]), '#2563eb')}
@@ -13240,13 +13294,15 @@ function generarBPFlujoCaja(){
       ${kpi('Caja final Año 5', bpUSD(r.flujoAcumAnios[4]), 'Flujo neto Año 1: '+bpUSD(r.flujoNetoAnios[0]), '#0891b2')}
     </div>
     ${premisas.length?`<h4 class="fcH">1. Premisas de la proyección</h4><table class="fcPrem"><tbody>${premisas.map(p=>`<tr><th>${p[0]}</th><td>${escapeHtml(bpV(p[1])).replace(/\n/g,'<br>')}</td></tr>`).join('')}</tbody></table>`:''}
-    <h4 class="fcH">${premisas.length?'2':'1'}. Flujo de caja proyectado</h4>
-    <div style="overflow-x:auto">${tablaFlujo}</div>
-    <h4 class="fcH">${premisas.length?'3':'2'}. Evolución del flujo acumulado de caja — Año 1 (miles de USD)</h4>
+    <h4 class="fcH fcPB">${n1}. Flujo de caja proyectado</h4>
+    ${tablaFlujo}
+    <h4 class="fcH">${n1+1}. Evolución del flujo acumulado de caja — Año 1 (miles de USD)</h4>
     ${bpFcGraficoHTML(r)}
-    <h4 class="fcH">${premisas.length?'4':'3'}. Control de revisión y razonabilidad</h4>
+    <h4 class="fcH fcPB">${n1+2}. Estado de resultados proyectado por año</h4>
+    ${bpFcEstadoResultadosHTML(bpFcEstadoResultados(r))}
+    <h4 class="fcH fcPB">${n1+3}. Control de revisión y razonabilidad</h4>
     ${bpFcControlesHTML(ctrl)}
-    ${tablasAmort?`<h4 class="fcH">${premisas.length?'5':'4'}. Tablas de amortización</h4><div style="overflow-x:auto">${tablasAmort}</div>`:''}
+    ${tablasAmort?`<h4 class="fcH fcPB">${n1+4}. Tablas de amortización</h4><div>${tablasAmort}</div>`:''}
     <div class="doc-footer">Saldo inicial de caja: ${bpUSD(r.saldoInicial)}. Las columnas Año 2 a Año 5 se proyectan aplicando el % de crecimiento anual indicado sobre ingresos, costos y gastos; los egresos de financiamiento provienen directamente de la tabla de amortización de cada préstamo.</div>
     <table class="fcFirmas"><tr><td>Elaborado por<br><br><br>______________________<br>Nombre y cargo</td><td>Revisado por<br><br><br>______________________<br>Nombre y cargo</td><td>Aprobado por (Representante Legal)<br><br><br>______________________<br>Nombre y firma</td></tr></table>
   `;
